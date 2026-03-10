@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - AI Papers{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h1 class="mb-4"><i class="bi bi-stars"></i> Dashboard</h1>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <div class="col-md-3">
+        <div class="card bg-primary bg-opacity-10 border-primary">
+            <div class="card-body text-center">
+                <h2 class="card-title">{{ stats.database.total_papers }}</h2>
+                <p class="card-text text-muted">Total Papers</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-success bg-opacity-10 border-success">
+            <div class="card-body text-center">
+                <h2 class="card-title">{{ stats.database.thumbs_up }}</h2>
+                <p class="card-text text-muted"><i class="bi bi-hand-thumbs-up-fill text-success"></i> Liked</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-danger bg-opacity-10 border-danger">
+            <div class="card-body text-center">
+                <h2 class="card-title">{{ stats.database.thumbs_down }}</h2>
+                <p class="card-text text-muted"><i class="bi bi-hand-thumbs-down-fill text-danger"></i> Disliked</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-info bg-opacity-10 border-info">
+            <div class="card-body text-center">
+                <h2 class="card-title">{{ stats.model.total_trained }}</h2>
+                <p class="card-text text-muted">Training Samples</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="bi bi-lightning"></i> Quick Actions</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <a href="/papers?filter=unrated" class="btn btn-primary btn-lg">
+                        <i class="bi bi-journal-text"></i> Browse & Rate Papers
+                    </a>
+                    <button class="btn btn-outline-secondary btn-lg" onclick="fetchPapers()">
+                        <i class="bi bi-cloud-download"></i> Fetch New Papers
+                    </button>
+                    <button class="btn btn-outline-warning btn-lg" onclick="retrainModel()" {% if stats.database.total_rated < 5 %}disabled{% endif %}>
+                        <i class="bi bi-arrow-repeat"></i> Retrain Model
+                        {% if stats.database.total_rated < 5 %}
+                        <small>(need {{ 5 - stats.database.total_rated }} more ratings)</small>
+                        {% endif %}
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="bi bi-cpu"></i> Model Info</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <tr><td>Model Parameters</td><td>{{ "{:,}".format(stats.model.parameters) }}</td></tr>
+                    <tr><td>Embedding Dimension</td><td>{{ stats.model.embedding_dim }}</td></tr>
+                    <tr><td>Learning Rate</td><td>{{ stats.model.learning_rate }}</td></tr>
+                    <tr><td>Total Trained</td><td>{{ stats.model.total_trained }}</td></tr>
+                    <tr><td>Categories</td><td>{{ stats.categories | join(", ") }}</td></tr>
+                </table>
+                {% if stats.model.recent_losses %}
+                <p class="text-muted mb-0">
+                    <small>Recent loss: {{ "%.4f" | format(stats.model.recent_losses[-1]) }}</small>
+                </p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="status-toast" class="toast-container position-fixed bottom-0 end-0 p-3">
+    <div class="toast" role="alert" id="actionToast">
+        <div class="toast-header">
+            <strong class="me-auto" id="toastTitle">Status</strong>
+            <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+        </div>
+        <div class="toast-body" id="toastBody"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showToast(title, message) {
+    document.getElementById('toastTitle').textContent = title;
+    document.getElementById('toastBody').textContent = message;
+    const toast = new bootstrap.Toast(document.getElementById('actionToast'));
+    toast.show();
+}
+
+async function fetchPapers() {
+    showToast('Fetching', 'Fetching new papers from arXiv...');
+    try {
+        const resp = await fetch('/api/fetch', { method: 'POST', headers: {'Content-Type': 'application/json'} });
+        const data = await resp.json();
+        showToast('Done', `Fetched ${data.new_papers} new papers!`);
+        setTimeout(() => location.reload(), 1500);
+    } catch (e) {
+        showToast('Error', 'Failed to fetch papers: ' + e.message);
+    }
+}
+
+async function retrainModel() {
+    showToast('Training', 'Retraining model on all ratings...');
+    try {
+        const resp = await fetch('/api/retrain', { method: 'POST', headers: {'Content-Type': 'application/json'} });
+        const data = await resp.json();
+        showToast('Done', `Retrained on ${data.num_samples} samples. Loss: ${data.final_loss?.toFixed(4)}`);
+        setTimeout(() => location.reload(), 1500);
+    } catch (e) {
+        showToast('Error', 'Failed to retrain: ' + e.message);
+    }
+}
+</script>
+{% endblock %}

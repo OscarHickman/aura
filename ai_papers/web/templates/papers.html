@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+{% block title %}Papers - AI Papers{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>
+        {% if filter_type == 'unrated' %}
+        <i class="bi bi-journal-text"></i> Recommended Papers
+        {% elif filter_type == 'liked' %}
+        <i class="bi bi-hand-thumbs-up-fill text-success"></i> Liked Papers
+        {% elif filter_type == 'disliked' %}
+        <i class="bi bi-hand-thumbs-down-fill text-danger"></i> Disliked Papers
+        {% else %}
+        <i class="bi bi-journals"></i> All Papers
+        {% endif %}
+    </h1>
+    <div class="btn-group">
+        <a href="/papers?filter=unrated" class="btn btn-outline-primary {% if filter_type == 'unrated' %}active{% endif %}">
+            Recommended
+        </a>
+        <a href="/papers?filter=liked" class="btn btn-outline-success {% if filter_type == 'liked' %}active{% endif %}">
+            Liked
+        </a>
+        <a href="/papers?filter=disliked" class="btn btn-outline-danger {% if filter_type == 'disliked' %}active{% endif %}">
+            Disliked
+        </a>
+        <a href="/papers?filter=all" class="btn btn-outline-secondary {% if filter_type == 'all' %}active{% endif %}">
+            All
+        </a>
+    </div>
+</div>
+
+{% if not papers %}
+<div class="alert alert-info">
+    <i class="bi bi-info-circle"></i>
+    {% if filter_type == 'unrated' %}
+    No unrated papers found. <a href="/fetch" class="alert-link">Fetch new papers</a> to get started!
+    {% else %}
+    No papers found for this filter.
+    {% endif %}
+</div>
+{% endif %}
+
+<div class="paper-list">
+    {% for paper in papers %}
+    <div class="card mb-3 paper-card" id="paper-{{ paper.arxiv_id | replace('/', '-') | replace('.', '-') }}" data-arxiv-id="{{ paper.arxiv_id }}">
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start">
+                <div class="flex-grow-1">
+                    <h5 class="card-title">
+                        <a href="{{ paper.url }}" target="_blank" class="text-decoration-none">
+                            {{ paper.title }}
+                        </a>
+                        {% if paper.score is defined and paper.score > 0 %}
+                        <span class="badge score-badge
+                            {% if paper.score >= 0.8 %}bg-success
+                            {% elif paper.score >= 0.5 %}bg-warning text-dark
+                            {% else %}bg-secondary
+                            {% endif %}">
+                            {{ "%.0f" | format(paper.score * 100) }}%
+                        </span>
+                        {% endif %}
+                    </h5>
+                    <p class="text-muted mb-1">
+                        <small>
+                            {{ paper.authors[:5] | join(", ") }}
+                            {% if paper.authors | length > 5 %} + {{ paper.authors | length - 5 }} more{% endif %}
+                        </small>
+                    </p>
+                    <p class="card-text abstract-text formatted-text">{{ paper.abstract[:400] }}{% if paper.abstract | length > 400 %}...{% endif %}</p>
+                    <div class="summary-box">
+                        <div class="d-flex align-items-center justify-content-between gap-2">
+                            <strong><i class="bi bi-sparkles"></i> AI Summary</strong>
+                            {% if not paper.summary or paper.summary == 'AI Fail' %}
+                            <button
+                                class="btn btn-sm btn-outline-light summary-retry-btn"
+                                onclick="generateSummaryForPaper('{{ paper.arxiv_id }}', this)">
+                                Generate AI Summary
+                            </button>
+                            {% endif %}
+                        </div>
+                        <small class="summary-text formatted-text">{{ paper.summary or 'AI Fail' }}</small>
+                    </div>
+                    <div class="mb-2">
+                        {% for cat in paper.categories[:5] %}
+                        <span class="badge bg-dark border border-secondary">{{ cat }}</span>
+                        {% endfor %}
+                        <small class="text-muted ms-2">{{ paper.published[:10] }}</small>
+                        {% if paper.pdf_url %}
+                        <a href="{{ paper.pdf_url }}" target="_blank" class="ms-2 text-decoration-none">
+                            <small><i class="bi bi-file-pdf"></i> PDF</small>
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="rating-buttons ms-3 d-flex flex-column gap-2">
+                    <button class="btn btn-outline-success btn-rate {% if paper.rating == 1 %}active{% endif %}"
+                            onclick="ratePaper('{{ paper.arxiv_id }}', 1, this)"
+                            title="Thumbs up - I like this paper">
+                        <i class="bi bi-hand-thumbs-up-fill"></i>
+                    </button>
+                    <button class="btn btn-outline-danger btn-rate {% if paper.rating == 0 %}active{% endif %}"
+                            onclick="ratePaper('{{ paper.arxiv_id }}', 0, this)"
+                            title="Thumbs down - Not interesting">
+                        <i class="bi bi-hand-thumbs-down-fill"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{% if papers %}
+<nav class="mt-4">
+    <ul class="pagination justify-content-center">
+        {% if page > 1 %}
+        <li class="page-item">
+            <a class="page-link" href="/papers?filter={{ filter_type }}&page={{ page - 1 }}&per_page={{ per_page }}">
+                <i class="bi bi-chevron-left"></i> Previous
+            </a>
+        </li>
+        {% endif %}
+        <li class="page-item active">
+            <span class="page-link">Page {{ page }}</span>
+        </li>
+        {% if papers | length == per_page %}
+        <li class="page-item">
+            <a class="page-link" href="/papers?filter={{ filter_type }}&page={{ page + 1 }}&per_page={{ per_page }}">
+                Next <i class="bi bi-chevron-right"></i>
+            </a>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function ratePaper(arxivId, rating, btn) {
+    const card = btn.closest('.paper-card');
+    const buttons = card.querySelectorAll('.btn-rate');
+
+    // Visual feedback
+    buttons.forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+
+    try {
+        const resp = await fetch('/api/rate', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ arxiv_id: arxivId, rating: rating })
+        });
+        const data = await resp.json();
+
+        // Flash card to show it was rated
+        card.style.transition = 'opacity 0.3s';
+        card.style.opacity = '0.6';
+        setTimeout(() => {
+            card.style.opacity = '1';
+        }, 300);
+
+        // Show brief feedback
+        if (data.trained) {
+            const indicator = document.createElement('small');
+            indicator.className = 'text-info ms-2 fade-out';
+            indicator.textContent = `Model updated (loss: ${data.loss?.toFixed(4)})`;
+            btn.parentElement.appendChild(indicator);
+            setTimeout(() => indicator.remove(), 3000);
+        }
+    } catch (e) {
+        console.error('Rating failed:', e);
+        btn.classList.remove('active');
+    }
+}
+
+async function generateSummaryForPaper(arxivId, btn) {
+    const summaryBox = btn.closest('.summary-box');
+    const summaryText = summaryBox.querySelector('.summary-text');
+    const originalText = btn.textContent;
+
+    btn.disabled = true;
+    btn.textContent = 'Generating...';
+
+    try {
+        const resp = await fetch('/api/summarize-paper', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ arxiv_id: arxivId })
+        });
+        const data = await resp.json();
+
+        if (!resp.ok) {
+            throw new Error(data.error || data.status || 'Failed to generate summary');
+        }
+
+        summaryText.textContent = data.summary || 'AI Fail';
+        renderFormattedText(summaryBox);
+        if (data.summary && data.summary !== 'AI Fail') {
+            btn.remove();
+        } else {
+            btn.disabled = false;
+            btn.textContent = originalText;
+        }
+    } catch (error) {
+        console.error('Summary generation failed:', error);
+        summaryText.textContent = 'AI Fail';
+        btn.disabled = false;
+        btn.textContent = originalText;
+    }
+}
+</script>
+{% endblock %}

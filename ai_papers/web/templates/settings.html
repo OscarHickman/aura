@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}Settings - AI Papers{% endblock %}
+
+{% block content %}
+<h1 class="mb-4"><i class="bi bi-gear"></i> Settings & Model</h1>
+
+<div class="row g-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="bi bi-cpu"></i> Neural Network Model</h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted">
+                    Your preference model is a neural network that learns from your thumbs up/down ratings.
+                    The model weights file <strong>is</strong> your preference config.
+                </p>
+                <table class="table table-sm">
+                    <tr><td>Model File</td><td><code>{{ stats.model.model_path }}</code></td></tr>
+                    <tr><td>Total Parameters</td><td>{{ "{:,}".format(stats.model.parameters) }}</td></tr>
+                    <tr><td>Embedding Dimension</td><td>{{ stats.model.embedding_dim }}</td></tr>
+                    <tr><td>Learning Rate</td><td>{{ stats.model.learning_rate }}</td></tr>
+                    <tr><td>Total Training Samples</td><td>{{ stats.model.total_trained }}</td></tr>
+                </table>
+
+                {% if stats.model.recent_losses %}
+                <h6>Recent Training Losses</h6>
+                <div class="loss-history">
+                    {% for loss in stats.model.recent_losses %}
+                    <span class="badge bg-secondary">{{ "%.4f" | format(loss) }}</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                <hr>
+                <h6>Model Actions</h6>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-warning" onclick="retrainModel()"
+                            {% if stats.database.total_rated < 5 %}disabled{% endif %}>
+                        <i class="bi bi-arrow-repeat"></i> Full Retrain
+                    </button>
+                    <button class="btn btn-outline-danger" onclick="resetModel()">
+                        <i class="bi bi-trash"></i> Reset Model
+                    </button>
+                </div>
+                {% if stats.database.total_rated < 5 %}
+                <small class="text-warning mt-2 d-block">
+                    Rate at least 5 papers before retraining (currently {{ stats.database.total_rated }}).
+                </small>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="bi bi-database"></i> Database</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <tr><td>Total Papers</td><td>{{ stats.database.total_papers }}</td></tr>
+                    <tr><td>With Embeddings</td><td>{{ stats.database.with_embeddings }}</td></tr>
+                    <tr><td>Total Rated</td><td>{{ stats.database.total_rated }}</td></tr>
+                    <tr>
+                        <td>Thumbs Up</td>
+                        <td><span class="text-success">{{ stats.database.thumbs_up }}</span></td>
+                    </tr>
+                    <tr>
+                        <td>Thumbs Down</td>
+                        <td><span class="text-danger">{{ stats.database.thumbs_down }}</span></td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5><i class="bi bi-sliders"></i> Configuration</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <tr><td>Data Directory</td><td><code>{{ stats.data_dir }}</code></td></tr>
+                    <tr><td>Categories</td><td>
+                        {% for cat in stats.categories %}
+                        <span class="badge bg-primary">{{ cat }}</span>
+                        {% endfor %}
+                    </td></tr>
+                </table>
+                <p class="text-muted">
+                    <small>Edit <code>config.yaml</code> to change categories and other settings.</small>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="bi bi-info-circle"></i> How It Works</h5>
+            </div>
+            <div class="card-body">
+                <ol>
+                    <li><strong>Fetch:</strong> Papers are downloaded from arXiv for your configured astrophysics categories.</li>
+                    <li><strong>Embed:</strong> Each paper's title + abstract is converted to a 384-dimensional vector using a sentence-transformer model.</li>
+                    <li><strong>Score:</strong> Your neural network preference model scores each paper (0-1) based on learned preferences.</li>
+                    <li><strong>Rate:</strong> You thumbs-up or thumbs-down papers. Each rating immediately updates the model (online learning).</li>
+                    <li><strong>Improve:</strong> The more you rate, the better the recommendations get. Use "Full Retrain" periodically for best results.</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="status-toast" class="toast-container position-fixed bottom-0 end-0 p-3">
+    <div class="toast" role="alert" id="actionToast">
+        <div class="toast-header">
+            <strong class="me-auto" id="toastTitle">Status</strong>
+            <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+        </div>
+        <div class="toast-body" id="toastBody"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function showToast(title, message) {
+    document.getElementById('toastTitle').textContent = title;
+    document.getElementById('toastBody').textContent = message;
+    const toast = new bootstrap.Toast(document.getElementById('actionToast'));
+    toast.show();
+}
+
+async function retrainModel() {
+    showToast('Training', 'Retraining model on all ratings...');
+    try {
+        const resp = await fetch('/api/retrain', { method: 'POST', headers: {'Content-Type': 'application/json'} });
+        const data = await resp.json();
+        showToast('Done', `Retrained on ${data.num_samples} samples. Loss: ${data.final_loss?.toFixed(4)}`);
+        setTimeout(() => location.reload(), 2000);
+    } catch (e) {
+        showToast('Error', 'Retrain failed: ' + e.message);
+    }
+}
+
+async function resetModel() {
+    if (!confirm('Are you sure? This will delete your trained preference model. You will need to re-rate papers to retrain.')) {
+        return;
+    }
+    showToast('Reset', 'Resetting model...');
+    try {
+        const resp = await fetch('/api/retrain', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ epochs: 0 })
+        });
+        showToast('Done', 'Model has been reset.');
+        setTimeout(() => location.reload(), 1500);
+    } catch (e) {
+        showToast('Error', 'Reset failed: ' + e.message);
+    }
+}
+</script>
+{% endblock %}

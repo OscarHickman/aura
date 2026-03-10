@@ -1,0 +1,146 @@
+/* AI Papers - Custom styles */
+
+body {
+    background-color: #1a1a2e;
+    min-height: 100vh;
+}
+
+.navbar {
+    background-color: #16213e !important;
+}
+
+.navbar-brand {
+    font-weight: bold;
+    font-size: 1.3rem;
+}
+
+/* Paper cards */
+.paper-card {
+    transition: all 0.2s ease;
+    border-left: 3px solid transparent;
+}
+
+.paper-card:hover {
+    border-left-color: #0d6efd;
+    transform: translateX(4px);
+}
+
+.paper-card .card-title a {
+    color: #e0e0e0;
+}
+
+.paper-card .card-title a:hover {
+    color: #66b2ff;
+}
+
+.abstract-text {
+    font-size: 0.9rem;
+    line-height: 1.5;
+    color: #b0b0b0;
+    white-space: pre-wrap;
+}
+
+.summary-box {
+    background-color: #0d3830;
+    border-left: 3px solid #28a745;
+    padding: 10px 12px;
+    margin: 10px 0;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    line-height: 1.4;
+    color: #c0e8d9;
+}
+
+.summary-text {
+    display: block;
+    white-space: pre-wrap;
+}
+
+.formatted-text .katex {
+    font-size: 1em;
+}
+
+.formatted-text .katex-display {
+    margin: 0.6rem 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+/* Score badge */
+.score-badge {
+    font-size: 0.75rem;
+    vertical-align: middle;
+    margin-left: 0.5rem;
+}
+
+/* Rating buttons */
+.rating-buttons .btn-rate {
+    width: 48px;
+    height: 48px;
+    font-size: 1.2rem;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.rating-buttons .btn-outline-success.active {
+    background-color: #198754;
+    border-color: #198754;
+    color: white;
+    transform: scale(1.1);
+}
+
+.rating-buttons .btn-outline-danger.active {
+    background-color: #dc3545;
+    border-color: #dc3545;
+    color: white;
+    transform: scale(1.1);
+}
+
+.rating-buttons .btn-rate:hover {
+    transform: scale(1.15);
+}
+
+/* Stats cards */
+.card {
+    background-color: #1e2a3a;
+    border-color: #2a3a4a;
+}
+
+.card-header {
+    background-color: #16213e;
+    border-bottom-color: #2a3a4a;
+}
+
+/* Fade out animation for training feedback */
+.fade-out {
+    animation: fadeOut 3s ease forwards;
+}
+
+@keyframes fadeOut {
+    0% { opacity: 1; }
+    70% { opacity: 1; }
+    100% { opacity: 0; }
+}
+
+/* Loss history badges */
+.loss-history {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .paper-card .d-flex {
+        flex-direction: column;
+    }
+
+    .rating-buttons {
+        flex-direction: row !important;
+        margin-left: 0 !important;
+        margin-top: 1rem;
+    }
+}

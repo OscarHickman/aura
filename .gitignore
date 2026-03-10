@@ -1,0 +1,18 @@
+# Data files (model weights, database)
+data/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Environment
+.env
+.venv/
+user_credentials/
+
+# IDE
+.vscode/
+.idea/

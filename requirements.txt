@@ -1,0 +1,19 @@
+# Core
+flask>=3.0
+pyyaml>=6.0
+requests>=2.31
+msal>=1.30
+ruff>=0.11
+
+# ML
+torch>=2.0
+sentence-transformers>=2.2
+numpy>=1.24
+
+# LLM providers
+groq>=0.4.0            # Fast default provider with free tier
+# openai>=1.0.0        # Requires paid API key
+# anthropic>=0.7.0     # Claude API
+
+# Scheduler (optional, for daily auto-fetch)
+apscheduler>=3.10

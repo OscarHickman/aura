@@ -1,0 +1,109 @@
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import Mock, patch
+
+import numpy as np
+
+from ai_papers.recommender import RecommendationEngine
+
+
+def _paper(arxiv_id="2401.00001"):
+    return {
+        "arxiv_id": arxiv_id,
+        "title": "T",
+        "abstract": "A",
+        "authors": ["A"],
+        "categories": ["astro-ph.CO"],
+        "published": "2026-01-01T00:00:00Z",
+        "url": "u",
+        "pdf_url": "p",
+    }
+
+
+class TestRecommendationEngine(unittest.TestCase):
+    @patch("ai_papers.recommender.PreferenceModel")
+    @patch("ai_papers.recommender.PaperDatabase")
+    @patch("ai_papers.recommender.get_embedding_dim", return_value=3)
+    @patch("ai_papers.recommender.embed_papers_batch")
+    @patch("ai_papers.recommender.fetch_papers_simple")
+    @patch("ai_papers.recommender.fetch_papers")
+    def test_fetch_new_papers_fallback_path(
+        self,
+        mock_fetch,
+        mock_fetch_simple,
+        mock_embed,
+        _mock_dim,
+        mock_db_cls,
+        _mock_model_cls,
+    ):
+        mock_fetch.return_value = []
+        mock_fetch_simple.return_value = [_paper()]
+        mock_embed.return_value = [np.array([0.1, 0.2, 0.3], dtype=np.float32)]
+
+        db = Mock()
+        db.get_paper.return_value = None
+        db.add_papers_batch.return_value = 1
+        mock_db_cls.return_value = db
+
+        with tempfile.TemporaryDirectory() as td:
+            engine = RecommendationEngine(Path(td), ["astro-ph.CO"])
+            added = engine.fetch_new_papers(max_results=10)
+
+        self.assertEqual(added, 1)
+        db.log_fetch.assert_called_once_with(1, ["astro-ph.CO"])
+
+    @patch("ai_papers.recommender.PreferenceModel")
+    @patch("ai_papers.recommender.PaperDatabase")
+    @patch("ai_papers.recommender.get_embedding_dim", return_value=3)
+    def test_get_recommendations_defaults_when_no_embeddings(self, _mock_dim, mock_db_cls, _mock_model_cls):
+        db = Mock()
+        db.get_papers.return_value = [_paper("1"), _paper("2")]
+        db.get_papers_with_embeddings.return_value = []
+        mock_db_cls.return_value = db
+
+        with tempfile.TemporaryDirectory() as td:
+            engine = RecommendationEngine(Path(td), ["astro-ph.CO"])
+            papers = engine.get_recommendations(limit=2)
+
+        self.assertEqual(len(papers), 2)
+        self.assertTrue(all(p["score"] == 0.5 for p in papers))
+
+    @patch("ai_papers.recommender.PreferenceModel")
+    @patch("ai_papers.recommender.PaperDatabase")
+    @patch("ai_papers.recommender.get_embedding_dim", return_value=3)
+    def test_generate_summary_for_paper_not_found(self, _mock_dim, mock_db_cls, _mock_model_cls):
+        db = Mock()
+        db.get_paper.return_value = None
+        mock_db_cls.return_value = db
+
+        with tempfile.TemporaryDirectory() as td:
+            engine = RecommendationEngine(Path(td), ["astro-ph.CO"])
+            result = engine.generate_summary_for_paper("missing")
+
+        self.assertEqual(result["status"], "not_found")
+
+    @patch("ai_papers.recommender.PreferenceModel")
+    @patch("ai_papers.recommender.PaperDatabase")
+    @patch("ai_papers.recommender.get_embedding_dim", return_value=3)
+    def test_rate_paper_trains_when_embedding_exists(self, _mock_dim, mock_db_cls, mock_model_cls):
+        db = Mock()
+        db.get_papers_with_embeddings.return_value = [(_paper(), np.array([0.1, 0.2, 0.3], dtype=np.float32))]
+        mock_db_cls.return_value = db
+
+        model = Mock()
+        model.train_single.return_value = 0.123
+        model.total_trained = 10
+        mock_model_cls.return_value = model
+
+        with tempfile.TemporaryDirectory() as td:
+            engine = RecommendationEngine(Path(td), ["astro-ph.CO"])
+            result = engine.rate_paper("2401.00001", 1)
+
+        self.assertEqual(result["status"], "rated")
+        self.assertTrue(result["trained"])
+        model.train_single.assert_called_once()
+
+
+if __name__ == "__main__":
+    unittest.main()
