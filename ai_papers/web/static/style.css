@@ -41,19 +41,24 @@ body {
 }
 
 .summary-box {
-    background-color: #0d3830;
-    border-left: 3px solid #28a745;
-    padding: 10px 12px;
-    margin: 10px 0;
-    border-radius: 4px;
-    font-size: 0.85rem;
-    line-height: 1.4;
-    color: #c0e8d9;
+    background: linear-gradient(135deg, #0d3830 0%, #0a2d25 100%);
+    border-left: 4px solid #28a745;
+    border-radius: 6px;
+    padding: 12px 14px;
+    margin: 12px 0;
+    font-size: 0.9rem;
+    line-height: 1.6;
+    color: #b0e0d0;
+}
+
+.summary-box strong {
+    color: #ffc107;
 }
 
 .summary-text {
     display: block;
     white-space: pre-wrap;
+    margin-top: 0.5rem;
 }
 
 .formatted-text .katex {

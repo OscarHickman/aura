@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "desktop-control": {
+      "command": "python",
+      "args": [
+        "/home/bmxz31/.mcp-servers/desktop-control/server.py"
+      ],
+      "env": {
+        "DISPLAY": ":0",
+        "XAUTHORITY": "/home/bmxz31/.Xauthority"
+      }
+    }
+  }
+}

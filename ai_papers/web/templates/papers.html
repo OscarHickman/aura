@@ -47,63 +47,80 @@
         <div class="card-body">
             <div class="d-flex justify-content-between align-items-start">
                 <div class="flex-grow-1">
-                    <h5 class="card-title">
-                        <a href="{{ paper.url }}" target="_blank" class="text-decoration-none">
-                            {{ paper.title }}
-                        </a>
-                        {% if paper.score is defined and paper.score > 0 %}
-                        <span class="badge score-badge
-                            {% if paper.score >= 0.8 %}bg-success
-                            {% elif paper.score >= 0.5 %}bg-warning text-dark
-                            {% else %}bg-secondary
-                            {% endif %}">
-                            {{ "%.0f" | format(paper.score * 100) }}%
-                        </span>
-                        {% endif %}
-                    </h5>
-                    <p class="text-muted mb-1">
+                    <div class="d-flex align-items-start gap-2 mb-2">
+                        <div class="flex-grow-1">
+                            <h5 class="card-title mb-1">
+                                <a href="{{ paper.url }}" target="_blank" class="text-decoration-none">
+                                    {{ paper.title }}
+                                </a>
+                            </h5>
+                            {% if paper.freshness_bonus is defined and paper.freshness_bonus > 0.05 %}
+                            <span class="badge bg-danger"><i class="bi bi-fire"></i> NEW</span>
+                            {% endif %}
+                            {% if paper.score is defined and paper.score > 0 %}
+                            <span class="badge score-badge
+                                {% if paper.score >= 0.8 %}bg-success
+                                {% elif paper.score >= 0.5 %}bg-warning text-dark
+                                {% else %}bg-secondary
+                                {% endif %}">
+                                {{ "%.0f" | format(paper.score * 100) }}% Match
+                            </span>
+                            {% endif %}
+                        </div>
+                        <div class="rating-buttons d-flex flex-column gap-2 flex-shrink-0">
+                            <button class="btn btn-sm btn-outline-success btn-rate {% if paper.rating == 1 %}active{% endif %}"
+                                    onclick="ratePaper('{{ paper.arxiv_id }}', 1, this)"
+                                    title="Thumbs up - I like this paper">
+                                <i class="bi bi-hand-thumbs-up-fill"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger btn-rate {% if paper.rating == 0 %}active{% endif %}"
+                                    onclick="ratePaper('{{ paper.arxiv_id }}', 0, this)"
+                                    title="Thumbs down - Not interesting">
+                                <i class="bi bi-hand-thumbs-down-fill"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <p class="text-muted mb-2">
                         <small>
-                            {{ paper.authors[:5] | join(", ") }}
-                            {% if paper.authors | length > 5 %} + {{ paper.authors | length - 5 }} more{% endif %}
+                            <strong>{{ paper.authors[:3] | join(", ") }}</strong>
+                            {% if paper.authors | length > 3 %} + {{ paper.authors | length - 3 }} more{% endif %}
                         </small>
                     </p>
-                    <p class="card-text abstract-text formatted-text">{{ paper.abstract[:400] }}{% if paper.abstract | length > 400 %}...{% endif %}</p>
-                    <div class="summary-box">
+
+                    {% if paper.summary and paper.summary != 'AI Fail' %}
+                    <div class="summary-box mb-3">
+                        <div class="d-flex align-items-center gap-2 mb-2">
+                            <strong><i class="bi bi-sparkles text-warning"></i> AI Summary</strong>
+                        </div>
+                        <p class="summary-text formatted-text mb-0">{{ paper.summary }}</p>
+                    </div>
+                    {% else %}
+                    <div class="summary-box mb-3 bg-dark-subtle p-2 rounded">
                         <div class="d-flex align-items-center justify-content-between gap-2">
-                            <strong><i class="bi bi-sparkles"></i> AI Summary</strong>
-                            {% if not paper.summary or paper.summary == 'AI Fail' %}
+                            <small class="text-muted"><i class="bi bi-hourglass"></i> Summary pending...</small>
                             <button
                                 class="btn btn-sm btn-outline-light summary-retry-btn"
                                 onclick="generateSummaryForPaper('{{ paper.arxiv_id }}', this)">
-                                Generate AI Summary
+                                <i class="bi bi-sparkles"></i> Generate
                             </button>
-                            {% endif %}
                         </div>
-                        <small class="summary-text formatted-text">{{ paper.summary or 'AI Fail' }}</small>
                     </div>
-                    <div class="mb-2">
-                        {% for cat in paper.categories[:5] %}
-                        <span class="badge bg-dark border border-secondary">{{ cat }}</span>
+                    {% endif %}
+
+                    <p class="card-text abstract-text formatted-text text-muted small">{{ paper.abstract[:300] }}{% if paper.abstract | length > 300 %} <a href="#" class="text-decoration-none">read more</a>{% endif %}</p>
+
+                    <div class="d-flex flex-wrap gap-2 align-items-center">
+                        {% for cat in paper.categories[:4] %}
+                        <span class="badge bg-dark border border-secondary small">{{ cat }}</span>
                         {% endfor %}
-                        <small class="text-muted ms-2">{{ paper.published[:10] }}</small>
+                        <small class="text-muted">{{ paper.published[:10] }}</small>
                         {% if paper.pdf_url %}
-                        <a href="{{ paper.pdf_url }}" target="_blank" class="ms-2 text-decoration-none">
+                        <a href="{{ paper.pdf_url }}" target="_blank" class="ms-auto text-decoration-none">
                             <small><i class="bi bi-file-pdf"></i> PDF</small>
                         </a>
                         {% endif %}
                     </div>
-                </div>
-                <div class="rating-buttons ms-3 d-flex flex-column gap-2">
-                    <button class="btn btn-outline-success btn-rate {% if paper.rating == 1 %}active{% endif %}"
-                            onclick="ratePaper('{{ paper.arxiv_id }}', 1, this)"
-                            title="Thumbs up - I like this paper">
-                        <i class="bi bi-hand-thumbs-up-fill"></i>
-                    </button>
-                    <button class="btn btn-outline-danger btn-rate {% if paper.rating == 0 %}active{% endif %}"
-                            onclick="ratePaper('{{ paper.arxiv_id }}', 0, this)"
-                            title="Thumbs down - Not interesting">
-                        <i class="bi bi-hand-thumbs-down-fill"></i>
-                    </button>
                 </div>
             </div>
         </div>

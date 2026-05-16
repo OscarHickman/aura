@@ -310,6 +310,9 @@ class PaperDatabase:
         with_embeddings = self.conn.execute(
             "SELECT COUNT(*) FROM papers WHERE embedding IS NOT NULL"
         ).fetchone()[0]
+        with_summaries = self.conn.execute(
+            "SELECT COUNT(*) FROM papers WHERE summary IS NOT NULL AND summary != 'AI Fail'"
+        ).fetchone()[0]
 
         return {
             "total_papers": total_papers,
@@ -317,6 +320,7 @@ class PaperDatabase:
             "thumbs_up": thumbs_up,
             "thumbs_down": thumbs_down,
             "with_embeddings": with_embeddings,
+            "with_summaries": with_summaries,
         }
 
     def log_fetch(self, num_papers: int, categories: list[str]):

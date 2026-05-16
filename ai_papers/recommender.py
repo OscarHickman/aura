@@ -156,7 +156,12 @@ class RecommendationEngine:
         }
 
     def get_recommendations(self, limit: int = 50, unrated_only: bool = True) -> list[dict]:
-        """Get papers ranked by predicted interest score.
+        """Get papers ranked by predicted interest score with freshness boost.
+
+        Ranking factors:
+        - Preference model score (trained from user ratings)
+        - Publication date (newer papers ranked higher)
+        - Summary availability (papers with AI summaries ranked higher)
 
         Args:
             limit: Maximum number of papers to return.
@@ -165,23 +170,21 @@ class RecommendationEngine:
         Returns:
             List of paper dicts with added 'score' key, sorted by score descending.
         """
-        # Get papers from database
-        papers = self.db.get_papers(limit=500, unrated_only=unrated_only)
+        from datetime import datetime, timedelta
+        import numpy as np
 
+        papers = self.db.get_papers(limit=500, unrated_only=unrated_only)
         if not papers:
             return []
 
-        # Get embeddings for these papers
         arxiv_ids = [p["arxiv_id"] for p in papers]
         papers_with_emb = self.db.get_papers_with_embeddings(arxiv_ids)
 
         if not papers_with_emb:
-            # No embeddings yet, return papers unsorted
             for p in papers:
                 p["score"] = 0.5
             return papers[:limit]
 
-        # Score papers using the preference model
         emb_map = {p["arxiv_id"]: emb for p, emb in papers_with_emb}
         embeddings = []
         scorable_papers = []
@@ -191,20 +194,50 @@ class RecommendationEngine:
                 embeddings.append(emb_map[paper["arxiv_id"]])
                 scorable_papers.append(paper)
 
+        # Get preference model scores
         if embeddings:
-            scores = self.preference_model.predict_batch(embeddings)
-            for paper, score in zip(scorable_papers, scores):
-                paper["score"] = round(score, 4)
+            model_scores = self.preference_model.predict_batch(embeddings)
+            for paper, score in zip(scorable_papers, model_scores):
+                paper["model_score"] = float(score)
+        else:
+            for paper in scorable_papers:
+                paper["model_score"] = 0.5
 
-        # Add unscorable papers with default score
+        # Add unscorable papers
         scored_ids = {p["arxiv_id"] for p in scorable_papers}
         for paper in papers:
             if paper["arxiv_id"] not in scored_ids:
-                paper["score"] = 0.5
+                paper["model_score"] = 0.5
                 scorable_papers.append(paper)
 
-        # Sort by score descending
-        scorable_papers.sort(key=lambda p: p["score"], reverse=True)
+        # Calculate composite score with freshness and summary bonuses
+        now = datetime.fromisoformat(datetime.now().isoformat())
+        for paper in scorable_papers:
+            base_score = paper["model_score"]
+
+            # Freshness boost: papers from last 7 days get a boost
+            try:
+                pub_date = datetime.fromisoformat(paper["published"].replace('Z', '+00:00'))
+                days_old = (now - pub_date.replace(tzinfo=None)).days
+                freshness_bonus = max(0, 0.15 * (1 - min(days_old / 7, 1)))
+            except (ValueError, TypeError):
+                freshness_bonus = 0
+
+            # Summary bonus: papers with summaries get a small boost
+            summary_bonus = 0.05 if paper.get("summary") and paper["summary"] != "AI Fail" else 0
+
+            # Combine scores
+            paper["score"] = round(min(1.0, base_score + freshness_bonus + summary_bonus), 4)
+            paper["freshness_bonus"] = round(freshness_bonus, 4)
+
+        # Sort by composite score, then by date (newest first)
+        scorable_papers.sort(
+            key=lambda p: (
+                p["score"],
+                p.get("published", ""),
+            ),
+            reverse=True
+        )
 
         return scorable_papers[:limit]
 
