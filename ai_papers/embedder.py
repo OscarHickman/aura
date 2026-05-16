@@ -23,7 +23,9 @@ def get_model(model_name: str = "all-MiniLM-L6-v2"):
     return _model
 
 
-def embed_paper(title: str, abstract: str, model_name: str = "all-MiniLM-L6-v2") -> np.ndarray:
+def embed_paper(
+    title: str, abstract: str, model_name: str = "all-MiniLM-L6-v2"
+) -> np.ndarray:
     """Create an embedding vector for a single paper.
 
     Combines title and abstract into a single text for embedding.
@@ -52,7 +54,9 @@ def embed_papers_batch(
     texts = [f"{p['title']}. {p['abstract']}" for p in papers]
 
     logger.info(f"Embedding {len(texts)} papers...")
-    embeddings = model.encode(texts, normalize_embeddings=True, batch_size=batch_size, show_progress_bar=True)
+    embeddings = model.encode(
+        texts, normalize_embeddings=True, batch_size=batch_size, show_progress_bar=True
+    )
 
     return [np.array(e, dtype=np.float32) for e in embeddings]
 

@@ -1,0 +1,13 @@
+version: "3.8"
+
+services:
+  ai_papers:
+    build: ..
+    image: ai_papers:latest
+    ports:
+      - "80:5000"
+    restart: unless-stopped
+    environment:
+      - AI_PAPERS_CONFIG=/app/config.yaml
+    volumes:
+      - ../user_credentials:/app/user_credentials:ro

@@ -56,7 +56,9 @@ class TestRecommendationEngine(unittest.TestCase):
     @patch("ai_papers.recommender.PreferenceModel")
     @patch("ai_papers.recommender.PaperDatabase")
     @patch("ai_papers.recommender.get_embedding_dim", return_value=3)
-    def test_get_recommendations_defaults_when_no_embeddings(self, _mock_dim, mock_db_cls, _mock_model_cls):
+    def test_get_recommendations_defaults_when_no_embeddings(
+        self, _mock_dim, mock_db_cls, _mock_model_cls
+    ):
         db = Mock()
         db.get_papers.return_value = [_paper("1"), _paper("2")]
         db.get_papers_with_embeddings.return_value = []
@@ -72,7 +74,9 @@ class TestRecommendationEngine(unittest.TestCase):
     @patch("ai_papers.recommender.PreferenceModel")
     @patch("ai_papers.recommender.PaperDatabase")
     @patch("ai_papers.recommender.get_embedding_dim", return_value=3)
-    def test_generate_summary_for_paper_not_found(self, _mock_dim, mock_db_cls, _mock_model_cls):
+    def test_generate_summary_for_paper_not_found(
+        self, _mock_dim, mock_db_cls, _mock_model_cls
+    ):
         db = Mock()
         db.get_paper.return_value = None
         mock_db_cls.return_value = db
@@ -86,9 +90,13 @@ class TestRecommendationEngine(unittest.TestCase):
     @patch("ai_papers.recommender.PreferenceModel")
     @patch("ai_papers.recommender.PaperDatabase")
     @patch("ai_papers.recommender.get_embedding_dim", return_value=3)
-    def test_rate_paper_trains_when_embedding_exists(self, _mock_dim, mock_db_cls, mock_model_cls):
+    def test_rate_paper_trains_when_embedding_exists(
+        self, _mock_dim, mock_db_cls, mock_model_cls
+    ):
         db = Mock()
-        db.get_papers_with_embeddings.return_value = [(_paper(), np.array([0.1, 0.2, 0.3], dtype=np.float32))]
+        db.get_papers_with_embeddings.return_value = [
+            (_paper(), np.array([0.1, 0.2, 0.3], dtype=np.float32))
+        ]
         mock_db_cls.return_value = db
 
         model = Mock()

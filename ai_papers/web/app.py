@@ -65,22 +65,30 @@ def _register_routes(app: Flask):
         per_page = int(request.args.get("per_page", 30))
 
         if filter_type == "unrated":
-            paper_list = engine.get_recommendations(limit=per_page * page, unrated_only=True)
+            paper_list = engine.get_recommendations(
+                limit=per_page * page, unrated_only=True
+            )
         elif filter_type == "liked":
-            paper_list = engine.db.get_papers(limit=per_page, offset=(page - 1) * per_page, rated_only=True)
+            paper_list = engine.db.get_papers(
+                limit=per_page, offset=(page - 1) * per_page, rated_only=True
+            )
             # Add ratings
             for p in paper_list:
                 p["rating"] = engine.db.get_latest_rating(p["arxiv_id"])
                 p["score"] = p.get("score", 0)
             paper_list = [p for p in paper_list if p.get("rating") == 1]
         elif filter_type == "disliked":
-            paper_list = engine.db.get_papers(limit=per_page, offset=(page - 1) * per_page, rated_only=True)
+            paper_list = engine.db.get_papers(
+                limit=per_page, offset=(page - 1) * per_page, rated_only=True
+            )
             for p in paper_list:
                 p["rating"] = engine.db.get_latest_rating(p["arxiv_id"])
                 p["score"] = p.get("score", 0)
             paper_list = [p for p in paper_list if p.get("rating") == 0]
         else:
-            paper_list = engine.get_recommendations(limit=per_page * page, unrated_only=False)
+            paper_list = engine.get_recommendations(
+                limit=per_page * page, unrated_only=False
+            )
 
         # Paginate
         start = (page - 1) * per_page
@@ -173,6 +181,11 @@ def _register_routes(app: Flask):
     def stats():
         """API endpoint for system statistics."""
         return jsonify(engine.get_stats())
+
+    @app.route("/health")
+    def health():
+        """Simple health check for load balancers and orchestrators."""
+        return jsonify({"status": "ok"}), 200
 
     @app.route("/fetch")
     def fetch_page():

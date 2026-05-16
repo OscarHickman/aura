@@ -75,7 +75,11 @@ class PreferenceModel:
         """Predict preference score for a single paper embedding. Returns 0-1."""
         self.model.eval()
         with torch.no_grad():
-            x = torch.tensor(embedding, dtype=torch.float32).unsqueeze(0).to(self.device)
+            x = (
+                torch.tensor(embedding, dtype=torch.float32)
+                .unsqueeze(0)
+                .to(self.device)
+            )
             score = self.model(x).item()
         return score
 
@@ -118,11 +122,13 @@ class PreferenceModel:
             final_loss = loss.item()
 
         self.total_trained += len(labels)
-        self.train_history.append({
-            "batch_size": len(labels),
-            "loss": final_loss,
-            "total_trained": self.total_trained,
-        })
+        self.train_history.append(
+            {
+                "batch_size": len(labels),
+                "loss": final_loss,
+                "total_trained": self.total_trained,
+            }
+        )
 
         logger.info(
             f"Training step: batch_size={len(labels)}, loss={final_loss:.4f}, "
@@ -133,7 +139,9 @@ class PreferenceModel:
         self.save()
         return final_loss
 
-    def train_single(self, embedding: np.ndarray, label: float, epochs: int = 10) -> float:
+    def train_single(
+        self, embedding: np.ndarray, label: float, epochs: int = 10
+    ) -> float:
         """Train on a single paper feedback (online learning)."""
         return self.train_step([embedding], [label], epochs=epochs)
 
@@ -156,7 +164,9 @@ class PreferenceModel:
             logger.warning(f"No model found at {self.model_path}, using fresh model")
             return
 
-        checkpoint = torch.load(self.model_path, map_location=self.device, weights_only=True)
+        checkpoint = torch.load(
+            self.model_path, map_location=self.device, weights_only=True
+        )
 
         # Rebuild model if embedding dim changed
         saved_dim = checkpoint.get("embedding_dim", self.embedding_dim)
@@ -172,8 +182,7 @@ class PreferenceModel:
         self.total_trained = checkpoint.get("total_trained", 0)
         self.learning_rate = checkpoint.get("learning_rate", self.learning_rate)
         logger.info(
-            f"Model loaded from {self.model_path} "
-            f"(total_trained={self.total_trained})"
+            f"Model loaded from {self.model_path} (total_trained={self.total_trained})"
         )
 
     def get_stats(self) -> dict:

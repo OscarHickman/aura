@@ -53,7 +53,9 @@ class TestFetcher(unittest.TestCase):
         self.assertEqual(len(papers), 1)
         self.assertEqual(papers[0]["arxiv_id"], "2401.12345")
 
-    @patch("ai_papers.fetcher.requests.get", side_effect=requests.RequestException("boom"))
+    @patch(
+        "ai_papers.fetcher.requests.get", side_effect=requests.RequestException("boom")
+    )
     def test_fetch_papers_handles_request_exception(self, _mock_get):
         papers = fetcher.fetch_papers(["astro-ph.CO"], max_results=1, days_back=1)
         self.assertEqual(papers, [])

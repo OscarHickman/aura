@@ -9,7 +9,11 @@ class TestWebApp(unittest.TestCase):
         self.engine = Mock()
         self.engine.get_stats.return_value = {"database": {}, "model": {}}
         self.engine.get_recommendations.return_value = []
-        self.engine.generate_missing_summaries.return_value = {"status": "ok", "processed": 0, "updated": 0}
+        self.engine.generate_missing_summaries.return_value = {
+            "status": "ok",
+            "processed": 0,
+            "updated": 0,
+        }
         self.engine.retrain_full.return_value = {"status": "retrained"}
         self.engine.fetch_new_papers.return_value = 3
 

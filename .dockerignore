@@ -1,0 +1,14 @@
+.venv
+venv
+__pycache__
+*.pyc
+data/
+data/**
+.git
+.github
+.vscode
+env
+ENV
+*.sqlite3
+*.db
+*.pt

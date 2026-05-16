@@ -74,7 +74,9 @@ class TestEmailDigest(unittest.TestCase):
 
     @patch("ai_papers.email_digest._send_graph_email")
     @patch("ai_papers.email_digest.RecommendationEngine")
-    def test_send_top_recommendations_email_graph_path(self, mock_engine_cls, mock_graph_send):
+    def test_send_top_recommendations_email_graph_path(
+        self, mock_engine_cls, mock_graph_send
+    ):
         engine = Mock()
         engine.get_recommendations.return_value = [
             {

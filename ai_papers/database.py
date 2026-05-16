@@ -60,7 +60,12 @@ class PaperDatabase:
         """)
         self.conn.commit()
 
-    def add_paper(self, paper: dict, embedding: Optional[np.ndarray] = None, summary: Optional[str] = None) -> bool:
+    def add_paper(
+        self,
+        paper: dict,
+        embedding: Optional[np.ndarray] = None,
+        summary: Optional[str] = None,
+    ) -> bool:
         """Add a paper to the database. Returns True if newly inserted."""
         try:
             emb_blob = embedding.tobytes() if embedding is not None else None
@@ -88,12 +93,19 @@ class PaperDatabase:
             logger.error(f"Failed to add paper {paper.get('arxiv_id')}: {e}")
             return False
 
-    def add_papers_batch(self, papers: list[dict], embeddings: Optional[list[np.ndarray]] = None, summaries: Optional[list[str]] = None) -> int:
+    def add_papers_batch(
+        self,
+        papers: list[dict],
+        embeddings: Optional[list[np.ndarray]] = None,
+        summaries: Optional[list[str]] = None,
+    ) -> int:
         """Add multiple papers. Returns count of newly inserted papers."""
         now = datetime.utcnow().isoformat()
         count = 0
         for i, paper in enumerate(papers):
-            emb_blob = embeddings[i].tobytes() if embeddings and i < len(embeddings) else None
+            emb_blob = (
+                embeddings[i].tobytes() if embeddings and i < len(embeddings) else None
+            )
             summary = summaries[i] if summaries and i < len(summaries) else None
             try:
                 cursor = self.conn.execute(
@@ -187,7 +199,9 @@ class PaperDatabase:
         rows = self.conn.execute(query, (limit, offset)).fetchall()
         return [self._row_to_dict(row) for row in rows]
 
-    def get_papers_needing_summary(self, limit: int = 100, include_failed: bool = True) -> list[dict]:
+    def get_papers_needing_summary(
+        self, limit: int = 100, include_failed: bool = True
+    ) -> list[dict]:
         """Get papers whose summaries should be generated or retried."""
         if include_failed:
             query = """
@@ -207,7 +221,9 @@ class PaperDatabase:
         rows = self.conn.execute(query, (limit,)).fetchall()
         return [self._row_to_dict(row) for row in rows]
 
-    def get_papers_with_embeddings(self, arxiv_ids: Optional[list[str]] = None) -> list[tuple[dict, np.ndarray]]:
+    def get_papers_with_embeddings(
+        self, arxiv_ids: Optional[list[str]] = None
+    ) -> list[tuple[dict, np.ndarray]]:
         """Get papers that have embeddings, optionally filtered by IDs."""
         if arxiv_ids:
             placeholders = ",".join("?" * len(arxiv_ids))

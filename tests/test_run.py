@@ -30,11 +30,17 @@ class TestRunModule(unittest.TestCase):
         mock_engine_cls.return_value = engine
 
         args = Namespace(max_results=11, days_back=4, with_summaries=True)
-        config = {"data_dir": "data", "categories": ["astro-ph.CO"], "embedding_model": "all-MiniLM-L6-v2"}
+        config = {
+            "data_dir": "data",
+            "categories": ["astro-ph.CO"],
+            "embedding_model": "all-MiniLM-L6-v2",
+        }
 
         run.cmd_fetch(args, config)
 
-        engine.fetch_new_papers.assert_called_once_with(max_results=11, days_back=4, generate_summaries=True)
+        engine.fetch_new_papers.assert_called_once_with(
+            max_results=11, days_back=4, generate_summaries=True
+        )
         engine.close.assert_called_once()
 
     @patch("ai_papers.recommender.RecommendationEngine")
@@ -44,18 +50,28 @@ class TestRunModule(unittest.TestCase):
         mock_engine_cls.return_value = engine
 
         args = Namespace(limit=20, only_missing=True)
-        config = {"data_dir": "data", "categories": ["astro-ph.CO"], "embedding_model": "all-MiniLM-L6-v2"}
+        config = {
+            "data_dir": "data",
+            "categories": ["astro-ph.CO"],
+            "embedding_model": "all-MiniLM-L6-v2",
+        }
 
         run.cmd_summarize(args, config)
 
-        engine.generate_missing_summaries.assert_called_once_with(limit=20, include_failed=False)
+        engine.generate_missing_summaries.assert_called_once_with(
+            limit=20, include_failed=False
+        )
 
     @patch("ai_papers.email_digest.send_top_recommendations_email")
     def test_cmd_email_digest(self, mock_send):
         mock_send.return_value = {"status": "sent", "sent": True}
 
         args = Namespace(top_n=3, email_config="user_credentials/email_config.json")
-        config = {"data_dir": "data", "categories": ["astro-ph.CO"], "embedding_model": "all-MiniLM-L6-v2"}
+        config = {
+            "data_dir": "data",
+            "categories": ["astro-ph.CO"],
+            "embedding_model": "all-MiniLM-L6-v2",
+        }
 
         run.cmd_email_digest(args, config)
 

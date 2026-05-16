@@ -55,7 +55,9 @@ def _acquire_graph_token(email_config: dict) -> str:
     try:
         import msal
     except ImportError as exc:
-        raise RuntimeError("msal is required for use_graph_api=true. Install with: pip install msal") from exc
+        raise RuntimeError(
+            "msal is required for use_graph_api=true. Install with: pip install msal"
+        ) from exc
 
     client_id = email_config["ms_client_id"]
     if client_id in ("YOUR_AZURE_APP_CLIENT_ID", "", None):
@@ -90,7 +92,9 @@ def _acquire_graph_token(email_config: dict) -> str:
 
     result = app.acquire_token_by_device_flow(flow)
     if not result or "access_token" not in result:
-        message = (result or {}).get("error_description", "Failed to acquire Microsoft Graph token")
+        message = (result or {}).get(
+            "error_description", "Failed to acquire Microsoft Graph token"
+        )
         raise RuntimeError(message)
 
     return result["access_token"]
@@ -135,10 +139,14 @@ def _send_graph_email(email_config: dict, subject: str, text_body: str, html_bod
         timeout=30,
     )
     if response.status_code not in (200, 202):
-        raise RuntimeError(f"Microsoft Graph send failed: HTTP {response.status_code} - {response.text}")
+        raise RuntimeError(
+            f"Microsoft Graph send failed: HTTP {response.status_code} - {response.text}"
+        )
 
 
-def _collect_top_papers_with_summaries(engine: RecommendationEngine, top_n: int) -> list[dict]:
+def _collect_top_papers_with_summaries(
+    engine: RecommendationEngine, top_n: int
+) -> list[dict]:
     """Get top recommendations and ensure each has a non-empty summary."""
     papers = engine.get_recommendations(limit=top_n, unrated_only=True)
     hydrated = []
@@ -159,7 +167,9 @@ def _collect_top_papers_with_summaries(engine: RecommendationEngine, top_n: int)
     return hydrated
 
 
-def _build_email_content(papers: list[dict], app_name: str = "AI Papers") -> tuple[str, str]:
+def _build_email_content(
+    papers: list[dict], app_name: str = "AI Papers"
+) -> tuple[str, str]:
     """Create plain-text and HTML digest bodies."""
     text_lines = [f"{app_name} - Top {len(papers)} Recommendations", ""]
     html_items = []

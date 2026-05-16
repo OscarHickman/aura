@@ -15,7 +15,12 @@ logger = logging.getLogger(__name__)
 class RecommendationEngine:
     """Main engine that orchestrates paper fetching, embedding, scoring, and training."""
 
-    def __init__(self, data_dir: str | Path, categories: list[str], embedding_model: str = "all-MiniLM-L6-v2"):
+    def __init__(
+        self,
+        data_dir: str | Path,
+        categories: list[str],
+        embedding_model: str = "all-MiniLM-L6-v2",
+    ):
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
@@ -31,7 +36,12 @@ class RecommendationEngine:
             embedding_dim=embedding_dim,
         )
 
-    def fetch_new_papers(self, max_results: int = 200, days_back: int = 2, generate_summaries: bool = False) -> int:
+    def fetch_new_papers(
+        self,
+        max_results: int = 200,
+        days_back: int = 2,
+        generate_summaries: bool = False,
+    ) -> int:
         """Fetch new papers from arXiv, embed them, and store in database.
 
         Returns the number of new papers added.
@@ -39,7 +49,9 @@ class RecommendationEngine:
         logger.info(f"Fetching papers for categories: {self.categories}")
 
         # Try date-filtered fetch first, fall back to simple fetch
-        papers = fetch_papers(self.categories, max_results=max_results, days_back=days_back)
+        papers = fetch_papers(
+            self.categories, max_results=max_results, days_back=days_back
+        )
         if not papers:
             logger.info("Date-filtered fetch returned no papers, trying simple fetch")
             papers = fetch_papers_simple(self.categories, max_results=max_results)
@@ -79,12 +91,16 @@ class RecommendationEngine:
         self.db.log_fetch(count, self.categories)
 
         if generate_summaries and papers_needing_summary:
-            self.generate_missing_summaries(limit=len(papers_needing_summary), include_failed=False)
+            self.generate_missing_summaries(
+                limit=len(papers_needing_summary), include_failed=False
+            )
 
         logger.info(f"Added {count} new papers to database")
         return count
 
-    def _generate_summaries_for_papers(self, papers: list[dict], retry: bool = True) -> list[str]:
+    def _generate_summaries_for_papers(
+        self, papers: list[dict], retry: bool = True
+    ) -> list[str]:
         """Generate summaries for a specific list of papers."""
         summaries = []
         providers = _load_providers_order()
@@ -99,13 +115,18 @@ class RecommendationEngine:
             )
             if (index + 1) % 5 == 0:
                 import time
+
                 time.sleep(1)
 
         return summaries
 
-    def generate_missing_summaries(self, limit: int = 50, include_failed: bool = True) -> dict:
+    def generate_missing_summaries(
+        self, limit: int = 50, include_failed: bool = True
+    ) -> dict:
         """Launch LLM summary requests separately for stored papers."""
-        papers = self.db.get_papers_needing_summary(limit=limit, include_failed=include_failed)
+        papers = self.db.get_papers_needing_summary(
+            limit=limit, include_failed=include_failed
+        )
         if not papers:
             return {
                 "status": "no_work",
@@ -155,7 +176,9 @@ class RecommendationEngine:
             "failed": stored_summary == "AI Fail" or not stored_summary,
         }
 
-    def get_recommendations(self, limit: int = 50, unrated_only: bool = True) -> list[dict]:
+    def get_recommendations(
+        self, limit: int = 50, unrated_only: bool = True
+    ) -> list[dict]:
         """Get papers ranked by predicted interest score with freshness boost.
 
         Ranking factors:
@@ -170,8 +193,7 @@ class RecommendationEngine:
         Returns:
             List of paper dicts with added 'score' key, sorted by score descending.
         """
-        from datetime import datetime, timedelta
-        import numpy as np
+        from datetime import datetime
 
         papers = self.db.get_papers(limit=500, unrated_only=unrated_only)
         if not papers:
@@ -217,17 +239,23 @@ class RecommendationEngine:
 
             # Freshness boost: papers from last 7 days get a boost
             try:
-                pub_date = datetime.fromisoformat(paper["published"].replace('Z', '+00:00'))
+                pub_date = datetime.fromisoformat(
+                    paper["published"].replace("Z", "+00:00")
+                )
                 days_old = (now - pub_date.replace(tzinfo=None)).days
                 freshness_bonus = max(0, 0.15 * (1 - min(days_old / 7, 1)))
             except (ValueError, TypeError):
                 freshness_bonus = 0
 
             # Summary bonus: papers with summaries get a small boost
-            summary_bonus = 0.05 if paper.get("summary") and paper["summary"] != "AI Fail" else 0
+            summary_bonus = (
+                0.05 if paper.get("summary") and paper["summary"] != "AI Fail" else 0
+            )
 
             # Combine scores
-            paper["score"] = round(min(1.0, base_score + freshness_bonus + summary_bonus), 4)
+            paper["score"] = round(
+                min(1.0, base_score + freshness_bonus + summary_bonus), 4
+            )
             paper["freshness_bonus"] = round(freshness_bonus, 4)
 
         # Sort by composite score, then by date (newest first)
@@ -236,7 +264,7 @@ class RecommendationEngine:
                 p["score"],
                 p.get("published", ""),
             ),
-            reverse=True
+            reverse=True,
         )
 
         return scorable_papers[:limit]
@@ -259,7 +287,10 @@ class RecommendationEngine:
         if not papers_emb:
             return {"status": "rated", "trained": False, "reason": "no embedding"}
 
-        _, embedding, = papers_emb[0]
+        (
+            _,
+            embedding,
+        ) = papers_emb[0]
 
         # Online learning: train on this single example
         loss = self.preference_model.train_single(embedding, float(rating))
@@ -279,7 +310,10 @@ class RecommendationEngine:
         embeddings, labels = self.db.get_training_data()
 
         if not embeddings:
-            return {"status": "no_data", "message": "No rated papers with embeddings found"}
+            return {
+                "status": "no_data",
+                "message": "No rated papers with embeddings found",
+            }
 
         # Reset model for full retrain
         embedding_dim = self.preference_model.embedding_dim

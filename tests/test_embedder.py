@@ -17,7 +17,9 @@ class TestEmbedder(unittest.TestCase):
 
         self.assertIsInstance(vec, np.ndarray)
         self.assertEqual(vec.dtype, np.float32)
-        model.encode.assert_called_once_with("Title. Abstract", normalize_embeddings=True)
+        model.encode.assert_called_once_with(
+            "Title. Abstract", normalize_embeddings=True
+        )
 
     @patch("ai_papers.embedder.get_model")
     def test_embed_papers_batch_uses_batch_size(self, mock_get_model):

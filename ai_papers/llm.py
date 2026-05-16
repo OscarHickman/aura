@@ -22,6 +22,7 @@ _providers_order_cache: Optional[list[str]] = None
 # Config loading
 # ---------------------------------------------------------------------------
 
+
 def _repo_root() -> Path:
     return Path(__file__).resolve().parent.parent
 
@@ -75,6 +76,7 @@ def get_default_provider() -> str:
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _warn_once(message: str):
     """Log a warning only once per process."""
     if message not in _warned_messages:
@@ -82,7 +84,9 @@ def _warn_once(message: str):
         _warned_messages.add(message)
 
 
-def _resolve_api_key(explicit_key: Optional[str], env_var_name: str, provider: str = "") -> Optional[str]:
+def _resolve_api_key(
+    explicit_key: Optional[str], env_var_name: str, provider: str = ""
+) -> Optional[str]:
     """Resolve API key: explicit → LLM_API_KEY env → provider env → provider config file."""
     if explicit_key:
         return explicit_key
@@ -156,6 +160,7 @@ def _clean_summary_text(text: Optional[str]) -> Optional[str]:
 # Public entry point
 # ---------------------------------------------------------------------------
 
+
 def generate_summary(
     title: str,
     abstract: str,
@@ -203,7 +208,10 @@ def generate_summary(
 # Provider implementations
 # ---------------------------------------------------------------------------
 
-def _summarize_groq(title: str, abstract: str, api_key: Optional[str] = None) -> Optional[str]:
+
+def _summarize_groq(
+    title: str, abstract: str, api_key: Optional[str] = None
+) -> Optional[str]:
     """Summarize using Groq API (fast, generous free tier)."""
     try:
         from groq import Groq
@@ -213,13 +221,19 @@ def _summarize_groq(title: str, abstract: str, api_key: Optional[str] = None) ->
 
     api_key = _resolve_api_key(api_key, "GROQ_API_KEY", "groq")
     if not api_key:
-        _warn_once("No Groq API key found. Set GROQ_API_KEY, LLM_API_KEY, or groq_llm_config.json.")
+        _warn_once(
+            "No Groq API key found. Set GROQ_API_KEY, LLM_API_KEY, or groq_llm_config.json."
+        )
         return None
 
     configured_model = _get_provider_setting("groq", "model")
     candidate_models = [
         model
-        for model in [configured_model, "llama-3.1-8b-instant", "llama-3.3-70b-versatile"]
+        for model in [
+            configured_model,
+            "llama-3.1-8b-instant",
+            "llama-3.3-70b-versatile",
+        ]
         if model
     ]
 
@@ -246,11 +260,15 @@ def _summarize_groq(title: str, abstract: str, api_key: Optional[str] = None) ->
         return None
 
 
-def _summarize_google(title: str, abstract: str, api_key: Optional[str] = None, retry: bool = True) -> Optional[str]:
+def _summarize_google(
+    title: str, abstract: str, api_key: Optional[str] = None, retry: bool = True
+) -> Optional[str]:
     """Summarize using Google Gemini via the REST API."""
     api_key = _resolve_api_key(api_key, "GOOGLE_API_KEY", "google")
     if not api_key:
-        _warn_once("No Google API key found. Set GOOGLE_API_KEY, LLM_API_KEY, or google_llm_config.json.")
+        _warn_once(
+            "No Google API key found. Set GOOGLE_API_KEY, LLM_API_KEY, or google_llm_config.json."
+        )
         return None
 
     endpoint = (
@@ -278,9 +296,13 @@ def _summarize_google(title: str, abstract: str, api_key: Optional[str] = None, 
             text = "".join(part.get("text", "") for part in parts).strip()
             return _clean_summary_text(text)
         except requests.HTTPError as error:
-            status_code = error.response.status_code if error.response is not None else "unknown"
+            status_code = (
+                error.response.status_code if error.response is not None else "unknown"
+            )
             if status_code == 429 and retry and delay_seconds != 10:
-                logger.warning("Google API rate limited (HTTP 429). Retrying after backoff.")
+                logger.warning(
+                    "Google API rate limited (HTTP 429). Retrying after backoff."
+                )
                 continue
             logger.error(f"Google API error: HTTP {status_code}")
             return None
@@ -291,7 +313,9 @@ def _summarize_google(title: str, abstract: str, api_key: Optional[str] = None, 
     return None
 
 
-def _summarize_openai(title: str, abstract: str, api_key: Optional[str] = None) -> Optional[str]:
+def _summarize_openai(
+    title: str, abstract: str, api_key: Optional[str] = None
+) -> Optional[str]:
     """Summarize using OpenAI API."""
     try:
         from openai import OpenAI
@@ -301,14 +325,18 @@ def _summarize_openai(title: str, abstract: str, api_key: Optional[str] = None) 
 
     api_key = _resolve_api_key(api_key, "OPENAI_API_KEY", "openai")
     if not api_key:
-        _warn_once("No OpenAI API key found. Set OPENAI_API_KEY, LLM_API_KEY, or openai_llm_config.json.")
+        _warn_once(
+            "No OpenAI API key found. Set OPENAI_API_KEY, LLM_API_KEY, or openai_llm_config.json."
+        )
         return None
 
     try:
         client = OpenAI(api_key=api_key)
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": _build_summary_prompt(title, abstract)}],
+            messages=[
+                {"role": "user", "content": _build_summary_prompt(title, abstract)}
+            ],
             max_tokens=150,
             temperature=0.5,
         )
@@ -318,17 +346,23 @@ def _summarize_openai(title: str, abstract: str, api_key: Optional[str] = None) 
         return None
 
 
-def _summarize_anthropic(title: str, abstract: str, api_key: Optional[str] = None) -> Optional[str]:
+def _summarize_anthropic(
+    title: str, abstract: str, api_key: Optional[str] = None
+) -> Optional[str]:
     """Summarize using Anthropic Claude API."""
     try:
         import anthropic
     except ImportError:
-        _warn_once("anthropic package not installed. Install with: pip install anthropic")
+        _warn_once(
+            "anthropic package not installed. Install with: pip install anthropic"
+        )
         return None
 
     api_key = _resolve_api_key(api_key, "ANTHROPIC_API_KEY", "anthropic")
     if not api_key:
-        _warn_once("No Anthropic API key found. Set ANTHROPIC_API_KEY, LLM_API_KEY, or anthropic_llm_config.json.")
+        _warn_once(
+            "No Anthropic API key found. Set ANTHROPIC_API_KEY, LLM_API_KEY, or anthropic_llm_config.json."
+        )
         return None
 
     try:
@@ -336,7 +370,9 @@ def _summarize_anthropic(title: str, abstract: str, api_key: Optional[str] = Non
         message = client.messages.create(
             model="claude-3-5-sonnet-20241022",
             max_tokens=150,
-            messages=[{"role": "user", "content": _build_summary_prompt(title, abstract)}],
+            messages=[
+                {"role": "user", "content": _build_summary_prompt(title, abstract)}
+            ],
         )
         return _clean_summary_text(message.content[0].text)
     except Exception as e:
@@ -351,4 +387,3 @@ _PROVIDER_FUNCS = {
     "openai": _summarize_openai,
     "anthropic": _summarize_anthropic,
 }
-

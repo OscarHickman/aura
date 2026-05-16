@@ -172,7 +172,9 @@ def _setup_scheduler(app, config):
     try:
         from apscheduler.schedulers.background import BackgroundScheduler
     except ImportError:
-        print("Warning: apscheduler not installed. Install with: pip install apscheduler")
+        print(
+            "Warning: apscheduler not installed. Install with: pip install apscheduler"
+        )
         return
 
     sched_config = config.get("scheduler", {})
@@ -186,6 +188,7 @@ def _setup_scheduler(app, config):
     def daily_fetch():
         with app.app_context():
             from ai_papers.web.app import engine
+
             if engine:
                 fetch_config = config.get("fetch", {})
                 count = engine.fetch_new_papers(
@@ -200,7 +203,9 @@ def _setup_scheduler(app, config):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="AI Papers - Personalized arXiv Recommender")
+    parser = argparse.ArgumentParser(
+        description="AI Papers - Personalized arXiv Recommender"
+    )
     parser.add_argument("--config", default="config.yaml", help="Path to config file")
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose logging")
 
@@ -208,33 +213,51 @@ def main():
 
     # serve
     serve_parser = subparsers.add_parser("serve", help="Start the web UI")
-    serve_parser.add_argument("--scheduler", action="store_true", help="Enable daily auto-fetch scheduler")
+    serve_parser.add_argument(
+        "--scheduler", action="store_true", help="Enable daily auto-fetch scheduler"
+    )
 
     # fetch
     fetch_parser = subparsers.add_parser("fetch", help="Fetch new papers from arXiv")
     fetch_parser.add_argument("--max-results", type=int, help="Max papers to fetch")
     fetch_parser.add_argument("--days-back", type=int, help="Days back to search")
-    fetch_parser.add_argument("--with-summaries", action="store_true", help="Also generate summaries during fetch")
+    fetch_parser.add_argument(
+        "--with-summaries",
+        action="store_true",
+        help="Also generate summaries during fetch",
+    )
 
     # summarize
-    summarize_parser = subparsers.add_parser("summarize", help="Launch LLM summaries separately")
-    summarize_parser.add_argument("--limit", type=int, default=20, help="Number of papers to summarize")
-    summarize_parser.add_argument("--only-missing", action="store_true", help="Skip papers already marked AI Fail")
+    summarize_parser = subparsers.add_parser(
+        "summarize", help="Launch LLM summaries separately"
+    )
+    summarize_parser.add_argument(
+        "--limit", type=int, default=20, help="Number of papers to summarize"
+    )
+    summarize_parser.add_argument(
+        "--only-missing", action="store_true", help="Skip papers already marked AI Fail"
+    )
 
     # recommend
     rec_parser = subparsers.add_parser("recommend", help="Print top recommendations")
-    rec_parser.add_argument("--limit", type=int, default=20, help="Number of papers to show")
+    rec_parser.add_argument(
+        "--limit", type=int, default=20, help="Number of papers to show"
+    )
 
     # retrain
     retrain_parser = subparsers.add_parser("retrain", help="Full model retrain")
-    retrain_parser.add_argument("--epochs", type=int, default=20, help="Training epochs")
+    retrain_parser.add_argument(
+        "--epochs", type=int, default=20, help="Training epochs"
+    )
 
     # email digest
     email_parser = subparsers.add_parser(
         "email-digest",
         help="Email top recommended papers with AI summaries",
     )
-    email_parser.add_argument("--top-n", type=int, default=3, help="Number of top papers to include")
+    email_parser.add_argument(
+        "--top-n", type=int, default=3, help="Number of top papers to include"
+    )
     email_parser.add_argument(
         "--email-config",
         default="user_credentials/email_config.json",

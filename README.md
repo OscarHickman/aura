@@ -1,3 +1,8 @@
+# CI
+
+[![CI](https://github.com/OscarHickman/ai_papers/actions/workflows/ci.yml/badge.svg)](https://github.com/OscarHickman/ai_papers/actions/workflows/ci.yml)
+[![Deploy](https://github.com/OscarHickman/ai_papers/actions/workflows/deploy.yml/badge.svg)](https://github.com/OscarHickman/ai_papers/actions/workflows/deploy.yml)
+
 # arXiv Paper Recommender
 
 Local tool to fetch arXiv papers, rank them from your ratings, and send a daily email digest.
@@ -61,3 +66,95 @@ python run.py email-digest --top-n 3
 
 - Do not store real passwords in README or commit them to git.
 - Python 3.10+ required.
+
+## Deployment (Ubuntu server)
+
+Recommended: run in Docker. Alternative steps for a manual server install are also provided.
+
+Docker (recommended)
+
+- Build and push an image (or let GitHub Actions build & push to GitHub Container Registry):
+
+```bash
+# Build locally and tag (replace OWNER/REPO)
+docker build -t ghcr.io/OWNER/REPO:latest .
+docker push ghcr.io/OWNER/REPO:latest
+```
+
+- On your Ubuntu server (or let Actions deploy via SSH):
+
+```bash
+ssh deploy-user@your-server
+docker pull ghcr.io/OWNER/REPO:latest
+docker stop ai_papers_app || true
+docker rm ai_papers_app || true
+docker run -d --restart unless-stopped -p 80:5000 --name ai_papers_app ghcr.io/OWNER/REPO:latest
+```
+
+GitHub Actions deployment
+
+- The workflow `.github/workflows/deploy.yml` builds and pushes to `ghcr.io/${{ github.repository }}`. To enable the SSH deploy step, set these repository secrets:
+
+- `DEPLOY_SSH_HOST` — your server host or IP
+- `DEPLOY_SSH_USER` — SSH user
+- `SSH_PRIVATE_KEY` — private key (no passphrase) for `DEPLOY_SSH_USER`
+- Optional: `DEPLOY_SSH_PORT`
+
+Manual (no Docker)
+
+1. SSH to your Ubuntu server and install system packages:
+
+```bash
+sudo apt update
+sudo apt install -y python3 python3-venv python3-pip git build-essential
+```
+
+2. Clone the repo, create a virtualenv, and install dependencies:
+
+```bash
+git clone https://github.com/OWNER/REPO.git
+cd REPO
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+3. Run the app (development):
+
+```bash
+python run.py serve --config config.yaml
+```
+
+4. For production, run with Gunicorn (recommended) — a WSGI entrypoint is provided at `deploy/wsgi.py`:
+
+```bash
+# From the repository root
+pip install gunicorn
+gunicorn "deploy.wsgi:app" -w 4 -b 0.0.0.0:5000
+```
+
+5. (Optional) Create a `systemd` service to run the app on boot. Example service `/etc/systemd/system/ai_papers.service`:
+
+```
+[Unit]
+Description=AI Papers service
+After=network.target
+
+[Service]
+User=youruser
+WorkingDirectory=/path/to/REPO
+Environment="PATH=/path/to/REPO/.venv/bin"
+ExecStart=/path/to/REPO/.venv/bin/gunicorn "ai_papers.web.app:create_app()" -w 4 -b 0.0.0.0:5000
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Notes
+
+- Replace `OWNER/REPO` and paths with your repository and server details.
+- Keep secrets out of the repo; use environment variables or `user_credentials/` for local config.
+- The provided GitHub Actions workflow will build and push the image to GHCR and can deploy via SSH when secrets are set.
+

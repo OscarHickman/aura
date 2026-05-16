@@ -36,15 +36,27 @@ class TestLLM(unittest.TestCase):
 
     @patch("ai_papers.llm._load_provider_config", return_value={"api_key": "cfg-key"})
     def test_resolve_api_key_priority(self, _mock_cfg):
-        with patch.dict(os.environ, {"LLM_API_KEY": "global", "OPENAI_API_KEY": "provider"}, clear=True):
-            self.assertEqual(llm._resolve_api_key("explicit", "OPENAI_API_KEY", "openai"), "explicit")
-            self.assertEqual(llm._resolve_api_key(None, "OPENAI_API_KEY", "openai"), "global")
+        with patch.dict(
+            os.environ,
+            {"LLM_API_KEY": "global", "OPENAI_API_KEY": "provider"},
+            clear=True,
+        ):
+            self.assertEqual(
+                llm._resolve_api_key("explicit", "OPENAI_API_KEY", "openai"), "explicit"
+            )
+            self.assertEqual(
+                llm._resolve_api_key(None, "OPENAI_API_KEY", "openai"), "global"
+            )
 
         with patch.dict(os.environ, {"OPENAI_API_KEY": "provider"}, clear=True):
-            self.assertEqual(llm._resolve_api_key(None, "OPENAI_API_KEY", "openai"), "provider")
+            self.assertEqual(
+                llm._resolve_api_key(None, "OPENAI_API_KEY", "openai"), "provider"
+            )
 
         with patch.dict(os.environ, {}, clear=True):
-            self.assertEqual(llm._resolve_api_key(None, "OPENAI_API_KEY", "openai"), "cfg-key")
+            self.assertEqual(
+                llm._resolve_api_key(None, "OPENAI_API_KEY", "openai"), "cfg-key"
+            )
 
     def test_load_providers_order_from_file_and_default(self):
         with tempfile.TemporaryDirectory() as td:
@@ -53,7 +65,9 @@ class TestLLM(unittest.TestCase):
                 llm._providers_order_cache = None
                 self.assertEqual(llm._load_providers_order(), ["groq"])
 
-                (cred / "llm_providers.json").write_text(json.dumps({"order": ["openai", "groq"]}))
+                (cred / "llm_providers.json").write_text(
+                    json.dumps({"order": ["openai", "groq"]})
+                )
                 llm._providers_order_cache = None
                 self.assertEqual(llm._load_providers_order(), ["openai", "groq"])
 
