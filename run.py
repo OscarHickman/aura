@@ -18,17 +18,20 @@ import logging
 import sys
 from pathlib import Path
 
-import yaml
 
 
 def load_config(config_path: str = "config.yaml") -> dict:
-    """Load configuration from YAML file."""
+    """Load and validate configuration."""
+    from ai_papers.config import get_validated_config
     path = Path(config_path)
-    if path.exists():
-        with open(path) as f:
-            return yaml.safe_load(f) or {}
-    print(f"Warning: Config file '{config_path}' not found, using defaults.")
-    return {}
+    if not path.exists():
+        print(f"Warning: Config file '{config_path}' not found, using defaults.")
+        return {}
+    try:
+        return get_validated_config(config_path)
+    except Exception as e:
+        print(f"Configuration Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
 
 def cmd_serve(args, config):

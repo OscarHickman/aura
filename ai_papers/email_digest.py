@@ -11,6 +11,7 @@ from typing import Optional
 
 import requests
 
+from .config import get_validated_config
 from .llm import AI_FAIL_SUMMARY
 from .recommender import RecommendationEngine
 from .trends import generate_monthly_trends
@@ -18,18 +19,30 @@ from .trends import generate_monthly_trends
 logger = logging.getLogger(__name__)
 
 
-def _default_email_config_path() -> Path:
-    repo_root = Path(__file__).resolve().parent.parent
-    return repo_root / "user_credentials" / "email_config.json"
-
-
 def load_email_config(config_path: Optional[str] = None) -> dict:
-    """Load and validate SMTP/email settings from JSON."""
-    path = Path(config_path) if config_path else _default_email_config_path()
-    if not path.exists():
-        raise FileNotFoundError(f"Email config not found: {path}")
+    """Load and validate SMTP/email settings."""
+    if config_path:
+        path = Path(config_path)
+        if not path.exists():
+            raise FileNotFoundError(f"Email config not found: {path}")
+        if path.suffix == ".json":
+            with open(path) as f:
+                data = json.load(f)
+        else:
+            try:
+                main_config = get_validated_config(config_path)
+                data = main_config.get("email", {})
+            except Exception:
+                data = {}
+    else:
+        try:
+            main_config = get_validated_config()
+            data = main_config.get("email", {})
+        except Exception:
+            data = {}
 
-    data = json.loads(path.read_text())
+    if not data or not any(data.values()):
+        raise ValueError("Email notifications are not configured.")
 
     use_graph_api = bool(data.get("use_graph_api", False))
     if use_graph_api:

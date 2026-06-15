@@ -1,0 +1,167 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AURA Configuration Schema",
+  "type": "object",
+  "properties": {
+    "categories": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "data_dir": {
+      "type": "string"
+    },
+    "embedding_model": {
+      "type": "string"
+    },
+    "host": {
+      "type": "string"
+    },
+    "port": {
+      "type": "integer"
+    },
+    "debug": {
+      "type": "boolean"
+    },
+    "fetch": {
+      "type": "object",
+      "properties": {
+        "max_results": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "days_back": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "summaries": {
+      "type": "object",
+      "properties": {
+        "generate_on_fetch": {
+          "type": "boolean"
+        },
+        "batch_size": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "scheduler": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "fetch_hour": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 23
+        },
+        "fetch_minute": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 59
+        }
+      },
+      "additionalProperties": false
+    },
+    "celery": {
+      "type": "object",
+      "properties": {
+        "broker_url": {
+          "type": "string"
+        },
+        "result_backend": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "email": {
+      "type": "object",
+      "properties": {
+        "use_graph_api": {
+          "type": "boolean"
+        },
+        "smtp_host": {
+          "type": "string"
+        },
+        "smtp_port": {
+          "type": "integer"
+        },
+        "smtp_username": {
+          "type": "string"
+        },
+        "smtp_password": {
+          "type": "string"
+        },
+        "from_email": {
+          "type": "string"
+        },
+        "to_email": {
+          "type": "string"
+        },
+        "use_tls": {
+          "type": "boolean"
+        },
+        "use_ssl": {
+          "type": "boolean"
+        },
+        "subject_prefix": {
+          "type": "string"
+        },
+        "ms_client_id": {
+          "type": "string"
+        },
+        "ms_tenant": {
+          "type": "string"
+        },
+        "ms_scopes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "llm": {
+      "type": "object",
+      "properties": {
+        "providers_order": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "providers": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "api_key": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "categories",
+    "data_dir",
+    "embedding_model"
+  ]
+}

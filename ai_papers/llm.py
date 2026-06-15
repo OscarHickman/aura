@@ -10,6 +10,7 @@ from typing import Optional
 
 import requests
 
+
 logger = logging.getLogger(__name__)
 
 AI_FAIL_SUMMARY = "AI Fail"
@@ -32,39 +33,44 @@ def _credentials_dir() -> Path:
 
 
 def _load_provider_config(provider: str) -> dict:
-    """Load config from user_credentials/{provider}_llm_config.json."""
-    if provider in _provider_config_cache:
-        return _provider_config_cache[provider]
+    """Load config for a specific provider, falling back to legacy credentials file."""
+    try:
+        from .config import load_config_file
+        raw_config = load_config_file()
+        if "llm" in raw_config and "providers" in raw_config["llm"] and provider in raw_config["llm"]["providers"]:
+            return raw_config["llm"]["providers"][provider]
+    except Exception:
+        pass
 
     path = _credentials_dir() / f"{provider}_llm_config.json"
     if not path.exists():
-        _provider_config_cache[provider] = {}
         return {}
     try:
-        _provider_config_cache[provider] = json.loads(path.read_text())
-    except (OSError, json.JSONDecodeError) as e:
+        return json.loads(path.read_text())
+    except Exception as e:
         _warn_once(f"Failed to read {path.name}: {e}")
-        _provider_config_cache[provider] = {}
-    return _provider_config_cache[provider]
+        return {}
 
 
 def _load_providers_order() -> list[str]:
-    """Load provider preference order from user_credentials/llm_providers.json."""
-    global _providers_order_cache
-    if _providers_order_cache is not None:
-        return _providers_order_cache
+    """Load provider preference order, falling back to legacy providers file."""
+    try:
+        from .config import load_config_file
+        raw_config = load_config_file()
+        if "llm" in raw_config and "providers_order" in raw_config["llm"]:
+            return raw_config["llm"]["providers_order"]
+    except Exception:
+        pass
 
     path = _credentials_dir() / "llm_providers.json"
     if not path.exists():
-        _providers_order_cache = ["groq"]
-        return _providers_order_cache
+        return ["groq"]
     try:
         data = json.loads(path.read_text())
-        _providers_order_cache = data.get("order", ["groq"])
-    except (OSError, json.JSONDecodeError) as e:
+        return data.get("order", ["groq"])
+    except Exception as e:
         _warn_once(f"Failed to read llm_providers.json: {e}")
-        _providers_order_cache = ["groq"]
-    return _providers_order_cache
+        return ["groq"]
 
 
 def get_default_provider() -> str:

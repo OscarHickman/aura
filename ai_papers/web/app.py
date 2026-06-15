@@ -3,10 +3,11 @@
 import logging
 import os
 
-import yaml
 from flask import Flask, jsonify, render_template, request
 
 from ..recommender import RecommendationEngine
+
+from ..config import get_validated_config
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,12 @@ def create_app(config_path: str = None) -> Flask:
     if config_path is None:
         config_path = os.environ.get("AI_PAPERS_CONFIG", "config.yaml")
 
-    config = _load_config(config_path)
+    try:
+        config = get_validated_config(config_path)
+    except Exception as e:
+        logger.error(f"Failed to start AURA: {e}")
+        raise SystemExit(f"Configuration error: {e}")
+        
     app.config["AI_PAPERS"] = config
 
     # Initialize recommendation engine
@@ -36,16 +42,6 @@ def create_app(config_path: str = None) -> Flask:
     _register_routes(app)
 
     return app
-
-
-def _load_config(config_path: str) -> dict:
-    """Load configuration from YAML file."""
-    path = os.path.abspath(config_path)
-    if os.path.exists(path):
-        with open(path) as f:
-            return yaml.safe_load(f) or {}
-    logger.warning(f"Config file not found at {path}, using defaults")
-    return {}
 
 
 def _register_routes(app: Flask):
@@ -192,6 +188,23 @@ def _register_routes(app: Flask):
     def stats():
         """API endpoint for system statistics."""
         return jsonify(engine.get_stats())
+
+    @app.route("/api/config", methods=["GET"])
+    def get_live_config():
+        """API endpoint to get live configuration, stripping out any secrets."""
+        import copy
+        config_copy = copy.deepcopy(app.config.get("AI_PAPERS", {}))
+        
+        # Strip secrets
+        if "email" in config_copy:
+            if "smtp_password" in config_copy["email"]:
+                config_copy["email"]["smtp_password"] = "********"
+        if "llm" in config_copy and "providers" in config_copy["llm"]:
+            for prov in config_copy["llm"]["providers"]:
+                if "api_key" in config_copy["llm"]["providers"][prov]:
+                    config_copy["llm"]["providers"][prov]["api_key"] = "********"
+                    
+        return jsonify(config_copy)
 
     @app.route("/health")
     def health():

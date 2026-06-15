@@ -1,0 +1,67 @@
+# AURA Configuration Example
+# Copy this to config.yaml and edit to customize your settings.
+
+# arXiv categories to fetch papers from
+categories:
+  - astro-ph.CO   # Cosmology and Nongalactic Astrophysics
+  - astro-ph.GA   # Astrophysics of Galaxies
+  - astro-ph.HE   # High Energy Astrophysical Phenomena
+  - astro-ph.SR   # Solar and Stellar Astrophysics
+
+# Where to store the database, model weights, etc.
+data_dir: data
+
+# Sentence-transformer model for paper embeddings
+embedding_model: all-MiniLM-L6-v2
+
+# Web server settings
+host: 127.0.0.1
+port: 5000
+debug: false
+
+# Fetch settings
+fetch:
+  max_results: 200     # Max papers per fetch
+  days_back: 2         # How many days back to look
+
+# Summary generation settings
+summaries:
+  generate_on_fetch: false
+  batch_size: 20
+
+# Scheduler (for automatic daily fetching)
+scheduler:
+  enabled: false
+  fetch_hour: 6        # Hour (UTC) to auto-fetch
+  fetch_minute: 0
+
+# Celery tasks settings
+celery:
+  broker_url: sqla+sqlite:///data/celerydb.sqlite
+  result_backend: db+sqlite:///data/celeryresults.sqlite
+
+# Email notification settings (optional)
+email:
+  use_graph_api: false
+  smtp_host: smtp.gmail.com
+  smtp_port: 587
+  smtp_username: your_email@gmail.com
+  smtp_password: your_app_password
+  from_email: your_email@gmail.com
+  to_email: recipient@example.com
+  use_tls: true
+  use_ssl: false
+  subject_prefix: "AI Papers"
+
+# LLM provider settings (optional)
+llm:
+  providers_order:
+    - groq
+    - google
+  providers:
+    groq:
+      api_key: your_groq_api_key
+      model: llama-3.1-8b-instant
+    google:
+      api_key: your_gemini_api_key
+      model: gemini-1.5-flash
