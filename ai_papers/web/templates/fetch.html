@@ -29,11 +29,14 @@
                     <i class="bi bi-sparkles"></i> Generate AI Summaries
                 </button>
 
-                <div id="fetchProgress" class="mt-3 d-none">
-                    <div class="spinner-border text-primary" role="status">
-                        <span class="visually-hidden">Loading...</span>
+                <div id="fetchProgress" class="mt-4 d-none">
+                    <div class="d-flex justify-content-between mb-1">
+                        <span id="progressText" class="fw-bold text-light">Starting task...</span>
+                        <span id="progressPercent" class="fw-bold text-light">0%</span>
                     </div>
-                    <span class="ms-2">Fetching papers from arXiv... This may take a minute.</span>
+                    <div class="progress" style="height: 25px;">
+                        <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated bg-primary" role="progressbar" style="width: 0%;"></div>
+                    </div>
                 </div>
 
                 <div id="fetchResult" class="mt-3 d-none">
@@ -63,15 +66,52 @@
 
 {% block scripts %}
 <script>
+function pollTask(taskId, onProgress, onComplete, onError) {
+    const interval = setInterval(async () => {
+        try {
+            const resp = await fetch(`/api/tasks/${taskId}`);
+            if (!resp.ok) throw new Error('Failed to fetch task status');
+            const data = await resp.json();
+            
+            if (data.status === 'SUCCESS') {
+                clearInterval(interval);
+                onComplete(data.result);
+            } else if (data.status === 'FAILURE') {
+                clearInterval(interval);
+                onError(new Error(data.error || 'Task failed'));
+            } else if (data.status === 'RUNNING' || data.status === 'PENDING') {
+                const progress = data.progress || 0;
+                const total = data.total || 100;
+                onProgress(progress, total, data.task_type);
+            }
+        } catch (e) {
+            clearInterval(interval);
+            onError(e);
+        }
+    }, 1000);
+    return interval;
+}
+
 async function doFetch() {
     const btn = document.getElementById('fetchBtn');
-    const progress = document.getElementById('fetchProgress');
+    const summarizeBtn = document.getElementById('summarizeBtn');
+    const progressDiv = document.getElementById('fetchProgress');
+    const progressText = document.getElementById('progressText');
+    const progressPercent = document.getElementById('progressPercent');
+    const progressBar = document.getElementById('progressBar');
     const result = document.getElementById('fetchResult');
     const alert = document.getElementById('fetchAlert');
 
     btn.disabled = true;
-    progress.classList.remove('d-none');
+    summarizeBtn.disabled = true;
+    progressDiv.classList.remove('d-none');
     result.classList.add('d-none');
+    
+    // Reset progress bar
+    progressText.textContent = 'Queueing arXiv fetch...';
+    progressPercent.textContent = '0%';
+    progressBar.style.width = '0%';
+    progressBar.className = 'progress-bar progress-bar-striped progress-bar-animated bg-primary';
 
     const maxResults = parseInt(document.getElementById('maxResults').value);
     const daysBack = parseInt(document.getElementById('daysBack').value);
@@ -83,34 +123,72 @@ async function doFetch() {
             body: JSON.stringify({ max_results: maxResults, days_back: daysBack })
         });
         const data = await resp.json();
-
-        progress.classList.add('d-none');
-        result.classList.remove('d-none');
-
-        if (data.new_papers > 0) {
-            alert.className = 'alert alert-success';
-            alert.innerHTML = `<i class="bi bi-check-circle"></i> Fetched <strong>${data.new_papers}</strong> new papers! <a href="/papers?filter=unrated" class="alert-link">Browse them now</a>.`;
-        } else {
-            alert.className = 'alert alert-info';
-            alert.textContent = 'No new papers found. Try increasing days back or check later.';
+        
+        if (data.error) {
+            throw new Error(data.error);
         }
+
+        const taskId = data.task_id;
+        pollTask(taskId, 
+            (progress, total, type) => {
+                const pct = total > 0 ? Math.round((progress / total) * 100) : 0;
+                progressText.textContent = `Fetching papers: ${progress} / ${total} pages/records processed...`;
+                progressPercent.textContent = `${pct}%`;
+                progressBar.style.width = `${pct}%`;
+            },
+            (res) => {
+                progressDiv.classList.add('d-none');
+                result.classList.remove('d-none');
+                const newCount = res.new_papers ?? 0;
+                if (newCount > 0) {
+                    alert.className = 'alert alert-success';
+                    alert.innerHTML = `<i class="bi bi-check-circle"></i> Fetched <strong>${newCount}</strong> new papers! <a href="/papers?filter=unrated" class="alert-link">Browse them now</a>.`;
+                } else {
+                    alert.className = 'alert alert-info';
+                    alert.textContent = 'No new papers found. Try increasing days back or check later.';
+                }
+                btn.disabled = false;
+                summarizeBtn.disabled = false;
+            },
+            (err) => {
+                progressDiv.classList.add('d-none');
+                result.classList.remove('d-none');
+                alert.className = 'alert alert-danger';
+                alert.textContent = 'Error: ' + err.message;
+                btn.disabled = false;
+                summarizeBtn.disabled = false;
+            }
+        );
     } catch (e) {
-        progress.classList.add('d-none');
+        progressDiv.classList.add('d-none');
         result.classList.remove('d-none');
         alert.className = 'alert alert-danger';
-        alert.textContent = 'Error: ' + e.message;
+        alert.textContent = 'Error starting fetch: ' + e.message;
+        btn.disabled = false;
+        summarizeBtn.disabled = false;
     }
-
-    btn.disabled = false;
 }
 
 async function doSummarize() {
-    const btn = document.getElementById('summarizeBtn');
+    const btn = document.getElementById('fetchBtn');
+    const summarizeBtn = document.getElementById('summarizeBtn');
+    const progressDiv = document.getElementById('fetchProgress');
+    const progressText = document.getElementById('progressText');
+    const progressPercent = document.getElementById('progressPercent');
+    const progressBar = document.getElementById('progressBar');
     const result = document.getElementById('fetchResult');
     const alert = document.getElementById('fetchAlert');
 
     btn.disabled = true;
+    summarizeBtn.disabled = true;
+    progressDiv.classList.remove('d-none');
     result.classList.add('d-none');
+
+    // Reset progress bar
+    progressText.textContent = 'Queueing summary generation...';
+    progressPercent.textContent = '0%';
+    progressBar.style.width = '0%';
+    progressBar.className = 'progress-bar progress-bar-striped progress-bar-animated bg-success';
 
     try {
         const resp = await fetch('/api/summarize', {
@@ -120,16 +198,43 @@ async function doSummarize() {
         });
         const data = await resp.json();
 
-        result.classList.remove('d-none');
-        alert.className = data.failed ? 'alert alert-warning' : 'alert alert-success';
-        alert.innerHTML = `Processed <strong>${data.processed ?? 0}</strong> papers for summaries using <strong>${data.provider ?? 'unknown'}</strong>. Failed: <strong>${data.failed ?? 0}</strong>.`;
+        if (data.error) {
+            throw new Error(data.error);
+        }
+
+        const taskId = data.task_id;
+        pollTask(taskId,
+            (progress, total, type) => {
+                const pct = total > 0 ? Math.round((progress / total) * 100) : 0;
+                progressText.textContent = `Generating AI Summaries: ${progress} / ${total} completed...`;
+                progressPercent.textContent = `${pct}%`;
+                progressBar.style.width = `${pct}%`;
+            },
+            (res) => {
+                progressDiv.classList.add('d-none');
+                result.classList.remove('d-none');
+                alert.className = res.failed > 0 ? 'alert alert-warning' : 'alert alert-success';
+                alert.innerHTML = `Processed <strong>${res.processed ?? 0}</strong> papers for summaries using <strong>${res.provider ?? 'unknown'}</strong>. Failed: <strong>${res.failed ?? 0}</strong>.`;
+                btn.disabled = false;
+                summarizeBtn.disabled = false;
+            },
+            (err) => {
+                progressDiv.classList.add('d-none');
+                result.classList.remove('d-none');
+                alert.className = 'alert alert-danger';
+                alert.textContent = 'Error: ' + err.message;
+                btn.disabled = false;
+                summarizeBtn.disabled = false;
+            }
+        );
     } catch (e) {
+        progressDiv.classList.add('d-none');
         result.classList.remove('d-none');
         alert.className = 'alert alert-danger';
-        alert.textContent = 'Error: ' + e.message;
+        alert.textContent = 'Error starting summarization: ' + e.message;
+        btn.disabled = false;
+        summarizeBtn.disabled = false;
     }
-
-    btn.disabled = false;
 }
 </script>
 {% endblock %}

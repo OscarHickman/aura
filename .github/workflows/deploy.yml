@@ -40,9 +40,14 @@ jobs:
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
-    if: ${{ secrets.DEPLOY_SSH_HOST && secrets.DEPLOY_SSH_USER && secrets.SSH_PRIVATE_KEY }}
+    env:
+      DEPLOY_SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
+      DEPLOY_SSH_USER: ${{ secrets.DEPLOY_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
     steps:
       - name: Remote deploy via SSH
+        if: ${{ env.DEPLOY_SSH_HOST != '' && env.DEPLOY_SSH_USER != '' && env.SSH_PRIVATE_KEY != '' }}
+
         uses: appleboy/ssh-action@v0.1.6
         with:
           host: ${{ secrets.DEPLOY_SSH_HOST }}

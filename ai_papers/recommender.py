@@ -99,7 +99,7 @@ class RecommendationEngine:
         return count
 
     def _generate_summaries_for_papers(
-        self, papers: list[dict], retry: bool = True
+        self, papers: list[dict], retry: bool = True, progress_callback=None
     ) -> list[str]:
         """Generate summaries for a specific list of papers."""
         summaries = []
@@ -113,6 +113,8 @@ class RecommendationEngine:
                     retry=retry,
                 )
             )
+            if progress_callback:
+                progress_callback(index + 1, len(papers))
             if (index + 1) % 5 == 0:
                 import time
 
@@ -121,7 +123,7 @@ class RecommendationEngine:
         return summaries
 
     def generate_missing_summaries(
-        self, limit: int = 50, include_failed: bool = True
+        self, limit: int = 50, include_failed: bool = True, progress_callback=None
     ) -> dict:
         """Launch LLM summary requests separately for stored papers."""
         papers = self.db.get_papers_needing_summary(
@@ -134,7 +136,7 @@ class RecommendationEngine:
                 "updated": 0,
             }
 
-        summaries = self._generate_summaries_for_papers(papers)
+        summaries = self._generate_summaries_for_papers(papers, progress_callback=progress_callback)
         updated = 0
         failed = 0
         for paper, summary in zip(papers, summaries):
@@ -302,7 +304,7 @@ class RecommendationEngine:
             "total_trained": self.preference_model.total_trained,
         }
 
-    def retrain_full(self, epochs: int = 20) -> dict:
+    def retrain_full(self, epochs: int = 20, progress_callback=None) -> dict:
         """Retrain the model on all rated papers from scratch.
 
         Useful after accumulating many ratings to get a better model.
@@ -324,7 +326,9 @@ class RecommendationEngine:
         # Don't load existing weights - fresh start
         self.preference_model.model_path = self.data_dir / "preference_model.pt"
 
-        loss = self.preference_model.train_step(embeddings, labels, epochs=epochs)
+        loss = self.preference_model.train_step(
+            embeddings, labels, epochs=epochs, progress_callback=progress_callback
+        )
 
         return {
             "status": "retrained",

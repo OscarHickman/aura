@@ -134,12 +134,13 @@ def _register_routes(app: Flask):
         days_back = data.get("days_back", 2)
         with_summaries = data.get("with_summaries", False)
 
-        count = engine.fetch_new_papers(
+        from ..tasks import fetch_papers_task
+        task = fetch_papers_task.delay(
             max_results=max_results,
             days_back=days_back,
             generate_summaries=with_summaries,
         )
-        return jsonify({"status": "ok", "new_papers": count})
+        return jsonify({"status": "ok", "task_id": task.id})
 
     @app.route("/api/summarize", methods=["POST"])
     def summarize_papers():
@@ -148,11 +149,12 @@ def _register_routes(app: Flask):
         limit = data.get("limit", 20)
         only_missing = data.get("only_missing", False)
 
-        result = engine.generate_missing_summaries(
+        from ..tasks import generate_missing_summaries_task
+        task = generate_missing_summaries_task.delay(
             limit=limit,
             include_failed=not only_missing,
         )
-        return jsonify(result)
+        return jsonify({"status": "ok", "task_id": task.id})
 
     @app.route("/api/summarize-paper", methods=["POST"])
     def summarize_single_paper():
@@ -174,8 +176,17 @@ def _register_routes(app: Flask):
         data = request.get_json() or {}
         epochs = data.get("epochs", 20)
 
-        result = engine.retrain_full(epochs=epochs)
-        return jsonify(result)
+        from ..tasks import retrain_full_task
+        task = retrain_full_task.delay(epochs=epochs)
+        return jsonify({"status": "ok", "task_id": task.id})
+
+    @app.route("/api/tasks/<task_id>", methods=["GET"])
+    def get_task_status(task_id):
+        """Get the progress and status of a background task."""
+        status_info = engine.db.get_task_status(task_id)
+        if not status_info:
+            return jsonify({"error": "Task not found"}), 404
+        return jsonify(status_info)
 
     @app.route("/api/stats")
     def stats():

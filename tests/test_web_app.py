@@ -36,10 +36,27 @@ class TestWebApp(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json()["status"], "rated")
 
-    def test_api_fetch_and_stats(self):
+    @patch("ai_papers.tasks.fetch_papers_task.delay")
+    def test_api_fetch_and_stats(self, mock_delay):
+        mock_task = Mock()
+        mock_task.id = "mock-task-123"
+        mock_delay.return_value = mock_task
+
         resp = self.client.post("/api/fetch", json={"max_results": 10, "days_back": 2})
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.get_json()["new_papers"], 3)
+        self.assertEqual(resp.get_json()["task_id"], "mock-task-123")
+
+        # Mock the get_task_status database call
+        self.engine.db.get_task_status.return_value = {
+            "task_id": "mock-task-123",
+            "task_type": "fetch_papers",
+            "status": "RUNNING",
+            "progress": 5,
+            "total": 10
+        }
+        resp = self.client.get("/api/tasks/mock-task-123")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json()["status"], "RUNNING")
 
         resp = self.client.get("/api/stats")
         self.assertEqual(resp.status_code, 200)

@@ -127,6 +127,32 @@
 
 {% block scripts %}
 <script>
+function pollTask(taskId, onProgress, onComplete, onError) {
+    const interval = setInterval(async () => {
+        try {
+            const resp = await fetch(`/api/tasks/${taskId}`);
+            if (!resp.ok) throw new Error('Failed to fetch task status');
+            const data = await resp.json();
+            
+            if (data.status === 'SUCCESS') {
+                clearInterval(interval);
+                onComplete(data.result);
+            } else if (data.status === 'FAILURE') {
+                clearInterval(interval);
+                onError(new Error(data.error || 'Task failed'));
+            } else if (data.status === 'RUNNING' || data.status === 'PENDING') {
+                const progress = data.progress || 0;
+                const total = data.total || 100;
+                onProgress(progress, total, data.task_type);
+            }
+        } catch (e) {
+            clearInterval(interval);
+            onError(e);
+        }
+    }, 1000);
+    return interval;
+}
+
 function showToast(title, message) {
     document.getElementById('toastTitle').textContent = title;
     document.getElementById('toastBody').textContent = message;
@@ -135,12 +161,26 @@ function showToast(title, message) {
 }
 
 async function retrainModel() {
-    showToast('Training', 'Retraining model on all ratings...');
+    showToast('Training', 'Queueing retraining model on all ratings...');
     try {
         const resp = await fetch('/api/retrain', { method: 'POST', headers: {'Content-Type': 'application/json'} });
         const data = await resp.json();
-        showToast('Done', `Retrained on ${data.num_samples} samples. Loss: ${data.final_loss?.toFixed(4)}`);
-        setTimeout(() => location.reload(), 2000);
+        
+        if (data.error) throw new Error(data.error);
+        
+        const taskId = data.task_id;
+        pollTask(taskId,
+            (progress, total) => {
+                showToast('Training', `Retraining model: epoch ${progress} of ${total}...`);
+            },
+            (res) => {
+                showToast('Done', `Retrained on ${res.num_samples} samples. Loss: ${res.final_loss?.toFixed(4)}`);
+                setTimeout(() => location.reload(), 2000);
+            },
+            (err) => {
+                showToast('Error', 'Retrain failed: ' + err.message);
+            }
+        );
     } catch (e) {
         showToast('Error', 'Retrain failed: ' + e.message);
     }

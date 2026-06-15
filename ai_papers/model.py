@@ -96,6 +96,7 @@ class PreferenceModel:
         embeddings: list[np.ndarray],
         labels: list[float],
         epochs: int = 5,
+        progress_callback = None,
     ) -> float:
         """Train the model on a batch of (embedding, label) pairs.
 
@@ -103,6 +104,7 @@ class PreferenceModel:
             embeddings: List of paper embedding vectors.
             labels: List of labels (1.0 = thumbs up, 0.0 = thumbs down).
             epochs: Number of epochs to train on this batch.
+            progress_callback: Optional callback receiving (epoch + 1, epochs).
 
         Returns:
             Final loss value.
@@ -120,6 +122,8 @@ class PreferenceModel:
             loss.backward()
             self.optimizer.step()
             final_loss = loss.item()
+            if progress_callback:
+                progress_callback(epoch + 1, epochs)
 
         self.total_trained += len(labels)
         self.train_history.append(

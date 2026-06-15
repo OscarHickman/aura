@@ -54,9 +54,22 @@ class PaperDatabase:
                 categories TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS task_history (
+                task_id TEXT PRIMARY KEY,
+                task_type TEXT NOT NULL,
+                status TEXT NOT NULL,
+                progress INTEGER DEFAULT 0,
+                total INTEGER DEFAULT 0,
+                result TEXT,
+                error TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
             CREATE INDEX IF NOT EXISTS idx_papers_published ON papers(published);
             CREATE INDEX IF NOT EXISTS idx_ratings_arxiv_id ON ratings(arxiv_id);
             CREATE INDEX IF NOT EXISTS idx_ratings_rated_at ON ratings(rated_at);
+            CREATE INDEX IF NOT EXISTS idx_task_history_status ON task_history(status);
         """)
         self.conn.commit()
 
@@ -346,6 +359,84 @@ class PaperDatabase:
             (datetime.utcnow().isoformat(), num_papers, json.dumps(categories)),
         )
         self.conn.commit()
+
+    def create_task_entry(self, task_id: str, task_type: str, status: str = "PENDING") -> bool:
+        """Create a new task entry in the task_history table."""
+        now = datetime.utcnow().isoformat()
+        try:
+            self.conn.execute(
+                """INSERT OR REPLACE INTO task_history
+                   (task_id, task_type, status, progress, total, created_at, updated_at)
+                   VALUES (?, ?, ?, 0, 0, ?, ?)""",
+                (task_id, task_type, status, now, now),
+            )
+            self.conn.commit()
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Failed to create task entry {task_id}: {e}")
+            return False
+
+    def update_task_progress(self, task_id: str, progress: int, total: int, status: Optional[str] = None) -> bool:
+        """Update progress and status of a background task."""
+        now = datetime.utcnow().isoformat()
+        try:
+            if status:
+                self.conn.execute(
+                    """UPDATE task_history
+                       SET progress = ?, total = ?, status = ?, updated_at = ?
+                       WHERE task_id = ?""",
+                    (progress, total, status, now, task_id),
+                )
+            else:
+                self.conn.execute(
+                    """UPDATE task_history
+                       SET progress = ?, total = ?, updated_at = ?
+                       WHERE task_id = ?""",
+                    (progress, total, now, task_id),
+                )
+            self.conn.commit()
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Failed to update task progress {task_id}: {e}")
+            return False
+
+    def complete_task(
+        self,
+        task_id: str,
+        status: str = "SUCCESS",
+        result: Optional[dict | str] = None,
+        error: Optional[str] = None,
+    ) -> bool:
+        """Mark task as complete with optional result or error."""
+        now = datetime.utcnow().isoformat()
+        res_str = json.dumps(result) if isinstance(result, (dict, list)) else result
+        try:
+            self.conn.execute(
+                """UPDATE task_history
+                   SET status = ?, result = ?, error = ?, updated_at = ?, progress = total
+                   WHERE task_id = ?""",
+                (status, res_str, error, now, task_id),
+            )
+            self.conn.commit()
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Failed to complete task {task_id}: {e}")
+            return False
+
+    def get_task_status(self, task_id: str) -> Optional[dict]:
+        """Get the status of a background task."""
+        row = self.conn.execute(
+            "SELECT * FROM task_history WHERE task_id = ?", (task_id,)
+        ).fetchone()
+        if not row:
+            return None
+        res = dict(row)
+        if res.get("result"):
+            try:
+                res["result"] = json.loads(res["result"])
+            except json.JSONDecodeError:
+                pass
+        return res
 
     def _row_to_dict(self, row: sqlite3.Row) -> dict:
         """Convert a database row to a paper dict."""
