@@ -80,10 +80,6 @@ instance/
 Thumbs.db
 
 # Data and model artifacts
-# data/
-# data/**
-# *.pt
-# *.db
 *.sqlite3
 
 # Secrets
