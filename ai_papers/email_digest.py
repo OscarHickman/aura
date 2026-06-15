@@ -13,6 +13,7 @@ import requests
 
 from .llm import AI_FAIL_SUMMARY
 from .recommender import RecommendationEngine
+from .trends import generate_monthly_trends
 
 logger = logging.getLogger(__name__)
 
@@ -168,11 +169,27 @@ def _collect_top_papers_with_summaries(
 
 
 def _build_email_content(
-    papers: list[dict], app_name: str = "AI Papers"
+    papers: list[dict], trends: dict[str, str], app_name: str = "AI Papers"
 ) -> tuple[str, str]:
     """Create plain-text and HTML digest bodies."""
-    text_lines = [f"{app_name} - Top {len(papers)} Recommendations", ""]
-    html_items = []
+    text_lines = [f"{app_name} - Monthly Research Trends", ""]
+    html_items = [
+        "<h2>Monthly Research Trends</h2>",
+        "<div style='margin-bottom:30px;'>"
+    ]
+
+    for topic, summary in trends.items():
+        text_lines.extend([f"**{topic.title()}**", summary, ""])
+        html_items.append(
+            f"<div style='margin-bottom:15px;'>"
+            f"<h3 style='margin:0 0 4px 0;color:#2c3e50;'>{topic.title()}</h3>"
+            f"<p style='margin:0;color:#444;line-height:1.5;'>{summary}</p>"
+            f"</div>"
+        )
+    html_items.append("</div><hr>")
+
+    text_lines.extend([f"{app_name} - Top {len(papers)} Recommendations", ""])
+    html_items.append(f"<h2>Top {len(papers)} Recommendations</h2>")
 
     for i, paper in enumerate(papers, 1):
         score = round(float(paper.get("score", 0.0)) * 100)
@@ -210,7 +227,7 @@ def _build_email_content(
 
     html_body = (
         "<html><body>"
-        f"<h2 style='font-family:Arial,sans-serif'>{app_name} - Top {len(papers)} Recommendations</h2>"
+        f"<h2 style='font-family:Arial,sans-serif'>{app_name} Daily Digest</h2>"
         "<div style='font-family:Arial,sans-serif;font-size:14px'>"
         + "".join(html_items)
         + "</div></body></html>"
@@ -279,8 +296,13 @@ def send_top_recommendations_email(
 
         subject_prefix = email_config.get("subject_prefix", "AI Papers")
         today = date.today().isoformat()
-        subject = f"{subject_prefix} ({today}): Top {len(papers)} Paper Recommendations"
-        text_body, html_body = _build_email_content(papers, app_name=subject_prefix)
+        subject = f"{subject_prefix} ({today}): Top {len(papers)} Paper Recommendations & Trends"
+        
+        # Generate trends before building email
+        logger.info("Generating monthly trends for email digest...")
+        trends = generate_monthly_trends(data_dir=data_dir, embedding_model=embedding_model)
+        
+        text_body, html_body = _build_email_content(papers, trends=trends, app_name=subject_prefix)
 
         if email_config.get("use_graph_api", False):
             _send_graph_email(email_config, subject, text_body, html_body)
