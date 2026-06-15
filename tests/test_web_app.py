@@ -16,7 +16,9 @@ class TestWebApp(unittest.TestCase):
             {
                 "arxiv_id": "2401.00001",
                 "title": "A Great Astro Paper",
+                "abstract": "A great abstract about stars.",
                 "authors": ["Ada"],
+                "categories": ["astro-ph.CO"],
                 "score": 0.95,
                 "url": "http://arxiv.org/abs/2401.00001",
                 "summary": "Existing summary",
@@ -28,7 +30,9 @@ class TestWebApp(unittest.TestCase):
             {
                 "arxiv_id": "2401.00001",
                 "title": "A Great Astro Paper",
+                "abstract": "A great abstract about stars.",
                 "authors": ["Ada"],
+                "categories": ["astro-ph.CO"],
                 "score": 0.95,
                 "url": "http://arxiv.org/abs/2401.00001",
                 "summary": "Existing summary",
