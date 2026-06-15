@@ -80,17 +80,17 @@ instance/
 Thumbs.db
 
 # Data and model artifacts
-data/
-data/**
-*.pt
-*.db
+# data/
+# data/**
+# *.pt
+# *.db
 *.sqlite3
 
 # Secrets
 .env
 user_credentials/*.json
 # Data files (model weights, database)
-data/
+# data/
 
 # Python
 __pycache__/
