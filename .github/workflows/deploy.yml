@@ -28,14 +28,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Downcase REPO
+        run: |
+          echo "REPO=${GITHUB_REPOSITORY,,}" >>${GITHUB_ENV}
+
       - name: Build and push image
         uses: docker/build-push-action@v4
         with:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ github.sha }}
+            ghcr.io/${{ env.REPO }}:latest
+            ghcr.io/${{ env.REPO }}:${{ github.sha }}
 
   deploy:
     needs: build-and-push
@@ -55,9 +59,10 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.DEPLOY_SSH_PORT || '22' }}
           script: |
-            docker pull ghcr.io/${{ github.repository }}:latest
+            REPO=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+            docker pull ghcr.io/$REPO:latest
             if [ "$(docker ps -q -f name=ai_papers_app)" != "" ]; then
               docker stop ai_papers_app || true
               docker rm ai_papers_app || true
             fi
-            docker run -d --restart unless-stopped -p 80:5000 --name ai_papers_app ghcr.io/${{ github.repository }}:latest
+            docker run -d --restart unless-stopped -p 80:5000 --name ai_papers_app ghcr.io/$REPO:latest
