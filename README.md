@@ -3,9 +3,10 @@
 [![CI](https://github.com/OscarHickman/ai_papers/actions/workflows/ci.yml/badge.svg)](https://github.com/OscarHickman/ai_papers/actions/workflows/ci.yml)
 [![Deploy](https://github.com/OscarHickman/ai_papers/actions/workflows/deploy.yml/badge.svg)](https://github.com/OscarHickman/ai_papers/actions/workflows/deploy.yml)
 
-# arXiv Paper Recommender
+# AURA (Automated Understanding of Research Articles)
 
-Local tool to fetch arXiv papers, rank them from your ratings, and send a daily email digest.
+A local application designed to fetch arXiv papers, rank them based on your rating history, and send a daily email digest complete with AI-generated summaries.
+
 
 ## Quick Start
 

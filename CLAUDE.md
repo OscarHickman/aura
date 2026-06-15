@@ -4,7 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**arXiv Paper Recommender** — A local tool that fetches papers from arXiv, ranks them based on user preferences, and sends daily email digests with AI-generated summaries.
+**AURA (Automated Understanding of Research Articles)** — A local tool that fetches papers from arXiv, ranks them based on user preferences, and sends daily email digests with AI-generated summaries.
+
 
 **Stack:** Python 3.10+, Flask, PyTorch, sentence-transformers
 

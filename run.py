@@ -204,8 +204,9 @@ def _setup_scheduler(app, config):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="AURA - Personalized arXiv Recommender"
+        description="AURA - Personalised arXiv Recommender"
     )
+
     parser.add_argument("--config", default="config.yaml", help="Path to config file")
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose logging")
 
