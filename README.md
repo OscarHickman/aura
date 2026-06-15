@@ -138,7 +138,7 @@ gunicorn "deploy.wsgi:app" -w 4 -b 0.0.0.0:5000
 
 ```
 [Unit]
-Description=AI Papers service
+Description=AURA service
 After=network.target
 
 [Service]

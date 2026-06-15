@@ -42,7 +42,7 @@ jobs:
           "to_email": "${{ secrets.TO_EMAIL }}",
           "use_tls": true,
           "use_ssl": false,
-          "subject_prefix": "Daily AI Papers Digest"
+          "subject_prefix": "AURA - Daily Digest"
         }
         EOF
 

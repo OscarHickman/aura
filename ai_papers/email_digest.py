@@ -169,7 +169,7 @@ def _collect_top_papers_with_summaries(
 
 
 def _build_email_content(
-    papers: list[dict], trends: dict[str, str], app_name: str = "AI Papers"
+    papers: list[dict], trends: dict[str, str], app_name: str = "AURA"
 ) -> tuple[str, str]:
     """Create plain-text and HTML digest bodies."""
     text_lines = [f"{app_name} - Monthly Research Trends", ""]
@@ -294,7 +294,7 @@ def send_top_recommendations_email(
                 "message": "No recommended papers available to email",
             }
 
-        subject_prefix = email_config.get("subject_prefix", "AI Papers")
+        subject_prefix = email_config.get("subject_prefix", "AURA")
         today = date.today().isoformat()
         subject = f"{subject_prefix} ({today}): Top {len(papers)} Paper Recommendations & Trends"
         

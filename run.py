@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""AI Papers - Main entry point and CLI.
+"""AURA - Main entry point and CLI.
 
 Usage:
     python run.py serve              # Start the web UI
@@ -44,7 +44,7 @@ def cmd_serve(args, config):
     port = config.get("port", 5000)
     debug = config.get("debug", False)
 
-    print(f"\n  AI Papers server starting at http://{host}:{port}")
+    print(f"\n  AURA server starting at http://{host}:{port}")
     print("  Press Ctrl+C to stop\n")
 
     app.run(host=host, port=port, debug=debug)
@@ -204,7 +204,7 @@ def _setup_scheduler(app, config):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="AI Papers - Personalized arXiv Recommender"
+        description="AURA - Personalized arXiv Recommender"
     )
     parser.add_argument("--config", default="config.yaml", help="Path to config file")
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose logging")

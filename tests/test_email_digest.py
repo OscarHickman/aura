@@ -22,7 +22,7 @@ class TestEmailDigest(unittest.TestCase):
             }
         ]
         trends = {"Machine learning": "AI models are improving."}
-        text, html = email_digest._build_email_content(papers, trends=trends, app_name="AI Papers")
+        text, html = email_digest._build_email_content(papers, trends=trends, app_name="AURA")
         self.assertIn("Paper A", text)
         self.assertIn("Good summary", text)
         self.assertIn("Machine Learning", text)
