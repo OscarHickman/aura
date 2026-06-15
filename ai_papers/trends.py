@@ -9,7 +9,7 @@ import numpy as np
 
 from .database import PaperDatabase
 from .embedder import get_model
-from .llm import _load_providers_order, _PROVIDER_FUNCS, _resolve_api_key
+from .llm import _load_providers_order, _resolve_api_key
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +52,8 @@ def _generate_generic_text(prompt: str) -> str:
             try:
                 from groq import Groq
                 api_key = _resolve_api_key(None, "GROQ_API_KEY", "groq")
-                if not api_key: continue
+                if not api_key:
+                    continue
                 client = Groq(api_key=api_key)
                 # use 8b instant for speed
                 message = client.chat.completions.create(
@@ -68,7 +69,8 @@ def _generate_generic_text(prompt: str) -> str:
             try:
                 from openai import OpenAI
                 api_key = _resolve_api_key(None, "OPENAI_API_KEY", "openai")
-                if not api_key: continue
+                if not api_key:
+                    continue
                 client = OpenAI(api_key=api_key)
                 response = client.chat.completions.create(
                     model="gpt-4o-mini",
@@ -83,7 +85,8 @@ def _generate_generic_text(prompt: str) -> str:
             try:
                 import anthropic
                 api_key = _resolve_api_key(None, "ANTHROPIC_API_KEY", "anthropic")
-                if not api_key: continue
+                if not api_key:
+                    continue
                 client = anthropic.Anthropic(api_key=api_key)
                 message = client.messages.create(
                     model="claude-3-haiku-20240307",
