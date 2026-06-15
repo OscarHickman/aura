@@ -1,4 +1,3 @@
-import json
 import sys
 import tempfile
 import unittest
@@ -10,10 +9,10 @@ from unittest.mock import MagicMock
 sys.modules['openai'] = MagicMock()
 sys.modules['anthropic'] = MagicMock()
 
-import numpy as np
+import numpy as np  # noqa: E402
 
-from ai_papers import trends
-from ai_papers.database import PaperDatabase
+from ai_papers import trends  # noqa: E402
+from ai_papers.database import PaperDatabase  # noqa: E402
 
 
 class TestTrends(unittest.TestCase):
