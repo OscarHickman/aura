@@ -21,9 +21,12 @@ class TestEmailDigest(unittest.TestCase):
                 "summary": "Good summary",
             }
         ]
-        text, html = email_digest._build_email_content(papers, app_name="AI Papers")
+        trends = {"Machine learning": "AI models are improving."}
+        text, html = email_digest._build_email_content(papers, trends=trends, app_name="AI Papers")
         self.assertIn("Paper A", text)
         self.assertIn("Good summary", text)
+        self.assertIn("Machine Learning", text)
+        self.assertIn("AI models are improving", text)
         self.assertIn("Paper A", html)
 
     @patch("ai_papers.email_digest._send_smtp_email")
