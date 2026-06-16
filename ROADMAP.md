@@ -12,16 +12,6 @@
 
 *Make the daily workflow actually pleasant.*
 
-### 2.2 Paper Detail Page
-**Why it matters:** Clicking a paper title currently opens arXiv in a new tab. There is no in-app view of a paper's full information, related papers, or rating history.
-
-- [ ] Add `/papers/<arxiv_id>` route with full metadata view
-- [ ] Show full abstract, all authors, all categories
-- [ ] Show all ratings history for the paper
-- [ ] Show similar papers (cosine similarity against stored embeddings)
-- [ ] Embed an arXiv abstract iframe or link to ar5iv (HTML version)
-- [ ] Show "papers by same authors" from the local database
-
 ### 2.3 Tagging & Collections
 **Why it matters:** A researcher needs to organize papers — "papers for my thesis", "papers to discuss at journal club", "papers I cited". Currently there is no way to do this.
 

@@ -158,6 +158,28 @@ class TestPaperDatabase(unittest.TestCase):
         self.assertEqual(self.db.search_papers(""), [])
         self.assertEqual(self.db.search_papers("!!!"), [])
 
+    def test_ratings_history_and_papers_by_authors(self):
+        # Setup ratings history
+        p1 = make_paper("2401.00001")
+        p1["authors"] = ["Ada", "Linus"]
+        p2 = make_paper("2401.00002")
+        p2["authors"] = ["Linus", "Grace"]
+        self.db.add_paper(p1)
+        self.db.add_paper(p2)
+
+        self.db.rate_paper("2401.00001", 1)
+        self.db.rate_paper("2401.00001", 0)
+
+        history = self.db.get_ratings_history("2401.00001")
+        self.assertEqual(len(history), 2)
+        self.assertEqual(history[0]["rating"], 0)
+        self.assertEqual(history[1]["rating"], 1)
+
+        # Same authors test
+        by_authors = self.db.get_papers_by_authors(["Linus"], exclude_arxiv_id="2401.00001")
+        self.assertEqual(len(by_authors), 1)
+        self.assertEqual(by_authors[0]["arxiv_id"], "2401.00002")
+
     def test_task_tracking_lifecycle(self):
         task_id = "task-uuid-123"
         self.db.create_task_entry(task_id, "fetch_papers", "PENDING")

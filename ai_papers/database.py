@@ -558,6 +558,44 @@ class PaperDatabase:
             logger.error(f"FTS search failed for query '{query}': {e}")
             return []
 
+    def get_ratings_history(self, arxiv_id: str) -> list[dict]:
+        """Get the rating history for a paper, ordered from newest to oldest."""
+        rows = self.conn.execute(
+            "SELECT rating, rated_at FROM ratings WHERE arxiv_id = ? ORDER BY rated_at DESC",
+            (arxiv_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_papers_by_authors(
+        self, authors: list[str], exclude_arxiv_id: str, limit: int = 5
+    ) -> list[dict]:
+        """Get other papers written by any of the specified authors."""
+        if not authors:
+            return []
+
+        where_clauses = []
+        params: list[str | int] = []
+        for author in authors:
+            where_clauses.append("authors LIKE ?")
+            params.append(f'%"{author}"%')
+
+        where_clause = " OR ".join(where_clauses)
+        sql = f"""
+            SELECT * FROM papers
+            WHERE ({where_clause}) AND arxiv_id != ?
+            ORDER BY published DESC
+            LIMIT ?
+        """
+        params.append(exclude_arxiv_id)
+        params.append(limit)
+
+        try:
+            rows = self.conn.execute(sql, params).fetchall()
+            return [self._row_to_dict(row) for row in rows]
+        except sqlite3.Error as e:
+            logger.error(f"Failed to get papers by authors: {e}")
+            return []
+
     def close(self):
         """Close the database connection."""
         self.conn.close()

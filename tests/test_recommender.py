@@ -186,6 +186,32 @@ class TestRecommendationEngine(unittest.TestCase):
 
         self.assertEqual(result["status"], "no_work")
 
+    @patch("ai_papers.recommender.PreferenceModel")
+    @patch("ai_papers.recommender.PaperDatabase")
+    @patch("ai_papers.recommender.get_embedding_dim", return_value=3)
+    def test_get_similar_papers(self, _mock_dim, mock_db_cls, _mock_model_cls):
+        db = Mock()
+        p1 = {"arxiv_id": "2401.00001", "title": "Paper 1"}
+        p2 = {"arxiv_id": "2401.00002", "title": "Paper 2"}
+        emb1 = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+        emb2 = np.array([1.0, 1.0, 0.0], dtype=np.float32)
+
+        # When querying single paper embedding
+        db.get_papers_with_embeddings.side_effect = lambda ids=None: (
+            [(p1, emb1)] if ids == ["2401.00001"] else [(p1, emb1), (p2, emb2)]
+        )
+        db.get_latest_rating.return_value = None
+        mock_db_cls.return_value = db
+
+        with tempfile.TemporaryDirectory() as td:
+            engine = RecommendationEngine(Path(td), ["astro-ph.CO"])
+            similar = engine.get_similar_papers("2401.00001", limit=5)
+
+        self.assertEqual(len(similar), 1)
+        self.assertEqual(similar[0]["arxiv_id"], "2401.00002")
+        # cosine similarity between [1, 0, 0] and [1, 1, 0] is 1 / sqrt(2) = 0.7071
+        self.assertAlmostEqual(similar[0]["similarity"], 0.7071, places=3)
+
 
 if __name__ == "__main__":
     unittest.main()

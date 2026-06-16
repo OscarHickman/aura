@@ -182,6 +182,38 @@ class TestWebApp(unittest.TestCase):
         self.assertEqual(results[0]["arxiv_id"], "2401.00001")
         self.assertIn("<mark>Astro</mark>", results[0]["title"])
 
+    def test_paper_detail_route(self):
+        paper_data = {
+            "arxiv_id": "2401.00001",
+            "title": "A Great Astro Paper",
+            "abstract": "A great abstract about stars.",
+            "authors": ["Ada"],
+            "categories": ["astro-ph.CO"],
+            "url": "http://arxiv.org/abs/2401.00001",
+            "pdf_url": "http://arxiv.org/pdf/2401.00001.pdf",
+            "summary": "Existing summary",
+            "published": "2026-01-01T00:00:00Z"
+        }
+        self.engine.db.get_paper.return_value = paper_data
+        self.engine.db.get_ratings_history.return_value = [
+            {"rating": 1, "rated_at": "2026-06-16T12:00:00Z"}
+        ]
+        self.engine.get_similar_papers.return_value = []
+        self.engine.db.get_papers_by_authors.return_value = []
+
+        # 1. Test success detail route
+        resp = self.client.get("/papers/2401.00001")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b"A Great Astro Paper", resp.data)
+        self.assertIn(b"ar5iv.labs.arxiv.org/html/2401.00001", resp.data)
+        self.engine.db.get_paper.assert_called_with("2401.00001")
+
+        # 2. Test 404 not found
+        self.engine.db.get_paper.return_value = None
+        resp = self.client.get("/papers/missing")
+        self.assertEqual(resp.status_code, 404)
+        self.assertIn(b"Resource Not Found", resp.data)
+
 
 if __name__ == "__main__":
     unittest.main()

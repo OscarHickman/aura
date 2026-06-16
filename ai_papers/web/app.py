@@ -145,6 +145,39 @@ def _register_routes(app: Flask):
             date_to=date_to,
         )
 
+    @app.route("/papers/<path:arxiv_id>")
+    def paper_detail(arxiv_id):
+        """Show full details of a paper."""
+        paper = engine.db.get_paper(arxiv_id) if engine else None
+        if not paper:
+            return render_template("404.html"), 404
+
+        # Add current rating info
+        paper["rating"] = engine.db.get_latest_rating(arxiv_id) if engine else None
+
+        # Get ratings history
+        ratings_history = engine.db.get_ratings_history(arxiv_id) if engine else []
+
+        # Get similar papers
+        similar_papers = engine.get_similar_papers(arxiv_id, limit=5) if engine else []
+
+        # Get papers by the same authors
+        same_author_papers = engine.db.get_papers_by_authors(
+            paper["authors"], exclude_arxiv_id=arxiv_id, limit=5
+        ) if engine else []
+
+        # ar5iv URL for HTML view
+        ar5iv_url = f"https://ar5iv.labs.arxiv.org/html/{arxiv_id}"
+
+        return render_template(
+            "paper_detail.html",
+            paper=paper,
+            ratings_history=ratings_history,
+            similar_papers=similar_papers,
+            same_author_papers=same_author_papers,
+            ar5iv_url=ar5iv_url,
+        )
+
     @app.route("/api/rate", methods=["POST"])
     def rate_paper():
         """API endpoint to rate a paper (thumbs up/down)."""

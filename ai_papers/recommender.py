@@ -1,6 +1,7 @@
 """Recommendation engine that ties together fetching, embedding, and model scoring."""
 
 import logging
+import numpy as np
 from pathlib import Path
 
 from .database import PaperDatabase
@@ -348,6 +349,48 @@ class RecommendationEngine:
             "categories": self.categories,
             "data_dir": str(self.data_dir),
         }
+
+    def get_similar_papers(self, arxiv_id: str, limit: int = 5) -> list[dict]:
+        """Find papers similar to the one specified by arxiv_id based on cosine similarity of their embeddings.
+
+        Args:
+            arxiv_id: The arXiv ID of the paper.
+            limit: Maximum number similar papers to return.
+
+        Returns:
+            List of paper dicts with an added 'similarity' key, sorted by similarity descending.
+        """
+        # Fetch current paper's embedding
+        current_data = self.db.get_papers_with_embeddings([arxiv_id])
+        if not current_data:
+            return []
+
+        _, current_emb = current_data[0]
+
+        # Fetch all other papers with embeddings
+        all_papers = self.db.get_papers_with_embeddings()
+
+        similarities = []
+        for paper, emb in all_papers:
+            if paper["arxiv_id"] == arxiv_id:
+                continue
+
+            # Compute cosine similarity
+            dot = np.dot(current_emb, emb)
+            norm_curr = np.linalg.norm(current_emb)
+            norm_other = np.linalg.norm(emb)
+
+            sim = float(dot / (norm_curr * norm_other)) if norm_curr > 0 and norm_other > 0 else 0.0
+
+            # Format similarity as a float
+            paper["similarity"] = round(sim, 4)
+            # Add rating info
+            paper["rating"] = self.db.get_latest_rating(paper["arxiv_id"])
+            similarities.append(paper)
+
+        # Sort by similarity descending
+        similarities.sort(key=lambda p: p["similarity"], reverse=True)
+        return similarities[:limit]
 
     def close(self):
         """Clean up resources."""
