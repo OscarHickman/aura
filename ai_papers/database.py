@@ -66,10 +66,40 @@ class PaperDatabase:
                 updated_at TEXT NOT NULL
             );
 
+            CREATE TABLE IF NOT EXISTS tags (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                arxiv_id TEXT NOT NULL,
+                tag TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (arxiv_id) REFERENCES papers(arxiv_id) ON DELETE CASCADE,
+                UNIQUE(arxiv_id, tag)
+            );
+
+            CREATE TABLE IF NOT EXISTS collections (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                description TEXT,
+                created_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS collection_papers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                collection_id INTEGER NOT NULL,
+                arxiv_id TEXT NOT NULL,
+                added_at TEXT NOT NULL,
+                FOREIGN KEY (collection_id) REFERENCES collections(id) ON DELETE CASCADE,
+                FOREIGN KEY (arxiv_id) REFERENCES papers(arxiv_id) ON DELETE CASCADE,
+                UNIQUE(collection_id, arxiv_id)
+            );
+
             CREATE INDEX IF NOT EXISTS idx_papers_published ON papers(published);
             CREATE INDEX IF NOT EXISTS idx_ratings_arxiv_id ON ratings(arxiv_id);
             CREATE INDEX IF NOT EXISTS idx_ratings_rated_at ON ratings(rated_at);
             CREATE INDEX IF NOT EXISTS idx_task_history_status ON task_history(status);
+            CREATE INDEX IF NOT EXISTS idx_tags_arxiv_id ON tags(arxiv_id);
+            CREATE INDEX IF NOT EXISTS idx_tags_tag ON tags(tag);
+            CREATE INDEX IF NOT EXISTS idx_collection_papers_collection_id ON collection_papers(collection_id);
+            CREATE INDEX IF NOT EXISTS idx_collection_papers_arxiv_id ON collection_papers(arxiv_id);
 
             -- FTS5 virtual table for full-text search
             CREATE VIRTUAL TABLE IF NOT EXISTS papers_fts USING fts5(
@@ -595,6 +625,170 @@ class PaperDatabase:
         except sqlite3.Error as e:
             logger.error(f"Failed to get papers by authors: {e}")
             return []
+
+    def add_tag(self, arxiv_id: str, tag: str) -> bool:
+        """Add a tag to a paper. Returns True if added."""
+        clean_tag = tag.strip().lower()
+        if not clean_tag:
+            return False
+        try:
+            self.conn.execute(
+                "INSERT OR IGNORE INTO tags (arxiv_id, tag, created_at) VALUES (?, ?, ?)",
+                (arxiv_id, clean_tag, datetime.utcnow().isoformat()),
+            )
+            self.conn.commit()
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Failed to add tag {tag} to paper {arxiv_id}: {e}")
+            return False
+
+    def remove_tag(self, arxiv_id: str, tag: str) -> bool:
+        """Remove a tag from a paper. Returns True if deleted."""
+        clean_tag = tag.strip().lower()
+        try:
+            cursor = self.conn.execute(
+                "DELETE FROM tags WHERE arxiv_id = ? AND tag = ?",
+                (arxiv_id, clean_tag),
+            )
+            self.conn.commit()
+            return cursor.rowcount > 0
+        except sqlite3.Error as e:
+            logger.error(f"Failed to remove tag {tag} from paper {arxiv_id}: {e}")
+            return False
+
+    def get_paper_tags(self, arxiv_id: str) -> list[str]:
+        """Get all tags for a specific paper."""
+        rows = self.conn.execute(
+            "SELECT tag FROM tags WHERE arxiv_id = ? ORDER BY tag ASC",
+            (arxiv_id,),
+        ).fetchall()
+        return [row["tag"] for row in rows]
+
+    def get_all_tags(self) -> list[str]:
+        """Get all unique tags in the system."""
+        rows = self.conn.execute(
+            "SELECT DISTINCT tag FROM tags ORDER BY tag ASC"
+        ).fetchall()
+        return [row["tag"] for row in rows]
+
+    def get_papers_by_tag(
+        self, tag: str, limit: int = 100, offset: int = 0
+    ) -> list[dict]:
+        """Get all papers with a specific tag."""
+        rows = self.conn.execute(
+            """
+            SELECT p.* FROM papers p
+            INNER JOIN tags t ON p.arxiv_id = t.arxiv_id
+            WHERE t.tag = ?
+            ORDER BY p.published DESC
+            LIMIT ? OFFSET ?
+            """,
+            (tag.strip().lower(), limit, offset),
+        ).fetchall()
+        return [self._row_to_dict(row) for row in rows]
+
+    def create_collection(self, name: str, description: Optional[str] = None) -> Optional[int]:
+        """Create a collection. Returns the collection ID if created successfully."""
+        clean_name = name.strip()
+        if not clean_name:
+            return None
+        try:
+            cursor = self.conn.execute(
+                "INSERT INTO collections (name, description, created_at) VALUES (?, ?, ?)",
+                (clean_name, description, datetime.utcnow().isoformat()),
+            )
+            self.conn.commit()
+            return cursor.lastrowid
+        except sqlite3.Error as e:
+            logger.error(f"Failed to create collection {name}: {e}")
+            return None
+
+    def delete_collection(self, collection_id: int) -> bool:
+        """Delete a collection. Returns True if deleted."""
+        try:
+            cursor = self.conn.execute(
+                "DELETE FROM collections WHERE id = ?", (collection_id,)
+            )
+            self.conn.commit()
+            return cursor.rowcount > 0
+        except sqlite3.Error as e:
+            logger.error(f"Failed to delete collection {collection_id}: {e}")
+            return False
+
+    def add_paper_to_collection(self, collection_id: int, arxiv_id: str) -> bool:
+        """Add a paper to a collection. Returns True if added."""
+        try:
+            self.conn.execute(
+                "INSERT OR IGNORE INTO collection_papers (collection_id, arxiv_id, added_at) VALUES (?, ?, ?)",
+                (collection_id, arxiv_id, datetime.utcnow().isoformat()),
+            )
+            self.conn.commit()
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Failed to add paper {arxiv_id} to collection {collection_id}: {e}")
+            return False
+
+    def remove_paper_from_collection(self, collection_id: int, arxiv_id: str) -> bool:
+        """Remove a paper from a collection. Returns True if removed."""
+        try:
+            cursor = self.conn.execute(
+                "DELETE FROM collection_papers WHERE collection_id = ? AND arxiv_id = ?",
+                (collection_id, arxiv_id),
+            )
+            self.conn.commit()
+            return cursor.rowcount > 0
+        except sqlite3.Error as e:
+            logger.error(f"Failed to remove paper {arxiv_id} from collection {collection_id}: {e}")
+            return False
+
+    def get_collections(self) -> list[dict]:
+        """Get all collections, including paper counts."""
+        rows = self.conn.execute(
+            """
+            SELECT c.*, COUNT(cp.arxiv_id) as paper_count
+            FROM collections c
+            LEFT JOIN collection_papers cp ON c.id = cp.collection_id
+            GROUP BY c.id
+            ORDER BY c.name ASC
+            """
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_collection(self, collection_id: int) -> Optional[dict]:
+        """Get metadata for a single collection."""
+        row = self.conn.execute(
+            "SELECT * FROM collections WHERE id = ?", (collection_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+    def get_collection_papers(
+        self, collection_id: int, limit: int = 100, offset: int = 0
+    ) -> list[dict]:
+        """Get all papers in a collection."""
+        rows = self.conn.execute(
+            """
+            SELECT p.* FROM papers p
+            INNER JOIN collection_papers cp ON p.arxiv_id = cp.arxiv_id
+            WHERE cp.collection_id = ?
+            ORDER BY cp.added_at DESC
+            LIMIT ? OFFSET ?
+            """,
+            (collection_id, limit, offset),
+        ).fetchall()
+        return [self._row_to_dict(row) for row in rows]
+
+    def get_paper_collections(self, arxiv_id: str) -> list[dict]:
+        """Get all collections that a paper belongs to."""
+        rows = self.conn.execute(
+            """
+            SELECT c.* FROM collections c
+            INNER JOIN collection_papers cp ON c.id = cp.collection_id
+            WHERE cp.arxiv_id = ?
+            ORDER BY c.name ASC
+            """,
+            (arxiv_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
 
     def close(self):
         """Close the database connection."""

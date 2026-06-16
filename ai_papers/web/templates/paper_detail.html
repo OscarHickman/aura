@@ -47,12 +47,27 @@
                     </div>
                 </div>
 
-                <div class="mb-4">
+                <div class="mb-3">
                     <h6 class="text-muted mb-2">Categories</h6>
                     <div class="d-flex flex-wrap gap-2">
                         {% for cat in paper.categories %}
                         <span class="badge bg-dark border border-secondary">{{ cat }}</span>
                         {% endfor %}
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <h6 class="text-muted mb-2">Tags</h6>
+                    <div class="d-flex flex-wrap gap-1 align-items-center tag-editor" data-arxiv-id="{{ paper.arxiv_id }}">
+                        {% for t in paper.tags %}
+                        <span class="badge bg-secondary-subtle text-secondary-emphasis d-inline-flex align-items-center gap-1 py-1 px-2" style="font-size: 0.8rem;">
+                            {{ t }}
+                            <button type="button" class="btn-close btn-close-white" style="font-size: 0.45rem; padding: 0;" onclick="removeTag('{{ paper.arxiv_id }}', '{{ t }}', this)" aria-label="Remove"></button>
+                        </span>
+                        {% endfor %}
+                        <form onsubmit="addTag('{{ paper.arxiv_id }}', this); return false;" class="d-inline-flex align-items-center ms-1">
+                            <input type="text" class="form-control form-control-sm px-2 py-0" style="width: 80px; font-size: 0.8rem; height: 22px;" placeholder="+ Tag">
+                        </form>
                     </div>
                 </div>
 
@@ -127,6 +142,41 @@
                     <a href="{{ ar5iv_url }}" target="_blank" class="btn btn-outline-success">
                         <i class="bi bi-file-html"></i> View HTML Version (ar5iv)
                     </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Collections Management -->
+        <div class="card mb-4">
+            <div class="card-header bg-dark border-secondary">
+                <h5 class="mb-0"><i class="bi bi-folder-plus"></i> Collections</h5>
+            </div>
+            <div class="card-body">
+                {% if paper.collections %}
+                <div class="mb-3">
+                    <h6 class="small text-muted mb-2">Currently in:</h6>
+                    <div class="d-flex flex-wrap gap-2">
+                        {% for col in paper.collections %}
+                        <span class="badge bg-primary d-inline-flex align-items-center gap-1 py-1 px-2">
+                            {{ col.name }}
+                            <button type="button" class="btn-close btn-close-white" style="font-size: 0.45rem; padding: 0;" onclick="removeFromCollection({{ col.id }}, '{{ paper.arxiv_id }}', this)" aria-label="Remove"></button>
+                        </span>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
+                <h6 class="small text-muted mb-2">Add to collection:</h6>
+                <div class="input-group input-group-sm">
+                    <select class="form-select" id="collection-select">
+                        <option value="">Select a collection...</option>
+                        {% for col in collections %}
+                            {% if col not in paper.collections %}
+                            <option value="{{ col.id }}">{{ col.name }}</option>
+                            {% endif %}
+                        {% endfor %}
+                    </select>
+                    <button class="btn btn-primary" onclick="addToCollection('{{ paper.arxiv_id }}')">Add</button>
                 </div>
             </div>
         </div>
@@ -245,6 +295,81 @@ async function generateSummaryForPaper(arxivId) {
         console.error('Summary generation failed:', error);
         btn.disabled = false;
         btn.innerHTML = originalText;
+    }
+}
+
+async function addTag(arxivId, form) {
+    const input = form.querySelector('input');
+    const tag = input.value.trim();
+    if (!tag) return;
+
+    try {
+        const resp = await fetch(`/api/papers/${encodeURIComponent(arxivId)}/tags`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ tag: tag })
+        });
+        const data = await resp.json();
+
+        if (resp.ok) {
+            window.location.reload();
+        } else {
+            alert(data.error || 'Failed to add tag');
+        }
+    } catch (e) {
+        console.error('Failed to add tag:', e);
+    }
+}
+
+async function removeTag(arxivId, tag, btn) {
+    try {
+        const resp = await fetch(`/api/papers/${encodeURIComponent(arxivId)}/tags/${encodeURIComponent(tag)}`, {
+            method: 'DELETE'
+        });
+        if (resp.ok) {
+            btn.closest('.badge').remove();
+        } else {
+            alert('Failed to remove tag');
+        }
+    } catch (e) {
+        console.error('Failed to remove tag:', e);
+    }
+}
+
+async function addToCollection(arxivId) {
+    const select = document.getElementById('collection-select');
+    const colId = select.value;
+    if (!colId) return;
+
+    try {
+        const resp = await fetch(`/api/collections/${colId}/papers`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ arxiv_id: arxivId })
+        });
+        if (resp.ok) {
+            window.location.reload();
+        } else {
+            const data = await resp.json();
+            alert(data.error || 'Failed to add paper to collection');
+        }
+    } catch (e) {
+        console.error('Failed to add to collection:', e);
+    }
+}
+
+async function removeFromCollection(colId, arxivId, btn) {
+    try {
+        const resp = await fetch(`/api/collections/${colId}/papers/${encodeURIComponent(arxivId)}`, {
+            method: 'DELETE'
+        });
+        if (resp.ok) {
+            window.location.reload();
+        } else {
+            alert('Failed to remove from collection');
+        }
+    } catch (e) {
+        console.error('Failed to remove from collection:', e);
     }
 }
 </script>

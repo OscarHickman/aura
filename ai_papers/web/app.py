@@ -80,6 +80,8 @@ def _register_routes(app: Flask):
         category = request.args.get("category", "").strip() or None
         date_from = request.args.get("date_from", "").strip() or None
         date_to = request.args.get("date_to", "").strip() or None
+        tag = request.args.get("tag", "").strip() or None
+        collection_id = request.args.get("collection_id", type=int)
         filter_type = request.args.get("filter", "unrated")
         page = int(request.args.get("page", 1))
         per_page = int(request.args.get("per_page", 30))
@@ -94,6 +96,14 @@ def _register_routes(app: Flask):
                 limit=200,
             )
             filter_type = "search"
+        elif tag:
+            paper_list = engine.db.get_papers_by_tag(tag, limit=200)
+            filter_type = f"tag: {tag}"
+        elif collection_id:
+            paper_list = engine.db.get_collection_papers(collection_id, limit=200)
+            coll = engine.db.get_collection(collection_id)
+            coll_name = coll["name"] if coll else "Collection"
+            filter_type = f"collection: {coll_name}"
         else:
             if filter_type == "unrated":
                 paper_list = engine.get_recommendations(
@@ -125,12 +135,16 @@ def _register_routes(app: Flask):
         start = (page - 1) * per_page
         paper_list = paper_list[start : start + per_page]
 
-        # Add current rating info
+        # Add current rating, tags, and collections info
         for p in paper_list:
             if "rating" not in p:
                 p["rating"] = engine.db.get_latest_rating(p["arxiv_id"])
+            p["tags"] = engine.db.get_paper_tags(p["arxiv_id"])
+            p["collections"] = engine.db.get_paper_collections(p["arxiv_id"])
 
         categories = app.config.get("AI_PAPERS", {}).get("categories", [])
+        collections = engine.db.get_collections() if engine else []
+        all_tags = engine.db.get_all_tags() if engine else []
 
         return render_template(
             "papers.html",
@@ -139,10 +153,14 @@ def _register_routes(app: Flask):
             page=page,
             per_page=per_page,
             categories=categories,
+            collections=collections,
+            all_tags=all_tags,
             q=query,
             category=category,
             date_from=date_from,
             date_to=date_to,
+            selected_tag=tag,
+            selected_collection_id=collection_id,
         )
 
     @app.route("/papers/<path:arxiv_id>")
@@ -152,8 +170,10 @@ def _register_routes(app: Flask):
         if not paper:
             return render_template("404.html"), 404
 
-        # Add current rating info
+        # Add current rating info, tags, and collections
         paper["rating"] = engine.db.get_latest_rating(arxiv_id) if engine else None
+        paper["tags"] = engine.db.get_paper_tags(arxiv_id) if engine else []
+        paper["collections"] = engine.db.get_paper_collections(arxiv_id) if engine else []
 
         # Get ratings history
         ratings_history = engine.db.get_ratings_history(arxiv_id) if engine else []
@@ -166,6 +186,9 @@ def _register_routes(app: Flask):
             paper["authors"], exclude_arxiv_id=arxiv_id, limit=5
         ) if engine else []
 
+        # Get all collections for the dropdown
+        collections = engine.db.get_collections() if engine else []
+
         # ar5iv URL for HTML view
         ar5iv_url = f"https://ar5iv.labs.arxiv.org/html/{arxiv_id}"
 
@@ -175,6 +198,7 @@ def _register_routes(app: Flask):
             ratings_history=ratings_history,
             similar_papers=similar_papers,
             same_author_papers=same_author_papers,
+            collections=collections,
             ar5iv_url=ar5iv_url,
         )
 
@@ -196,6 +220,82 @@ def _register_routes(app: Flask):
 
         result = engine.rate_paper(arxiv_id, rating)
         return jsonify(result)
+
+    @app.route("/api/tags", methods=["GET"])
+    def get_tags():
+        """API endpoint to get all unique tags."""
+        tags = engine.db.get_all_tags() if engine else []
+        return jsonify(tags)
+
+    @app.route("/api/papers/<path:arxiv_id>/tags", methods=["POST"])
+    def add_paper_tag(arxiv_id):
+        """API endpoint to add a tag to a paper."""
+        data = request.get_json() or {}
+        tag = data.get("tag", "").strip()
+        if not tag:
+            return jsonify({"error": "tag is required"}), 400
+
+        success = engine.db.add_tag(arxiv_id, tag) if engine else False
+        if not success:
+            return jsonify({"error": "failed to add tag"}), 500
+        return jsonify({"status": "ok", "tag": tag.lower()})
+
+    @app.route("/api/papers/<path:arxiv_id>/tags/<tag>", methods=["DELETE"])
+    def remove_paper_tag(arxiv_id, tag):
+        """API endpoint to remove a tag from a paper."""
+        success = engine.db.remove_tag(arxiv_id, tag) if engine else False
+        if not success:
+            return jsonify({"error": "failed to remove tag"}), 500
+        return jsonify({"status": "ok"})
+
+    @app.route("/api/collections", methods=["GET"])
+    def get_collections():
+        """API endpoint to get all collections."""
+        colls = engine.db.get_collections() if engine else []
+        return jsonify(colls)
+
+    @app.route("/api/collections", methods=["POST"])
+    def create_collection():
+        """API endpoint to create a new collection."""
+        data = request.get_json() or {}
+        name = data.get("name", "").strip()
+        description = data.get("description", "").strip() or None
+        if not name:
+            return jsonify({"error": "name is required"}), 400
+
+        coll_id = engine.db.create_collection(name, description) if engine else None
+        if coll_id is None:
+            return jsonify({"error": "failed to create collection (possibly duplicate name)"}), 500
+        return jsonify({"status": "ok", "id": coll_id, "name": name})
+
+    @app.route("/api/collections/<int:collection_id>", methods=["DELETE"])
+    def delete_collection(collection_id):
+        """API endpoint to delete a collection."""
+        success = engine.db.delete_collection(collection_id) if engine else False
+        if not success:
+            return jsonify({"error": "failed to delete collection"}), 500
+        return jsonify({"status": "ok"})
+
+    @app.route("/api/collections/<int:collection_id>/papers", methods=["POST"])
+    def add_paper_to_collection(collection_id):
+        """API endpoint to add a paper to a collection."""
+        data = request.get_json() or {}
+        arxiv_id = data.get("arxiv_id")
+        if not arxiv_id:
+            return jsonify({"error": "arxiv_id is required"}), 400
+
+        success = engine.db.add_paper_to_collection(collection_id, arxiv_id) if engine else False
+        if not success:
+            return jsonify({"error": "failed to add paper to collection"}), 500
+        return jsonify({"status": "ok"})
+
+    @app.route("/api/collections/<int:collection_id>/papers/<path:arxiv_id>", methods=["DELETE"])
+    def remove_paper_from_collection(collection_id, arxiv_id):
+        """API endpoint to remove a paper from a collection."""
+        success = engine.db.remove_paper_from_collection(collection_id, arxiv_id) if engine else False
+        if not success:
+            return jsonify({"error": "failed to remove paper from collection"}), 500
+        return jsonify({"status": "ok"})
 
     @app.route("/api/search", methods=["GET"])
     def search_api():

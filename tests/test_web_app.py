@@ -40,6 +40,10 @@ class TestWebApp(unittest.TestCase):
             }
         ]
         self.engine.db.get_latest_rating.return_value = 1
+        self.engine.db.get_paper_tags.return_value = []
+        self.engine.db.get_paper_collections.return_value = []
+        self.engine.db.get_collections.return_value = []
+        self.engine.db.get_all_tags.return_value = []
         self.engine.db.get_task_status.return_value = {"status": "SUCCESS", "progress": 10, "total": 10}
         self.engine.db.search_papers.return_value = [
             {
@@ -213,6 +217,73 @@ class TestWebApp(unittest.TestCase):
         resp = self.client.get("/papers/missing")
         self.assertEqual(resp.status_code, 404)
         self.assertIn(b"Resource Not Found", resp.data)
+
+    def test_tags_and_collections_api_and_ui_routes(self):
+        # 1. API: tags list
+        self.engine.db.get_all_tags.return_value = ["ml", "llm"]
+        resp = self.client.get("/api/tags")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json(), ["ml", "llm"])
+
+        # 2. API: add tag
+        self.engine.db.add_tag.return_value = True
+        resp = self.client.post("/api/papers/2401.00001/tags", json={"tag": "quantum"})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json(), {"status": "ok", "tag": "quantum"})
+        self.engine.db.add_tag.assert_called_with("2401.00001", "quantum")
+
+        # 3. API: remove tag
+        self.engine.db.remove_tag.return_value = True
+        resp = self.client.delete("/api/papers/2401.00001/tags/quantum")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json(), {"status": "ok"})
+        self.engine.db.remove_tag.assert_called_with("2401.00001", "quantum")
+
+        # 4. API: collections list
+        self.engine.db.get_collections.return_value = [{"id": 1, "name": "A", "paper_count": 0}]
+        resp = self.client.get("/api/collections")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json(), [{"id": 1, "name": "A", "paper_count": 0}])
+
+        # 5. API: create collection
+        self.engine.db.create_collection.return_value = 2
+        resp = self.client.post("/api/collections", json={"name": "B", "description": "Desc"})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json(), {"status": "ok", "id": 2, "name": "B"})
+        self.engine.db.create_collection.assert_called_with("B", "Desc")
+
+        # 6. API: delete collection
+        self.engine.db.delete_collection.return_value = True
+        resp = self.client.delete("/api/collections/2")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json(), {"status": "ok"})
+        self.engine.db.delete_collection.assert_called_with(2)
+
+        # 7. API: add paper to collection
+        self.engine.db.add_paper_to_collection.return_value = True
+        resp = self.client.post("/api/collections/1/papers", json={"arxiv_id": "2401.00001"})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json(), {"status": "ok"})
+        self.engine.db.add_paper_to_collection.assert_called_with(1, "2401.00001")
+
+        # 8. API: remove paper from collection
+        self.engine.db.remove_paper_from_collection.return_value = True
+        resp = self.client.delete("/api/collections/1/papers/2401.00001")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json(), {"status": "ok"})
+        self.engine.db.remove_paper_from_collection.assert_called_with(1, "2401.00001")
+
+        # 9. UI: Browse by tag / collection
+        self.engine.db.get_papers_by_tag.return_value = []
+        resp = self.client.get("/papers?tag=ml")
+        self.assertEqual(resp.status_code, 200)
+        self.engine.db.get_papers_by_tag.assert_called_with("ml", limit=200)
+
+        self.engine.db.get_collection_papers.return_value = []
+        self.engine.db.get_collection.return_value = {"id": 1, "name": "A"}
+        resp = self.client.get("/papers?collection_id=1")
+        self.assertEqual(resp.status_code, 200)
+        self.engine.db.get_collection_papers.assert_called_with(1, limit=200)
 
 
 if __name__ == "__main__":

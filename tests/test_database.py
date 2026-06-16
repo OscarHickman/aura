@@ -180,6 +180,52 @@ class TestPaperDatabase(unittest.TestCase):
         self.assertEqual(len(by_authors), 1)
         self.assertEqual(by_authors[0]["arxiv_id"], "2401.00002")
 
+    def test_tags_and_collections_database(self):
+        p1 = make_paper("2401.00001")
+        p2 = make_paper("2401.00002")
+        self.db.add_paper(p1)
+        self.db.add_paper(p2)
+
+        # 1. Tags
+        self.assertTrue(self.db.add_tag("2401.00001", "ML"))
+        self.assertTrue(self.db.add_tag("2401.00001", "LLM"))
+        self.assertTrue(self.db.add_tag("2401.00002", "ML"))
+
+        self.assertEqual(self.db.get_paper_tags("2401.00001"), ["llm", "ml"])
+        self.assertEqual(self.db.get_all_tags(), ["llm", "ml"])
+
+        tagged_papers = self.db.get_papers_by_tag("ML")
+        self.assertEqual(len(tagged_papers), 2)
+
+        self.db.remove_tag("2401.00001", "ML")
+        self.assertEqual(self.db.get_paper_tags("2401.00001"), ["llm"])
+
+        # 2. Collections
+        coll_id = self.db.create_collection("My Thesis", "Papers for my thesis")
+        self.assertIsNotNone(coll_id)
+
+        self.assertTrue(self.db.add_paper_to_collection(coll_id, "2401.00001"))
+        self.assertTrue(self.db.add_paper_to_collection(coll_id, "2401.00002"))
+
+        colls = self.db.get_collections()
+        self.assertEqual(len(colls), 1)
+        self.assertEqual(colls[0]["name"], "My Thesis")
+        self.assertEqual(colls[0]["paper_count"], 2)
+
+        coll_papers = self.db.get_collection_papers(coll_id)
+        self.assertEqual(len(coll_papers), 2)
+
+        paper_colls = self.db.get_paper_collections("2401.00001")
+        self.assertEqual(len(paper_colls), 1)
+        self.assertEqual(paper_colls[0]["name"], "My Thesis")
+
+        self.assertTrue(self.db.remove_paper_from_collection(coll_id, "2401.00001"))
+        colls = self.db.get_collections()
+        self.assertEqual(colls[0]["paper_count"], 1)
+
+        self.assertTrue(self.db.delete_collection(coll_id))
+        self.assertEqual(len(self.db.get_collections()), 0)
+
     def test_task_tracking_lifecycle(self):
         task_id = "task-uuid-123"
         self.db.create_task_entry(task_id, "fetch_papers", "PENDING")
