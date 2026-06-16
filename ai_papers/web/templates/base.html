@@ -36,6 +36,10 @@
                         <a class="nav-link" href="/settings"><i class="bi bi-gear"></i> Settings</a>
                     </li>
                 </ul>
+                <form class="d-flex ms-auto" action="/papers" method="get">
+                    <input class="form-control me-2" type="search" placeholder="Search papers..." aria-label="Search" name="q" value="{{ request.args.get('q', '') }}">
+                    <button class="btn btn-outline-success" type="submit"><i class="bi bi-search"></i></button>
+                </form>
             </div>
         </div>
     </nav>

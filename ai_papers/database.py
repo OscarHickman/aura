@@ -481,6 +481,83 @@ class PaperDatabase:
         d.pop("embedding", None)
         return d
 
+    def search_papers(
+        self,
+        query: str,
+        category: Optional[str] = None,
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
+        limit: int = 50,
+    ) -> list[dict]:
+        """Search papers using SQLite FTS5.
+
+        Args:
+            query: The search terms (will be sanitised).
+            category: Optional category filter.
+            date_from: Optional starting date (YYYY-MM-DD).
+            date_to: Optional ending date (YYYY-MM-DD).
+            limit: Maximum number of results to return.
+        """
+        import re
+        words = re.findall(r'\w+', query)
+        if not words:
+            return []
+
+        # Sanitise: wrap each word in double quotes and join with AND
+        fts_query = ' AND '.join(f'"{w}"' for w in words)
+
+        where_clauses = ["papers_fts MATCH ?"]
+        params: list[str | int] = [fts_query]
+
+        if category:
+            # Match category inside the JSON array representation
+            where_clauses.append("p.categories LIKE ?")
+            params.append(f'%"{category}"%')
+
+        if date_from:
+            where_clauses.append("p.published >= ?")
+            params.append(date_from)
+
+        if date_to:
+            # If date_to is YYYY-MM-DD, expand it to include the whole day
+            if len(date_to) == 10:
+                where_clauses.append("p.published <= ?")
+                params.append(f"{date_to}T23:59:59")
+            else:
+                where_clauses.append("p.published <= ?")
+                params.append(date_to)
+
+        where_clause = " AND ".join(where_clauses)
+
+        # Use SQLite FTS5 highlight function to highlight matches.
+        # Columns are: 0: arxiv_id (unindexed), 1: title, 2: abstract.
+        sql = f"""
+            SELECT 
+                p.arxiv_id,
+                highlight(papers_fts, 1, '<mark>', '</mark>') as title,
+                highlight(papers_fts, 2, '<mark>', '</mark>') as abstract,
+                p.authors,
+                p.categories,
+                p.published,
+                p.url,
+                p.pdf_url,
+                p.fetched_at,
+                p.summary
+            FROM papers_fts
+            JOIN papers p ON p.arxiv_id = papers_fts.arxiv_id
+            WHERE {where_clause}
+            ORDER BY rank
+            LIMIT ?
+        """
+        params.append(limit)
+
+        try:
+            rows = self.conn.execute(sql, params).fetchall()
+            return [self._row_to_dict(row) for row in rows]
+        except sqlite3.Error as e:
+            logger.error(f"FTS search failed for query '{query}': {e}")
+            return []
+
     def close(self):
         """Close the database connection."""
         self.conn.close()

@@ -114,6 +114,50 @@ class TestPaperDatabase(unittest.TestCase):
         needing_with_failed = self.db.get_papers_needing_summary(include_failed=True)
         self.assertEqual(len(needing_with_failed), 2)
 
+    def test_search_papers(self):
+        p1 = make_paper("2401.00001")
+        p1["title"] = "Attention is all you need for Transformers"
+        p1["abstract"] = "This paper introduces the Transformer architecture based on attention."
+        p1["categories"] = ["cs.LG", "cs.CL"]
+        p1["published"] = "2026-01-01T10:00:00Z"
+
+        p2 = make_paper("2401.00002")
+        p2["title"] = "Deep Residual Learning for Image Recognition"
+        p2["abstract"] = "We present a residual learning framework to ease the training of deep networks."
+        p2["categories"] = ["cs.CV"]
+        p2["published"] = "2026-02-01T10:00:00Z"
+
+        self.db.add_paper(p1)
+        self.db.add_paper(p2)
+
+        # 1. Simple keyword search
+        results = self.db.search_papers("Attention")
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["arxiv_id"], "2401.00001")
+        self.assertIn("<mark>Attention</mark>", results[0]["title"])
+
+        # 2. Case insensitivity and abstract match
+        results = self.db.search_papers("residual")
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["arxiv_id"], "2401.00002")
+        self.assertIn("<mark>residual</mark>", results[0]["abstract"])
+
+        # 3. Category filtering
+        results = self.db.search_papers("learning", category="cs.CV")
+        self.assertEqual(len(results), 1)
+        results = self.db.search_papers("learning", category="cs.LG")
+        self.assertEqual(len(results), 0) # "learning" is in abstract of p2, which is cs.CV.
+
+        # 4. Date filtering
+        results = self.db.search_papers("learning", date_from="2026-01-15")
+        self.assertEqual(len(results), 1) # only p2
+        results = self.db.search_papers("learning", date_to="2026-01-15")
+        self.assertEqual(len(results), 0)
+
+        # 5. Empty/bad query robustness
+        self.assertEqual(self.db.search_papers(""), [])
+        self.assertEqual(self.db.search_papers("!!!"), [])
+
     def test_task_tracking_lifecycle(self):
         task_id = "task-uuid-123"
         self.db.create_task_entry(task_id, "fetch_papers", "PENDING")

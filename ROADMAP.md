@@ -12,15 +12,6 @@
 
 *Make the daily workflow actually pleasant.*
 
-### 2.1 Full-Text Paper Search
-**Why it matters:** Users currently have no way to find a specific paper they remember reading. With thousands of papers in the DB, browsing is the only option.
-
-- [ ] Add SQLite FTS5 virtual table mirroring `title + abstract`
-- [ ] Add `/api/search?q=...` endpoint with ranked results
-- [ ] Add a search bar to the navigation in `base.html`
-- [ ] Support category and date range filters on search results
-- [ ] Highlight matching terms in results
-
 ### 2.2 Paper Detail Page
 **Why it matters:** Clicking a paper title currently opens arXiv in a new tab. There is no in-app view of a paper's full information, related papers, or rating history.
 

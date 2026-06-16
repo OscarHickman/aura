@@ -10,10 +10,13 @@
         <i class="bi bi-hand-thumbs-up-fill text-success"></i> Liked Papers
         {% elif filter_type == 'disliked' %}
         <i class="bi bi-hand-thumbs-down-fill text-danger"></i> Disliked Papers
+        {% elif filter_type == 'search' %}
+        <i class="bi bi-search"></i> Search Results
         {% else %}
         <i class="bi bi-journals"></i> All Papers
         {% endif %}
     </h1>
+    {% if filter_type != 'search' %}
     <div class="btn-group">
         <a href="/papers?filter=unrated" class="btn btn-outline-primary {% if filter_type == 'unrated' %}active{% endif %}">
             Recommended
@@ -28,7 +31,42 @@
             All
         </a>
     </div>
+    {% endif %}
 </div>
+
+{% if q %}
+<div class="card bg-body-tertiary mb-4">
+    <div class="card-body py-3">
+        <h6 class="card-title mb-3 text-muted"><i class="bi bi-funnel"></i> Filter Search Results for &ldquo;{{ q }}&rdquo;</h6>
+        <form method="get" action="/papers" class="row g-3 align-items-end">
+            <input type="hidden" name="q" value="{{ q }}">
+            <div class="col-md-4">
+                <label for="category" class="form-label small text-muted">Category</label>
+                <select name="category" id="category" class="form-select form-select-sm">
+                    <option value="">All Categories</option>
+                    {% for cat in categories %}
+                    <option value="{{ cat }}" {% if category == cat %}selected{% endif %}>{{ cat }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label for="date_from" class="form-label small text-muted">From Date</label>
+                <input type="date" name="date_from" id="date_from" class="form-control form-control-sm" value="{{ date_from or '' }}">
+            </div>
+            <div class="col-md-3">
+                <label for="date_to" class="form-label small text-muted">To Date</label>
+                <input type="date" name="date_to" id="date_to" class="form-control form-control-sm" value="{{ date_to or '' }}">
+            </div>
+            <div class="col-md-2">
+                <div class="d-grid gap-2 d-md-flex">
+                    <button type="submit" class="btn btn-sm btn-primary">Filter</button>
+                    <a href="/papers?q={{ q }}" class="btn btn-sm btn-outline-secondary">Reset</a>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
 
 {% if not papers %}
 <div class="alert alert-info">
@@ -51,7 +89,7 @@
                         <div class="flex-grow-1">
                             <h5 class="card-title mb-1">
                                 <a href="{{ paper.url }}" target="_blank" class="text-decoration-none">
-                                    {{ paper.title }}
+                                    {{ paper.title | safe }}
                                 </a>
                             </h5>
                             {% if paper.freshness_bonus is defined and paper.freshness_bonus > 0.05 %}
@@ -108,7 +146,11 @@
                     </div>
                     {% endif %}
 
+                    {% if q %}
+                    <p class="card-text abstract-text formatted-text text-muted small">{{ paper.abstract | safe }}</p>
+                    {% else %}
                     <p class="card-text abstract-text formatted-text text-muted small">{{ paper.abstract[:300] }}{% if paper.abstract | length > 300 %} <a href="#" class="text-decoration-none">read more</a>{% endif %}</p>
+                    {% endif %}
 
                     <div class="d-flex flex-wrap gap-2 align-items-center">
                         {% for cat in paper.categories[:4] %}
@@ -133,7 +175,7 @@
     <ul class="pagination justify-content-center">
         {% if page > 1 %}
         <li class="page-item">
-            <a class="page-link" href="/papers?filter={{ filter_type }}&page={{ page - 1 }}&per_page={{ per_page }}">
+            <a class="page-link" href="/papers?filter={{ filter_type }}&page={{ page - 1 }}&per_page={{ per_page }}{% if q %}&q={{ q }}{% endif %}{% if category %}&category={{ category }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}">
                 <i class="bi bi-chevron-left"></i> Previous
             </a>
         </li>
@@ -143,7 +185,7 @@
         </li>
         {% if papers | length == per_page %}
         <li class="page-item">
-            <a class="page-link" href="/papers?filter={{ filter_type }}&page={{ page + 1 }}&per_page={{ per_page }}">
+            <a class="page-link" href="/papers?filter={{ filter_type }}&page={{ page + 1 }}&per_page={{ per_page }}{% if q %}&q={{ q }}{% endif %}{% if category %}&category={{ category }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}">
                 Next <i class="bi bi-chevron-right"></i>
             </a>
         </li>

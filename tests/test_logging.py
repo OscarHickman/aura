@@ -2,9 +2,7 @@ import json
 import logging
 import os
 import unittest
-from unittest.mock import patch, Mock
-import uuid
-from flask import g
+from unittest.mock import patch
 
 from ai_papers.logging_config import setup_logging, memory_log_handler, request_id_var, CustomJsonFormatter
 from ai_papers.web.app import create_app

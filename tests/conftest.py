@@ -3,7 +3,6 @@ import tempfile
 from pathlib import Path
 import numpy as np
 from ai_papers.database import PaperDatabase
-from ai_papers.recommender import RecommendationEngine
 from ai_papers.web.app import create_app
 
 @pytest.fixture

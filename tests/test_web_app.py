@@ -41,6 +41,19 @@ class TestWebApp(unittest.TestCase):
         ]
         self.engine.db.get_latest_rating.return_value = 1
         self.engine.db.get_task_status.return_value = {"status": "SUCCESS", "progress": 10, "total": 10}
+        self.engine.db.search_papers.return_value = [
+            {
+                "arxiv_id": "2401.00001",
+                "title": "A Great <mark>Astro</mark> Paper",
+                "abstract": "A great abstract about stars.",
+                "authors": ["Ada"],
+                "categories": ["astro-ph.CO"],
+                "score": 0.95,
+                "url": "http://arxiv.org/abs/2401.00001",
+                "summary": "Existing summary",
+                "published": "2026-01-01T00:00:00Z"
+            }
+        ]
         self.engine.generate_missing_summaries.return_value = {
             "status": "ok",
             "processed": 1,
@@ -146,6 +159,28 @@ class TestWebApp(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         config_data = resp.get_json()
         self.assertIn("categories", config_data)
+
+    def test_search_routes(self):
+        # 1. Test HTML search page
+        resp = self.client.get("/papers?q=Astro&category=astro-ph.CO&date_from=2026-01-01&date_to=2026-01-02")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b"Search Results", resp.data)
+        self.assertIn(b"A Great <mark>Astro</mark> Paper", resp.data)
+        self.engine.db.search_papers.assert_called_with(
+            query="Astro",
+            category="astro-ph.CO",
+            date_from="2026-01-01",
+            date_to="2026-01-02",
+            limit=200
+        )
+
+        # 2. Test API search endpoint
+        resp = self.client.get("/api/search?q=Astro&category=astro-ph.CO&date_from=2026-01-01&date_to=2026-01-02")
+        self.assertEqual(resp.status_code, 200)
+        results = resp.get_json()
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["arxiv_id"], "2401.00001")
+        self.assertIn("<mark>Astro</mark>", results[0]["title"])
 
 
 if __name__ == "__main__":

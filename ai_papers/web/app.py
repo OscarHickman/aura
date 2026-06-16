@@ -75,36 +75,51 @@ def _register_routes(app: Flask):
 
     @app.route("/papers")
     def papers():
-        """Browse recommended papers."""
+        """Browse recommended papers or search papers."""
+        query = request.args.get("q", "").strip()
+        category = request.args.get("category", "").strip() or None
+        date_from = request.args.get("date_from", "").strip() or None
+        date_to = request.args.get("date_to", "").strip() or None
         filter_type = request.args.get("filter", "unrated")
         page = int(request.args.get("page", 1))
         per_page = int(request.args.get("per_page", 30))
 
-        if filter_type == "unrated":
-            paper_list = engine.get_recommendations(
-                limit=per_page * page, unrated_only=True
+        if query:
+            # Full-text search with optional filters
+            paper_list = engine.db.search_papers(
+                query=query,
+                category=category,
+                date_from=date_from,
+                date_to=date_to,
+                limit=200,
             )
-        elif filter_type == "liked":
-            paper_list = engine.db.get_papers(
-                limit=per_page, offset=(page - 1) * per_page, rated_only=True
-            )
-            # Add ratings
-            for p in paper_list:
-                p["rating"] = engine.db.get_latest_rating(p["arxiv_id"])
-                p["score"] = p.get("score", 0)
-            paper_list = [p for p in paper_list if p.get("rating") == 1]
-        elif filter_type == "disliked":
-            paper_list = engine.db.get_papers(
-                limit=per_page, offset=(page - 1) * per_page, rated_only=True
-            )
-            for p in paper_list:
-                p["rating"] = engine.db.get_latest_rating(p["arxiv_id"])
-                p["score"] = p.get("score", 0)
-            paper_list = [p for p in paper_list if p.get("rating") == 0]
+            filter_type = "search"
         else:
-            paper_list = engine.get_recommendations(
-                limit=per_page * page, unrated_only=False
-            )
+            if filter_type == "unrated":
+                paper_list = engine.get_recommendations(
+                    limit=per_page * page, unrated_only=True
+                )
+            elif filter_type == "liked":
+                paper_list = engine.db.get_papers(
+                    limit=per_page, offset=(page - 1) * per_page, rated_only=True
+                )
+                # Add ratings
+                for p in paper_list:
+                    p["rating"] = engine.db.get_latest_rating(p["arxiv_id"])
+                    p["score"] = p.get("score", 0)
+                paper_list = [p for p in paper_list if p.get("rating") == 1]
+            elif filter_type == "disliked":
+                paper_list = engine.db.get_papers(
+                    limit=per_page, offset=(page - 1) * per_page, rated_only=True
+                )
+                for p in paper_list:
+                    p["rating"] = engine.db.get_latest_rating(p["arxiv_id"])
+                    p["score"] = p.get("score", 0)
+                paper_list = [p for p in paper_list if p.get("rating") == 0]
+            else:
+                paper_list = engine.get_recommendations(
+                    limit=per_page * page, unrated_only=False
+                )
 
         # Paginate
         start = (page - 1) * per_page
@@ -115,12 +130,19 @@ def _register_routes(app: Flask):
             if "rating" not in p:
                 p["rating"] = engine.db.get_latest_rating(p["arxiv_id"])
 
+        categories = app.config.get("AI_PAPERS", {}).get("categories", [])
+
         return render_template(
             "papers.html",
             papers=paper_list,
             filter_type=filter_type,
             page=page,
             per_page=per_page,
+            categories=categories,
+            q=query,
+            category=category,
+            date_from=date_from,
+            date_to=date_to,
         )
 
     @app.route("/api/rate", methods=["POST"])
@@ -141,6 +163,27 @@ def _register_routes(app: Flask):
 
         result = engine.rate_paper(arxiv_id, rating)
         return jsonify(result)
+
+    @app.route("/api/search", methods=["GET"])
+    def search_api():
+        """API endpoint to search papers using FTS."""
+        query = request.args.get("q", "").strip()
+        if not query:
+            return jsonify([])
+
+        category = request.args.get("category", "").strip() or None
+        date_from = request.args.get("date_from", "").strip() or None
+        date_to = request.args.get("date_to", "").strip() or None
+        limit = request.args.get("limit", 50, type=int)
+
+        results = engine.db.search_papers(
+            query=query,
+            category=category,
+            date_from=date_from,
+            date_to=date_to,
+            limit=limit,
+        )
+        return jsonify(results)
 
     @app.route("/api/fetch", methods=["POST"])
     def fetch_papers():
