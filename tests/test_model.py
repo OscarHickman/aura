@@ -21,16 +21,25 @@ class TestPreferenceModel(unittest.TestCase):
             self.assertIsInstance(loss, float)
             self.assertTrue(model_path.exists())
 
-            pred = model.predict(x1)
-            self.assertGreaterEqual(pred, 0.0)
-            self.assertLessEqual(pred, 1.0)
+            mean_pred, std_pred = model.predict(x1, num_samples=10)
+            self.assertGreaterEqual(mean_pred, 0.0)
+            self.assertLessEqual(mean_pred, 1.0)
+            self.assertIsInstance(std_pred, float)
 
-            preds = model.predict_batch([x1, x2])
+            # Test train_single and replay buffer
+            model.train_single(x1, 1.0)
+            self.assertEqual(len(model.replay_buffer), 1)
+            model.train_single(x2, 0.0)
+            self.assertEqual(len(model.replay_buffer), 2)
+
+            preds, uncs = model.predict_batch([x1, x2])
             self.assertEqual(len(preds), 2)
+            self.assertEqual(len(uncs), 2)
 
             stats = model.get_stats()
             self.assertEqual(stats["embedding_dim"], 4)
-            self.assertEqual(stats["total_trained"], 2)
+            self.assertEqual(stats["total_trained"], 5)
+            self.assertEqual(stats["replay_buffer_size"], 2)
 
     def test_load_skips_mismatched_embedding_dim(self):
         with tempfile.TemporaryDirectory() as td:

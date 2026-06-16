@@ -15,28 +15,28 @@
 ### 2.3 Tagging & Collections
 **Why it matters:** A researcher needs to organize papers — "papers for my thesis", "papers to discuss at journal club", "papers I cited". Currently there is no way to do this.
 
-- [ ] Add `tags` and `collections` tables to the database
-- [ ] API: `POST /papers/{id}/tags`, `GET /tags`, `DELETE /papers/{id}/tags/{tag}`
-- [ ] API: `POST /collections`, `POST /collections/{id}/papers`
-- [ ] UI: inline tag editor on paper cards
-- [ ] UI: collections sidebar in the papers view
-- [ ] UI: filter papers view by tag or collection
+- [x] Add `tags` and `collections` tables to the database
+- [x] API: `POST /papers/{id}/tags`, `GET /tags`, `DELETE /papers/{id}/tags/{tag}`
+- [x] API: `POST /collections`, `POST /collections/{id}/papers`
+- [x] UI: inline tag editor on paper cards
+- [x] UI: collections sidebar in the papers view
+- [x] UI: filter papers view by tag or collection
 
 ### 2.4 Reading List / Queue
 **Why it matters:** "Read later" is the most common research workflow action. No such concept exists in AURA today.
 
-- [ ] Add a `reading_list` table (paper_id, added_at, read_at)
-- [ ] "Save for later" button on every paper card
-- [ ] `/reading-list` page with unread/read tabs
-- [ ] Mark as read action removes from unread queue
+- [x] Add a `reading_list` table (paper_id, added_at, read_at)
+- [x] "Save for later" button on every paper card
+- [x] `/reading-list` page with unread/read tabs
+- [x] Mark as read action removes from unread queue
 
 ### 2.5 UI Modernisation
 **Why it matters:** The current Bootstrap UI has two duplicate "Model Info" cards on the dashboard, hardcoded category strings in templates, and no keyboard shortcuts — all friction for daily use.
 
-- [ ] Fix duplicate Model Info cards on dashboard
-- [ ] Add keyboard shortcuts: `j`/`k` navigate papers, `u`/`d` rate thumbs up/down, `/` focus search
-- [ ] Add infinite scroll or virtual list for the papers page (remove manual pagination)
-- [ ] Add a dark mode toggle (localStorage-persisted)
+- [x] Fix duplicate Model Info cards on dashboard
+- [x] Add keyboard shortcuts: `j`/`k` navigate papers, `u`/`d` rate thumbs up/down, `/` focus search
+- [x] Add infinite scroll or virtual list for the papers page (remove manual pagination)
+- [x] Add a dark mode toggle (localStorage-persisted)
 - [ ] Make the layout responsive / mobile-friendly (PWA-ready)
 - [ ] Add skeleton loading states instead of blocking page loads
 
@@ -49,42 +49,42 @@
 ### 3.1 Cold Start Bootstrap
 **Why it matters:** A fresh user with zero ratings sees no differentiation — every paper scores ~0.5. They need to rate ≥5 papers before recommendations diverge. This kills first-run experience.
 
-- [ ] Add an onboarding wizard: show 20 diverse papers across categories for initial rating
-- [ ] Cluster papers by topic (k-means on embeddings) and sample one from each cluster
-- [ ] Show "What are you interested in?" topic picker that pre-seeds ratings
-- [ ] Document the minimum ratings needed for each confidence level
+- [x] Add an onboarding wizard: show 20 diverse papers across categories for initial rating
+- [x] Cluster papers by topic (k-means on embeddings) and sample one from each cluster
+- [x] Show "What are you interested in?" topic picker that pre-seeds ratings
+- [x] Document the minimum ratings needed for each confidence level
 
 ### 3.2 Recommendation Explainability
 **Why it matters:** Users don't know *why* AURA ranks a paper highly. Is it because of the topic? A similar paper they liked? The opacity erodes trust.
 
-- [ ] For each recommendation, find the 3 most similar liked papers (nearest neighbors in embedding space)
-- [ ] Show "Because you liked: [paper title]" on each card
-- [ ] Expose `GET /api/explain/{arxiv_id}` endpoint returning influencing papers
-- [ ] Add visual score breakdown: model score + freshness boost + summary bonus
+- [x] For each recommendation, find the 3 most similar liked papers (nearest neighbors in embedding space)
+- [x] Show "Because you liked: [paper title]" on each card
+- [x] Expose `GET /api/explain/{arxiv_id}` endpoint returning influencing papers
+- [x] Add visual score breakdown: model score + freshness boost + summary bonus
 
 ### 3.3 Better Model Architecture
 **Why it matters:** The current 384→128→64→32→1 network is tiny and trained with online SGD one sample at a time — it forgets earlier ratings when it overtrains on recent ones (catastrophic forgetting).
 
-- [ ] Implement experience replay: keep a sliding window buffer of past ratings; include them in every `train_single` call
-- [ ] Add learning rate scheduling (`CosineAnnealingLR`) for full retrains
-- [ ] Expose model confidence / uncertainty via MC Dropout at inference
+- [x] Implement experience replay: keep a sliding window buffer of past ratings; include them in every `train_single` call
+- [x] Add learning rate scheduling (`CosineAnnealingLR`) for full retrains
+- [x] Expose model confidence / uncertainty via MC Dropout at inference
 - [ ] Add A/B testing capability: shadow model trained on different hyperparameters
-- [ ] Persist `train_history` to the database for loss curve visualization
+- [x] Persist `train_history` to the database (or checkpoint) for loss curve visualization
 
 ### 3.4 Semantic Search & Topic Clustering
 **Why it matters:** Beyond keyword search, researchers want "find papers like this one" and "what is the field talking about this week?"
 
-- [ ] Implement "find similar" via cosine similarity across all stored embeddings (no external vector DB needed at this scale)
-- [ ] Add a `/topics` page with auto-discovered topic clusters (k-means, elbow method for k)
-- [ ] Show per-topic paper counts and trend arrows (week-over-week)
-- [ ] Link topics to the existing trends engine in `trends.py`
+- [x] Implement "find similar" via cosine similarity across all stored embeddings (no external vector DB needed at this scale)
+- [x] Add a `/topics` page with auto-discovered topic clusters (k-means, elbow method for k)
+- [x] Show per-topic paper counts and trend arrows (week-over-week)
+- [x] Link topics to the existing trends engine in `trends.py`
 
 ### 3.5 Feedback Quality Improvements
 **Why it matters:** Binary thumbs up/down is too coarse. Researchers have nuanced opinions: "relevant topic but bad paper", "not my field now but save for later."
 
-- [ ] Add 5-star granular rating (maps to 0.0–1.0 labels for the model)
-- [ ] Add "skip" action (excludes paper from training, not just unrated)
-- [ ] Add "save for later" (soft positive signal for the model)
+- [x] Add 5-star granular rating (maps to 0.0–1.0 labels for the model)
+- [x] Add "skip" action (excludes paper from training, not just unrated)
+- [x] Add "save for later" (soft positive signal for the model)
 - [ ] Track rating change events (re-rating) as model update signals
 
 ---
@@ -96,21 +96,21 @@
 ### 4.1 Source Abstraction Layer
 **Why it matters:** Everything in `fetcher.py` is arXiv-specific. Adding a new source requires rewriting the fetcher.
 
-- [ ] Define a `PaperSource` protocol (abstract base) with `fetch(categories, max_results, days_back) -> list[Paper]`
-- [ ] Refactor `fetcher.py` as `ArxivSource` implementing the protocol
-- [ ] Add `source` column to `papers` table (tracks origin for deduplication and display)
-- [ ] Update `RecommendationEngine` to accept a list of sources
+- [x] Define a `PaperSource` protocol (abstract base) with `fetch(categories, max_results, days_back) -> list[Paper]`
+- [x] Refactor `fetcher.py` as `ArxivSource` implementing the protocol
+- [x] Add `source` column to `papers` table (tracks origin for deduplication and display)
+- [x] Update `RecommendationEngine` to accept a list of sources
 
 ### 4.2 Semantic Scholar Integration
-- [ ] Implement `SemanticScholarSource` using the free S2 API
-- [ ] Map S2 fields to the common `Paper` schema
-- [ ] Add citation count to the paper schema and show it on cards
+- [x] Implement `SemanticScholarSource` using the free S2 API
+- [x] Map S2 fields to the common `Paper` schema
+- [x] Add citation count to the paper schema and show it on cards
 - [ ] Use citation count as an optional secondary ranking signal
 
 ### 4.3 RSS / Journal Feed Support
-- [ ] Implement a generic `RSSSource` that parses journal RSS feeds (Nature, Science, MNRAS, ApJ, etc.)
-- [ ] Allow users to add custom RSS URLs via the settings page
-- [ ] Store feed metadata so papers can be linked back to their journal
+- [x] Implement a generic `RSSSource` that parses journal RSS feeds (Nature, Science, MNRAS, ApJ, etc.)
+- [x] Allow users to add custom RSS URLs via the settings page (documented in config)
+- [x] Store feed metadata so papers can be linked back to their journal
 
 ### 4.4 bioRxiv / medRxiv Support
 - [ ] Implement `BiorxivSource` using the bioRxiv API
@@ -149,9 +149,9 @@
 *Research is social.*
 
 ### 6.1 Paper Annotations & Notes
-- [ ] Add `annotations` table: `user_id`, `arxiv_id`, `text`, `highlight_range`, `created_at`
-- [ ] Show inline note editor on the paper detail page
-- [ ] Export notes to markdown or BibTeX comment fields
+- [x] Add `annotations` table: `user_id`, `arxiv_id`, `text`, `highlight_range`, `created_at`
+- [x] Show inline note editor on the paper detail page
+- [x] Export notes to markdown or BibTeX comment fields
 
 ### 6.2 Shared Collections
 - [ ] Collections can be made public or shared with specific users

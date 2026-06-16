@@ -7,7 +7,7 @@ import yaml
 from celery import Celery
 
 from .recommender import RecommendationEngine
-from .fetcher import _parse_entry, ATOM_NS, ARXIV_API_URL
+from .fetcher import ArxivSource
 from .embedder import embed_papers_batch
 
 logger = logging.getLogger(__name__)
@@ -100,11 +100,12 @@ def fetch_papers_page_task(self, task_id, categories, max_results, days_back, ge
         engine.db.update_task_progress(task_id, progress=start, total=max_results)
         
         logger.info(f"Task {task_id}: Fetching arXiv papers start={start}, batch_size={batch_size}")
-        resp = requests.get(ARXIV_API_URL, params=params, timeout=30)
+        source = ArxivSource()
+        resp = requests.get(source.ARXIV_API_URL, params=params, timeout=30)
         resp.raise_for_status()
         
         root = ElementTree.fromstring(resp.text)
-        entries = root.findall(f"{ATOM_NS}entry")
+        entries = root.findall(f"{source.ATOM_NS}entry")
         
         # Fallback to simple if no entries on first page
         if not entries and start == 0:
@@ -116,14 +117,14 @@ def fetch_papers_page_task(self, task_id, categories, max_results, days_back, ge
                 "sortBy": "submittedDate",
                 "sortOrder": "descending",
             }
-            resp = requests.get(ARXIV_API_URL, params=params_simple, timeout=30)
+            resp = requests.get(source.ARXIV_API_URL, params=params_simple, timeout=30)
             resp.raise_for_status()
             root = ElementTree.fromstring(resp.text)
-            entries = root.findall(f"{ATOM_NS}entry")
+            entries = root.findall(f"{source.ATOM_NS}entry")
             
         papers = []
         for entry in entries:
-            paper = _parse_entry(entry)
+            paper = source._parse_entry(entry)
             if paper:
                 papers.append(paper)
                 

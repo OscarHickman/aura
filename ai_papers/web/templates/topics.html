@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Discovered Topics - AI Papers{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="bi bi-diagram-3"></i> Auto-Discovered Topics</h1>
+    <p class="text-muted mb-0">Unsupervised clustering of recent papers</p>
+</div>
+
+{% if not clusters %}
+<div class="alert alert-info">
+    Not enough papers with embeddings to discover topics. Try fetching more papers.
+</div>
+{% else %}
+<div class="row g-4">
+    {% for cluster in clusters %}
+    <div class="col-md-6">
+        <div class="card h-100 bg-dark border-secondary">
+            <div class="card-header border-secondary d-flex justify-content-between align-items-center">
+                <h5 class="mb-0 text-primary">{{ cluster.name }}</h5>
+                <span class="badge bg-secondary rounded-pill">{{ cluster.paper_count }} papers</span>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <h6 class="text-muted small">Top Keywords:</h6>
+                    <div class="d-flex flex-wrap gap-1">
+                        {% for kw in cluster.keywords %}
+                        <a href="/papers?mode=semantic&q={{ kw }}" class="badge bg-secondary-subtle text-secondary-emphasis text-decoration-none">
+                            {{ kw }}
+                        </a>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <h6 class="text-muted small mb-2">Representative Papers:</h6>
+                <div class="list-group list-group-flush">
+                    {% for paper in cluster.top_papers %}
+                    <a href="/papers/{{ paper.arxiv_id }}" class="list-group-item list-group-item-action bg-transparent text-light border-secondary px-0 py-2">
+                        <div class="text-truncate" style="max-width: 100%;">
+                            {{ paper.title | safe }}
+                        </div>
+                        <small class="text-muted">{{ paper.authors[:2] | join(", ") }}</small>
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="card-footer border-secondary bg-transparent text-end">
+                <a href="/papers?mode=semantic&q={{ cluster.name }}" class="btn btn-sm btn-outline-primary">
+                    Search this topic <i class="bi bi-arrow-right"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

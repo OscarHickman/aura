@@ -29,3 +29,4 @@ mypy>=2.1.0
 # Logging & Observability
 python-json-logger>=2.0.0
 sentry-sdk>=2.0.0
+feedparser==6.0.12

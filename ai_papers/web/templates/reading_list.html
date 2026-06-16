@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}Reading List - AI Papers{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="bi bi-bookmark-star"></i> Reading List</h1>
+    <div class="btn-group">
+        <a href="/reading-list?filter=unread" class="btn btn-outline-info {% if filter_type == 'unread' %}active{% endif %}">Queue</a>
+        <a href="/reading-list?filter=read" class="btn btn-outline-secondary {% if filter_type == 'read' %}active{% endif %}">Finished</a>
+    </div>
+</div>
+
+<div class="row">
+    {% if not papers %}
+    <div class="col-12 text-center py-5">
+        <p class="text-muted h5">Your reading list is empty.</p>
+        <a href="/papers" class="btn btn-primary mt-3">Browse Papers</a>
+    </div>
+    {% endif %}
+
+    {% for paper in papers %}
+    <div class="col-12 mb-3">
+        <div class="card paper-card h-100 bg-dark border-secondary">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <h5 class="card-title mb-0">
+                        <a href="/papers/{{ paper.arxiv_id }}" class="text-light text-decoration-none">{{ paper.title | safe }}</a>
+                    </h5>
+                    <div class="d-flex gap-2">
+                        {% if filter_type == 'unread' %}
+                        <button class="btn btn-sm btn-success" onclick="markAsRead('{{ paper.arxiv_id }}', this)" title="Mark as read">
+                            <i class="bi bi-check-lg"></i> Done
+                        </button>
+                        {% endif %}
+                        <button class="btn btn-sm btn-outline-danger" onclick="removeFromReadingList('{{ paper.arxiv_id }}', this)" title="Remove from list">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <p class="text-muted small mb-2">
+                    {{ paper.authors[:3] | join(", ") }}{% if paper.authors | length > 3 %} et al.{% endif %} &bull; {{ paper.published[:10] }}
+                </p>
+
+                <p class="card-text small text-light-emphasis mb-3">
+                    {{ paper.abstract[:200] }}...
+                </p>
+
+                <div class="d-flex justify-content-between align-items-center">
+                    <div class="d-flex gap-1 flex-wrap">
+                        {% for cat in paper.categories[:3] %}
+                        <span class="badge bg-dark border border-secondary small">{{ cat }}</span>
+                        {% endfor %}
+                    </div>
+                    <small class="text-muted">Added: {{ paper.added_at[:10] }}</small>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function markAsRead(arxivId, btn) {
+    try {
+        const resp = await fetch(`/api/reading-list/${encodeURIComponent(arxivId)}/read`, {
+            method: 'PUT'
+        });
+        if (resp.ok) {
+            btn.closest('.col-12').style.transition = 'opacity 0.3s';
+            btn.closest('.col-12').style.opacity = '0';
+            setTimeout(() => btn.closest('.col-12').remove(), 300);
+        }
+    } catch (e) {
+        console.error('Failed to mark as read:', e);
+    }
+}
+
+async function removeFromReadingList(arxivId, btn) {
+    if (!confirm('Remove this paper from your reading list?')) return;
+    
+    try {
+        const resp = await fetch(`/api/reading-list/${encodeURIComponent(arxivId)}`, {
+            method: 'DELETE'
+        });
+        if (resp.ok) {
+            btn.closest('.col-12').remove();
+        }
+    } catch (e) {
+        console.error('Failed to remove from reading list:', e);
+    }
+}
+</script>
+{% endblock %}

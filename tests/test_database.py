@@ -253,6 +253,58 @@ class TestPaperDatabase(unittest.TestCase):
         self.assertEqual(status["status"], "FAILURE")
         self.assertEqual(status["error"], "Boom")
 
+    def test_notes_database(self):
+        arxiv_id = "2401.00001"
+        self.db.add_paper(make_paper(arxiv_id))
+
+        # 1. Add note
+        note_id = self.db.add_note(arxiv_id, "This is a test note")
+        self.assertIsNotNone(note_id)
+
+        # 2. Get notes
+        notes = self.db.get_paper_notes(arxiv_id)
+        self.assertEqual(len(notes), 1)
+        self.assertEqual(notes[0]["content"], "This is a test note")
+        self.assertEqual(notes[0]["arxiv_id"], arxiv_id)
+
+        # 3. Update note
+        success = self.db.update_note(note_id, "Updated content")
+        self.assertTrue(success)
+        notes = self.db.get_paper_notes(arxiv_id)
+        self.assertEqual(notes[0]["content"], "Updated content")
+
+        # 4. Delete note
+        success = self.db.delete_note(note_id)
+        self.assertTrue(success)
+        self.assertEqual(len(self.db.get_paper_notes(arxiv_id)), 0)
+
+
+    def test_reading_list_database(self):
+        arxiv_id = "2401.00001"
+        self.db.add_paper(make_paper(arxiv_id))
+
+        # 1. Add to reading list
+        self.assertTrue(self.db.add_to_reading_list(arxiv_id))
+        self.assertTrue(self.db.is_in_reading_list(arxiv_id))
+
+        # 2. Get unread reading list
+        unread = self.db.get_reading_list(only_unread=True)
+        self.assertEqual(len(unread), 1)
+        self.assertIsNone(unread[0]["read_at"])
+
+        # 3. Mark as read
+        self.assertTrue(self.db.mark_as_read(arxiv_id))
+        read = self.db.get_reading_list(only_read=True)
+        self.assertEqual(len(read), 1)
+        self.assertIsNotNone(read[0]["read_at"])
+
+        # Unread should be empty now
+        self.assertEqual(len(self.db.get_reading_list(only_unread=True)), 0)
+
+        # 4. Remove from reading list
+        self.assertTrue(self.db.remove_from_reading_list(arxiv_id))
+        self.assertFalse(self.db.is_in_reading_list(arxiv_id))
+        self.assertEqual(len(self.db.get_reading_list()), 0)
 
 if __name__ == "__main__":
     unittest.main()

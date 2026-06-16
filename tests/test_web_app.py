@@ -20,6 +20,9 @@ class TestWebApp(unittest.TestCase):
                 "authors": ["Ada"],
                 "categories": ["astro-ph.CO"],
                 "score": 0.95,
+                "model_score": 0.8,
+                "freshness_bonus": 0.1,
+                "summary_bonus": 0.05,
                 "url": "http://arxiv.org/abs/2401.00001",
                 "summary": "Existing summary",
                 "published": "2026-01-01T00:00:00Z"
@@ -34,16 +37,25 @@ class TestWebApp(unittest.TestCase):
                 "authors": ["Ada"],
                 "categories": ["astro-ph.CO"],
                 "score": 0.95,
+                "model_score": 0.8,
+                "freshness_bonus": 0.1,
+                "summary_bonus": 0.05,
                 "url": "http://arxiv.org/abs/2401.00001",
                 "summary": "Existing summary",
                 "published": "2026-01-01T00:00:00Z"
             }
         ]
+        self.engine.db.get_PAPER_NOTES_RETURN_VALUE = []
         self.engine.db.get_latest_rating.return_value = 1
         self.engine.db.get_paper_tags.return_value = []
         self.engine.db.get_paper_collections.return_value = []
+        self.engine.db.get_paper_notes.return_value = []
         self.engine.db.get_collections.return_value = []
         self.engine.db.get_all_tags.return_value = []
+        self.engine.db.get_ratings_history.return_value = []
+        self.engine.db.get_papers_by_authors.return_value = []
+        self.engine.db.is_in_reading_list.return_value = False
+        self.engine.get_similar_papers.return_value = []
         self.engine.db.get_task_status.return_value = {"status": "SUCCESS", "progress": 10, "total": 10}
         self.engine.db.search_papers.return_value = [
             {
@@ -85,11 +97,37 @@ class TestWebApp(unittest.TestCase):
         resp = self.client.get("/settings")
         self.assertEqual(resp.status_code, 200)
         self.assertIn(b"Settings", resp.data)
+        
+        self.engine.discover_topics.return_value = [{"id": 0, "name": "Test Topic", "keywords": ["test"], "paper_count": 5, "top_papers": []}]
+        resp = self.client.get("/topics")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b"Auto-Discovered Topics", resp.data)
+        self.assertIn(b"Test Topic", resp.data)
 
         # Test health check
         resp = self.client.get("/health")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json(), {"status": "ok"})
+
+    def test_onboarding_route_and_redirect(self):
+        # When user has >= 5 ratings, onboarding redirects to /
+        self.engine.get_stats.return_value["database"]["total_rated"] = 5
+        resp = self.client.get("/onboarding")
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(resp.headers["Location"], "/")
+        
+        # When user has < 5 ratings, accessing / redirects to /onboarding
+        self.engine.get_stats.return_value["database"]["total_rated"] = 2
+        resp = self.client.get("/")
+        self.assertEqual(resp.status_code, 302)
+        self.assertEqual(resp.headers["Location"], "/onboarding")
+
+        # Accessing /onboarding directly when < 5 ratings should work
+        self.engine.get_diverse_papers.return_value = [{"arxiv_id": "2401.00001", "title": "Paper 1", "authors": [], "categories": [], "published": ""}]
+        resp = self.client.get("/onboarding")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b"Welcome to AURA", resp.data)
+        self.assertIn(b"Paper 1", resp.data)
 
     def test_route_papers_filters(self):
         # Test different filter types on /papers
@@ -102,7 +140,7 @@ class TestWebApp(unittest.TestCase):
         resp = self.client.post("/api/rate", json={})
         self.assertEqual(resp.status_code, 400)
 
-        resp = self.client.post("/api/rate", json={"arxiv_id": "x", "rating": 3})
+        resp = self.client.post("/api/rate", json={"arxiv_id": "x", "rating": 6})
         self.assertEqual(resp.status_code, 400)
 
     def test_api_rate_success(self):
@@ -178,13 +216,22 @@ class TestWebApp(unittest.TestCase):
             limit=200
         )
 
-        # 2. Test API search endpoint
+        # 2. Test API search endpoint (FTS)
         resp = self.client.get("/api/search?q=Astro&category=astro-ph.CO&date_from=2026-01-01&date_to=2026-01-02")
         self.assertEqual(resp.status_code, 200)
         results = resp.get_json()
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]["arxiv_id"], "2401.00001")
         self.assertIn("<mark>Astro</mark>", results[0]["title"])
+
+        # 3. Test API search endpoint (Semantic)
+        self.engine.semantic_search.return_value = [{"arxiv_id": "2401.00002", "title": "Semantic Paper"}]
+        resp = self.client.get("/api/search?mode=semantic&q=Astro")
+        self.assertEqual(resp.status_code, 200)
+        results = resp.get_json()
+        self.assertEqual(len(results), 1)
+        self.assertEqual(results[0]["arxiv_id"], "2401.00002")
+        self.engine.semantic_search.assert_called_with(query="Astro", limit=50)
 
     def test_paper_detail_route(self):
         paper_data = {
@@ -285,6 +332,87 @@ class TestWebApp(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.engine.db.get_collection_papers.assert_called_with(1, limit=200)
 
+    def test_notes_api_and_ui_routes(self):
+        # 1. API: list notes
+        self.engine.db.get_paper_notes.return_value = [{"id": 1, "content": "note 1"}]
+        resp = self.client.get("/api/papers/2401.00001/notes")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json(), [{"id": 1, "content": "note 1"}])
+
+        # 2. API: add note
+        self.engine.db.add_note.return_value = 2
+        resp = self.client.post("/api/papers/2401.00001/notes", json={"content": "note 2"})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json(), {"status": "ok", "id": 2})
+        self.engine.db.add_note.assert_called_with("2401.00001", "note 2")
+
+        # 3. API: update note
+        self.engine.db.update_note.return_value = True
+        resp = self.client.put("/api/notes/1", json={"content": "updated"})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json(), {"status": "ok"})
+        self.engine.db.update_note.assert_called_with(1, "updated")
+
+        # 4. API: delete note
+        self.engine.db.delete_note.return_value = True
+        resp = self.client.delete("/api/notes/1")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json(), {"status": "ok"})
+        self.engine.db.delete_note.assert_called_with(1)
+
+        # 5. UI: Paper detail includes notes
+        self.engine.db.get_paper.return_value = {
+            "arxiv_id": "2401.00001",
+            "title": "Title",
+            "abstract": "Abstract",
+            "authors": ["Author"],
+            "categories": ["cat"],
+            "url": "url",
+            "summary": "summary",
+            "published": "2026-01-01"
+        }
+        self.engine.db.get_paper_notes.return_value = [{"id": 1, "content": "test note", "created_at": "2026-01-01T00:00:00", "updated_at": "2026-01-01T00:00:00"}]
+        resp = self.client.get("/papers/2401.00001")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b"test note", resp.data)
+        self.assertIn(b"Personal Notes", resp.data)
+
+
+    def test_reading_list_api_and_ui_routes(self):
+        # 1. API: list reading list
+        self.engine.db.get_reading_list.return_value = [{
+            "arxiv_id": "2401.00001",
+            "title": "Paper 1",
+            "authors": ["Ada"],
+            "abstract": "Abstract",
+            "categories": ["cat"],
+            "published": "2026-01-01",
+            "added_at": "2026-01-01T00:00:00"
+        }]
+        resp = self.client.get("/reading-list")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b"Paper 1", resp.data)
+
+        # 2. API: add to reading list
+        self.engine.db.add_to_reading_list.return_value = True
+        resp = self.client.post("/api/reading-list", json={"arxiv_id": "2401.00001"})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json(), {"status": "ok"})
+        self.engine.db.add_to_reading_list.assert_called_with("2401.00001")
+
+        # 3. API: remove from reading list
+        self.engine.db.remove_from_reading_list.return_value = True
+        resp = self.client.delete("/api/reading-list/2401.00001")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json(), {"status": "ok"})
+        self.engine.db.remove_from_reading_list.assert_called_with("2401.00001")
+
+        # 4. API: mark as read
+        self.engine.db.mark_as_read.return_value = True
+        resp = self.client.put("/api/reading-list/2401.00001/read")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json(), {"status": "ok"})
+        self.engine.db.mark_as_read.assert_called_with("2401.00001")
 
 if __name__ == "__main__":
     unittest.main()

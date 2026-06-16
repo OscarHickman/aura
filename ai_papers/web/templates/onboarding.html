@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}Welcome - AURA Onboarding{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="text-center mb-5">
+            <h1 class="display-4 mb-3"><i class="bi bi-stars text-primary"></i> Welcome to AURA</h1>
+            <p class="lead text-muted">To personalize your paper recommendations, we need to learn your interests.</p>
+            
+            <div class="card bg-dark-subtle border-secondary mt-4">
+                <div class="card-body">
+                    <h5 class="card-title">Please rate <strong class="text-warning">{{ 5 - total_rated }}</strong> more papers to unlock your personalized dashboard.</h5>
+                    <div class="progress mt-3" style="height: 10px;">
+                        <div class="progress-bar bg-success" role="progressbar" style="width: {{ (total_rated / 5) * 100 }}%" aria-valuenow="{{ total_rated }}" aria-valuemin="0" aria-valuemax="5"></div>
+                    </div>
+                    <small class="text-muted mt-2 d-block">{{ total_rated }} / 5 papers rated</small>
+                </div>
+            </div>
+        </div>
+
+        <h4 class="mb-4">Here are some diverse papers from recent batches:</h4>
+
+        <div class="row g-4" id="onboarding-papers">
+            {% for paper in papers %}
+            <div class="col-12" id="paper-{{ paper.arxiv_id }}">
+                <div class="card h-100 bg-dark border-secondary paper-card">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <h5 class="card-title mb-0">
+                                <a href="{{ paper.url }}" target="_blank" class="text-light text-decoration-none">{{ paper.title | safe }}</a>
+                            </h5>
+                        </div>
+                        <p class="text-muted small mb-2">
+                            {{ paper.authors[:3] | join(", ") }}{% if paper.authors | length > 3 %} et al.{% endif %} &bull; {{ paper.published[:10] }}
+                        </p>
+                        
+                        <div class="d-flex flex-wrap gap-1 mb-3">
+                            {% for cat in paper.categories[:3] %}
+                            <span class="badge bg-dark border border-secondary small">{{ cat }}</span>
+                            {% endfor %}
+                        </div>
+
+                        <div class="d-flex gap-1 mt-4 justify-content-center star-rating">
+                            {% for i in range(1, 6) %}
+                            <button class="btn btn-outline-warning rounded-circle px-2 py-1" onclick="rateOnboardingPaper('{{ paper.arxiv_id }}', {{ i }}, this)" title="Rate {{ i }} star{% if i > 1 %}s{% endif %}">
+                                <i class="bi bi-star-fill"></i>
+                            </button>
+                            {% endfor %}
+                            <button class="btn btn-outline-secondary rounded-circle px-2 py-1 ms-3" onclick="rateOnboardingPaper('{{ paper.arxiv_id }}', -1, this)" title="Skip">
+                                <i class="bi bi-skip-forward-fill"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        
+        <div class="text-center mt-5 mb-5">
+            <button class="btn btn-outline-secondary" onclick="window.location.reload()"><i class="bi bi-arrow-clockwise"></i> Show Different Papers</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let ratingsCount = {{ total_rated }};
+const targetCount = 5;
+
+async function rateOnboardingPaper(arxivId, rating, btn) {
+    const card = btn.closest('.col-12');
+    
+    // Disable buttons
+    const buttons = card.querySelectorAll('button');
+    buttons.forEach(b => b.disabled = true);
+    
+    try {
+        const resp = await fetch('/api/rate', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ arxiv_id: arxivId, rating: rating })
+        });
+        
+        if (resp.ok) {
+            // Visual feedback
+            card.style.transition = 'opacity 0.5s, transform 0.5s';
+            card.style.opacity = '0';
+            card.style.transform = 'scale(0.95)';
+            
+            setTimeout(() => {
+                card.remove();
+                ratingsCount++;
+                updateProgress();
+            }, 500);
+        }
+    } catch (e) {
+        console.error('Rating failed:', e);
+        buttons.forEach(b => b.disabled = false);
+    }
+}
+
+function updateProgress() {
+    const progressBar = document.querySelector('.progress-bar');
+    const textTarget = document.querySelector('.card-title strong');
+    const progressText = document.querySelector('.card-body small');
+    
+    let percent = (ratingsCount / targetCount) * 100;
+    if (percent > 100) percent = 100;
+    
+    progressBar.style.width = percent + '%';
+    
+    let remaining = targetCount - ratingsCount;
+    if (remaining < 0) remaining = 0;
+    
+    progressText.textContent = `${ratingsCount} / ${targetCount} papers rated`;
+    
+    if (ratingsCount >= targetCount) {
+        document.querySelector('.card-body h5').innerHTML = '<i class="bi bi-check-circle-fill text-success"></i> You are all set! Redirecting to dashboard...';
+        setTimeout(() => {
+            window.location.href = '/';
+        }, 1500);
+    } else {
+        textTarget.textContent = remaining;
+    }
+}
+</script>
+{% endblock %}

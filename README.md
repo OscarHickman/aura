@@ -5,8 +5,18 @@
 
 # AURA (Automated Understanding of Research Articles)
 
-A local application designed to fetch arXiv papers, rank them based on your rating history, and send a daily email digest complete with AI-generated summaries.
+A powerful research discovery and organization tool. AURA fetches papers from **multiple sources** (arXiv, Semantic Scholar, RSS feeds), ranks them using a personalized neural network preference model, and provides AI-generated summaries and daily digests.
 
+## Key Features
+
+- **Multi-Source Discovery:** Ingest papers from arXiv, Semantic Scholar (with citation counts), and custom journal RSS feeds.
+- **Personalized Ranking:** 5-star rating system with a PyTorch neural network that learns your research interests.
+- **Smart Search:** Toggle between Keyword (FTS) and Semantic search (vector similarity).
+- **Auto-Discovery:** Unsupervised topic clustering (K-Means) to find new trends in your field.
+- **Organization:** Manage personal collections, tags, reading lists (queue), and paper annotations.
+- **Explainable AI:** Score breakdowns and "Because you liked" context for all recommendations.
+- **Modern UI:** Responsive dark-mode interface with infinite scrolling and keyboard shortcuts.
+- **Daily Digest:** Automated daily email digests with AI summaries of top papers.
 
 ## Quick Start
 
@@ -20,17 +30,16 @@ Open `http://127.0.0.1:5000`.
 
 ## Main Commands
 
-- `python run.py fetch`
-- `python run.py serve`
-- `python run.py recommend`
-- `python run.py summarize --limit 20`
-- `python run.py email-digest --top-n 3`
-- `python run.py retrain`
-- `python run.py stats`
+- `python run.py fetch` — Discovery from all sources
+- `python run.py serve` — Launch the web interface
+- `python run.py summarize --limit 20` — Generate AI summaries
+- `python run.py email-digest --top-n 3` — Send daily summary email
+- `python run.py retrain` — Full model retraining
+- `python run.py stats` — System statistics
 
 ## Summary Provider Setup
 
-For `summarize` and email summaries, set provider credentials in your shell.
+AURA supports multiple LLM providers (Groq, OpenAI, Anthropic, Google). Set your preferred provider and API key:
 
 ```bash
 export LLM_PROVIDER=groq

@@ -7,6 +7,7 @@ This model IS the user's preference config - saved and loaded as a .pt file.
 
 import logging
 from pathlib import Path
+import random
 
 import numpy as np
 import torch
@@ -66,30 +67,67 @@ class PreferenceModel:
         # Training stats
         self.total_trained = 0
         self.train_history: list[dict] = []
+        
+        # Experience replay buffer
+        self.replay_buffer: list[tuple[np.ndarray, float]] = []
+        self.max_replay_size = 1000
 
         # Load existing model if available
         if self.model_path.exists():
             self.load()
 
-    def predict(self, embedding: np.ndarray) -> float:
-        """Predict preference score for a single paper embedding. Returns 0-1."""
+    def enable_dropout(self):
+        """Enable dropout layers for Monte Carlo Dropout."""
+        for m in self.model.modules():
+            if m.__class__.__name__.startswith('Dropout'):
+                m.train()
+
+    def predict(self, embedding: np.ndarray, num_samples: int = 10) -> tuple[float, float]:
+        """Predict preference score for a single paper embedding with uncertainty.
+        
+        Uses MC Dropout to calculate prediction and uncertainty.
+        Returns (mean_score, uncertainty).
+        """
         self.model.eval()
+        self.enable_dropout()
+        
         with torch.no_grad():
             x = (
                 torch.tensor(embedding, dtype=torch.float32)
                 .unsqueeze(0)
                 .to(self.device)
             )
-            score = self.model(x).item()
-        return score
+            
+            if num_samples <= 1:
+                score = self.model(x).item()
+                return score, 0.0
+                
+            scores = [self.model(x).item() for _ in range(num_samples)]
+            
+        mean_score = float(np.mean(scores))
+        uncertainty = float(np.std(scores))
+        return mean_score, uncertainty
 
-    def predict_batch(self, embeddings: list[np.ndarray]) -> list[float]:
-        """Predict preference scores for a batch of embeddings."""
+    def predict_batch(self, embeddings: list[np.ndarray], num_samples: int = 10) -> tuple[list[float], list[float]]:
+        """Predict preference scores for a batch of embeddings with uncertainty."""
         self.model.eval()
+        self.enable_dropout()
+        
         with torch.no_grad():
             x = torch.tensor(np.stack(embeddings), dtype=torch.float32).to(self.device)
-            scores = self.model(x).cpu().numpy().tolist()
-        return scores
+            if num_samples <= 1:
+                scores = self.model(x).cpu().numpy().tolist()
+                return scores, [0.0] * len(scores)
+                
+            batch_scores = []
+            for _ in range(num_samples):
+                batch_scores.append(self.model(x).cpu().numpy())
+                
+            batch_scores = np.stack(batch_scores)
+            mean_scores = np.mean(batch_scores, axis=0).tolist()
+            uncertainties = np.std(batch_scores, axis=0).tolist()
+            
+        return mean_scores, uncertainties
 
     def train_step(
         self,
@@ -97,6 +135,7 @@ class PreferenceModel:
         labels: list[float],
         epochs: int = 5,
         progress_callback = None,
+        use_scheduler: bool = False,
     ) -> float:
         """Train the model on a batch of (embedding, label) pairs.
 
@@ -105,6 +144,7 @@ class PreferenceModel:
             labels: List of labels (1.0 = thumbs up, 0.0 = thumbs down).
             epochs: Number of epochs to train on this batch.
             progress_callback: Optional callback receiving (epoch + 1, epochs).
+            use_scheduler: Use CosineAnnealingLR (ideal for full retrains).
 
         Returns:
             Final loss value.
@@ -114,6 +154,10 @@ class PreferenceModel:
         x = torch.tensor(np.stack(embeddings), dtype=torch.float32).to(self.device)
         y = torch.tensor(labels, dtype=torch.float32).to(self.device)
 
+        scheduler = None
+        if use_scheduler:
+            scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=epochs)
+
         final_loss = 0.0
         for epoch in range(epochs):
             self.optimizer.zero_grad()
@@ -121,6 +165,10 @@ class PreferenceModel:
             loss = self.criterion(predictions, y)
             loss.backward()
             self.optimizer.step()
+            
+            if scheduler:
+                scheduler.step()
+                
             final_loss = loss.item()
             if progress_callback:
                 progress_callback(epoch + 1, epochs)
@@ -146,8 +194,24 @@ class PreferenceModel:
     def train_single(
         self, embedding: np.ndarray, label: float, epochs: int = 10
     ) -> float:
-        """Train on a single paper feedback (online learning)."""
-        return self.train_step([embedding], [label], epochs=epochs)
+        """Train on a single paper feedback using experience replay."""
+        # Add to replay buffer
+        self.replay_buffer.append((embedding, label))
+        if len(self.replay_buffer) > self.max_replay_size:
+            self.replay_buffer.pop(0)
+
+        # Create batch from replay buffer
+        batch_size = min(32, len(self.replay_buffer))
+        if batch_size > 1:
+            batch = random.sample(self.replay_buffer[:-1], batch_size - 1)
+        else:
+            batch = []
+        batch.append((embedding, label))
+
+        batch_embeddings = [b[0] for b in batch]
+        batch_labels = [b[1] for b in batch]
+
+        return self.train_step(batch_embeddings, batch_labels, epochs=epochs, use_scheduler=False)
 
     def save(self):
         """Save model weights and training state to disk."""
@@ -158,6 +222,8 @@ class PreferenceModel:
             "embedding_dim": self.embedding_dim,
             "total_trained": self.total_trained,
             "learning_rate": self.learning_rate,
+            "train_history": self.train_history,
+            "replay_buffer": self.replay_buffer,
         }
         torch.save(checkpoint, self.model_path)
         logger.info(f"Model saved to {self.model_path}")
@@ -169,7 +235,7 @@ class PreferenceModel:
             return
 
         checkpoint = torch.load(
-            self.model_path, map_location=self.device, weights_only=True
+            self.model_path, map_location=self.device, weights_only=False
         )
 
         # Rebuild model if embedding dim changed
@@ -185,6 +251,8 @@ class PreferenceModel:
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         self.total_trained = checkpoint.get("total_trained", 0)
         self.learning_rate = checkpoint.get("learning_rate", self.learning_rate)
+        self.train_history = checkpoint.get("train_history", [])
+        self.replay_buffer = checkpoint.get("replay_buffer", [])
         logger.info(
             f"Model loaded from {self.model_path} (total_trained={self.total_trained})"
         )
@@ -198,4 +266,5 @@ class PreferenceModel:
             "learning_rate": self.learning_rate,
             "parameters": sum(p.numel() for p in self.model.parameters()),
             "recent_losses": [h["loss"] for h in self.train_history[-10:]],
+            "replay_buffer_size": len(self.replay_buffer),
         }

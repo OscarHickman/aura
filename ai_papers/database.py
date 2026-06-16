@@ -36,7 +36,9 @@ class PaperDatabase:
                 pdf_url TEXT,
                 fetched_at TEXT NOT NULL,
                 embedding BLOB,
-                summary TEXT
+                summary TEXT,
+                source TEXT DEFAULT 'arxiv',
+                citation_count INTEGER DEFAULT 0
             );
 
             CREATE TABLE IF NOT EXISTS ratings (
@@ -92,6 +94,22 @@ class PaperDatabase:
                 UNIQUE(collection_id, arxiv_id)
             );
 
+            CREATE TABLE IF NOT EXISTS notes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                arxiv_id TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (arxiv_id) REFERENCES papers(arxiv_id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS reading_list (
+                arxiv_id TEXT PRIMARY KEY,
+                added_at TEXT NOT NULL,
+                read_at TEXT,
+                FOREIGN KEY (arxiv_id) REFERENCES papers(arxiv_id) ON DELETE CASCADE
+            );
+
             CREATE INDEX IF NOT EXISTS idx_papers_published ON papers(published);
             CREATE INDEX IF NOT EXISTS idx_ratings_arxiv_id ON ratings(arxiv_id);
             CREATE INDEX IF NOT EXISTS idx_ratings_rated_at ON ratings(rated_at);
@@ -100,6 +118,8 @@ class PaperDatabase:
             CREATE INDEX IF NOT EXISTS idx_tags_tag ON tags(tag);
             CREATE INDEX IF NOT EXISTS idx_collection_papers_collection_id ON collection_papers(collection_id);
             CREATE INDEX IF NOT EXISTS idx_collection_papers_arxiv_id ON collection_papers(arxiv_id);
+            CREATE INDEX IF NOT EXISTS idx_notes_arxiv_id ON notes(arxiv_id);
+            CREATE INDEX IF NOT EXISTS idx_reading_list_added_at ON reading_list(added_at);
 
             -- FTS5 virtual table for full-text search
             CREATE VIRTUAL TABLE IF NOT EXISTS papers_fts USING fts5(
@@ -127,6 +147,20 @@ class PaperDatabase:
         """)
         self.conn.commit()
 
+        # Add source column if it doesn't exist
+        try:
+            self.conn.execute("ALTER TABLE papers ADD COLUMN source TEXT DEFAULT 'arxiv'")
+            self.conn.commit()
+        except sqlite3.OperationalError:
+            pass # Column already exists
+
+        # Add citation_count column if it doesn't exist
+        try:
+            self.conn.execute("ALTER TABLE papers ADD COLUMN citation_count INTEGER DEFAULT 0")
+            self.conn.commit()
+        except sqlite3.OperationalError:
+            pass # Column already exists
+
         # Backfill existing papers into the FTS virtual table
         self.conn.execute("""
             INSERT INTO papers_fts(arxiv_id, title, abstract)
@@ -146,10 +180,12 @@ class PaperDatabase:
         """Add a paper to the database. Returns True if newly inserted."""
         try:
             emb_blob = embedding.tobytes() if embedding is not None else None
+            source = paper.get("source", "arxiv")
+            citation_count = paper.get("citation_count", 0)
             cursor = self.conn.execute(
                 """INSERT OR IGNORE INTO papers
-                   (arxiv_id, title, abstract, authors, categories, published, url, pdf_url, fetched_at, embedding, summary)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (arxiv_id, title, abstract, authors, categories, published, url, pdf_url, fetched_at, embedding, summary, source, citation_count)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     paper["arxiv_id"],
                     paper["title"],
@@ -162,6 +198,8 @@ class PaperDatabase:
                     datetime.utcnow().isoformat(),
                     emb_blob,
                     summary,
+                    source,
+                    citation_count,
                 ),
             )
             self.conn.commit()
@@ -184,11 +222,13 @@ class PaperDatabase:
                 embeddings[i].tobytes() if embeddings and i < len(embeddings) else None
             )
             summary = summaries[i] if summaries and i < len(summaries) else None
+            source = paper.get("source", "arxiv")
+            citation_count = paper.get("citation_count", 0)
             try:
                 cursor = self.conn.execute(
                     """INSERT OR IGNORE INTO papers
-                       (arxiv_id, title, abstract, authors, categories, published, url, pdf_url, fetched_at, embedding, summary)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       (arxiv_id, title, abstract, authors, categories, published, url, pdf_url, fetched_at, embedding, summary, source, citation_count)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         paper["arxiv_id"],
                         paper["title"],
@@ -201,6 +241,8 @@ class PaperDatabase:
                         now,
                         emb_blob,
                         summary,
+                        source,
+                        citation_count,
                     ),
                 )
                 if cursor.rowcount > 0:
@@ -321,13 +363,13 @@ class PaperDatabase:
         return results
 
     def rate_paper(self, arxiv_id: str, rating: int) -> bool:
-        """Rate a paper: 1 = thumbs up, 0 = thumbs down.
+        """Rate a paper: 1-5 for stars, -1 for skip.
 
         Multiple ratings for the same paper are allowed (tracks history),
         but only the latest is used for training.
         """
-        if rating not in (0, 1):
-            raise ValueError("Rating must be 0 (thumbs down) or 1 (thumbs up)")
+        if rating not in (-1, 0, 1, 2, 3, 4, 5):
+            raise ValueError("Rating must be -1 (skip) or 1-5 (stars)")
 
         try:
             self.conn.execute(
@@ -378,8 +420,24 @@ class PaperDatabase:
         rated = self.get_rated_papers()
         if not rated:
             return [], []
-        embeddings = [emb for _, emb, _ in rated]
-        labels = [float(rating) for _, _, rating in rated]
+        
+        embeddings = []
+        labels = []
+        for _, emb, rating in rated:
+            if rating == -1:
+                continue # Skip
+            
+            # Map legacy 0/1 to 1/5, or just map 1-5 to 0.0-1.0
+            if rating == 0:
+                label = 0.0
+            elif rating == 1:
+                label = 1.0
+            else:
+                label = (rating - 1) / 4.0
+                
+            embeddings.append(emb)
+            labels.append(label)
+            
         return embeddings, labels
 
     def get_stats(self) -> dict:
@@ -392,13 +450,13 @@ class PaperDatabase:
             SELECT COUNT(DISTINCT arxiv_id) FROM (
                 SELECT arxiv_id, rating FROM ratings
                 GROUP BY arxiv_id HAVING MAX(rated_at)
-            ) WHERE rating = 1
+            ) WHERE rating >= 4 OR rating = 1
         """).fetchone()[0]
         thumbs_down = self.conn.execute("""
             SELECT COUNT(DISTINCT arxiv_id) FROM (
                 SELECT arxiv_id, rating FROM ratings
                 GROUP BY arxiv_id HAVING MAX(rated_at)
-            ) WHERE rating = 0
+            ) WHERE (rating <= 2 AND rating != -1) OR rating = 0
         """).fetchone()[0]
         with_embeddings = self.conn.execute(
             "SELECT COUNT(*) FROM papers WHERE embedding IS NOT NULL"
@@ -789,6 +847,115 @@ class PaperDatabase:
             (arxiv_id,),
         ).fetchall()
         return [dict(row) for row in rows]
+
+    def add_note(self, arxiv_id: str, content: str) -> Optional[int]:
+        """Add a note to a paper. Returns the note ID."""
+        now = datetime.utcnow().isoformat()
+        try:
+            cursor = self.conn.execute(
+                "INSERT INTO notes (arxiv_id, content, created_at, updated_at) VALUES (?, ?, ?, ?)",
+                (arxiv_id, content, now, now),
+            )
+            self.conn.commit()
+            return cursor.lastrowid
+        except sqlite3.Error as e:
+            logger.error(f"Failed to add note to paper {arxiv_id}: {e}")
+            return None
+
+    def update_note(self, note_id: int, content: str) -> bool:
+        """Update an existing note."""
+        now = datetime.utcnow().isoformat()
+        try:
+            cursor = self.conn.execute(
+                "UPDATE notes SET content = ?, updated_at = ? WHERE id = ?",
+                (content, now, note_id),
+            )
+            self.conn.commit()
+            return cursor.rowcount > 0
+        except sqlite3.Error as e:
+            logger.error(f"Failed to update note {note_id}: {e}")
+            return False
+
+    def delete_note(self, note_id: int) -> bool:
+        """Delete a note."""
+        try:
+            cursor = self.conn.execute("DELETE FROM notes WHERE id = ?", (note_id,))
+            self.conn.commit()
+            return cursor.rowcount > 0
+        except sqlite3.Error as e:
+            logger.error(f"Failed to delete note {note_id}: {e}")
+            return False
+
+    def get_paper_notes(self, arxiv_id: str) -> list[dict]:
+        """Get all notes for a specific paper."""
+        rows = self.conn.execute(
+            "SELECT * FROM notes WHERE arxiv_id = ? ORDER BY created_at DESC",
+            (arxiv_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def add_to_reading_list(self, arxiv_id: str) -> bool:
+        """Add a paper to the reading list."""
+        try:
+            self.conn.execute(
+                "INSERT OR IGNORE INTO reading_list (arxiv_id, added_at) VALUES (?, ?)",
+                (arxiv_id, datetime.utcnow().isoformat()),
+            )
+            self.conn.commit()
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Failed to add paper {arxiv_id} to reading list: {e}")
+            return False
+
+    def remove_from_reading_list(self, arxiv_id: str) -> bool:
+        """Remove a paper from the reading list."""
+        try:
+            cursor = self.conn.execute(
+                "DELETE FROM reading_list WHERE arxiv_id = ?", (arxiv_id,)
+            )
+            self.conn.commit()
+            return cursor.rowcount > 0
+        except sqlite3.Error as e:
+            logger.error(f"Failed to remove paper {arxiv_id} from reading list: {e}")
+            return False
+
+    def mark_as_read(self, arxiv_id: str) -> bool:
+        """Mark a paper in the reading list as read."""
+        try:
+            cursor = self.conn.execute(
+                "UPDATE reading_list SET read_at = ? WHERE arxiv_id = ?",
+                (datetime.utcnow().isoformat(), arxiv_id),
+            )
+            self.conn.commit()
+            return cursor.rowcount > 0
+        except sqlite3.Error as e:
+            logger.error(f"Failed to mark paper {arxiv_id} as read: {e}")
+            return False
+
+    def get_reading_list(self, only_unread: bool = False, only_read: bool = False) -> list[dict]:
+        """Get papers in the reading list with optional filtering."""
+        query = """
+            SELECT p.*, rl.added_at, rl.read_at
+            FROM papers p
+            JOIN reading_list rl ON p.arxiv_id = rl.arxiv_id
+        """
+        params = []
+        if only_unread:
+            query += " WHERE rl.read_at IS NULL"
+        elif only_read:
+            query += " WHERE rl.read_at IS NOT NULL"
+        
+        query += " ORDER BY rl.added_at DESC"
+        
+        rows = self.conn.execute(query, params).fetchall()
+        return [self._row_to_dict(row) for row in rows]
+
+    def is_in_reading_list(self, arxiv_id: str) -> bool:
+        """Check if a paper is in the reading list."""
+        row = self.conn.execute(
+            "SELECT 1 FROM reading_list WHERE arxiv_id = ?", (arxiv_id,)
+        ).fetchone()
+        return row is not None
 
     def close(self):
         """Close the database connection."""

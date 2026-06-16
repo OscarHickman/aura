@@ -40,6 +40,7 @@ def create_app(config_path: str | None = None) -> Flask:
         data_dir=config.get("data_dir", "data"),
         categories=config.get("categories", ["astro-ph.CO", "astro-ph.GA"]),
         embedding_model=config.get("embedding_model", "all-MiniLM-L6-v2"),
+        rss_urls=config.get("rss_feeds", []),
     )
 
     # Register X-Request-ID hooks
@@ -67,16 +68,49 @@ def create_app(config_path: str | None = None) -> Flask:
 def _register_routes(app: Flask):
     """Register all route handlers."""
 
+    @app.before_request
+    def check_onboarding():
+        """Redirect to onboarding if the user has rated fewer than 5 papers."""
+        if request.endpoint and request.endpoint not in ['onboarding', 'static', 'rate_paper', 'health'] and not request.path.startswith('/api/'):
+            stats = engine.get_stats()
+            if stats["database"]["total_rated"] < 5:
+                # Don't redirect if they are already on the onboarding page
+                if request.path != '/onboarding':
+                    from flask import redirect
+                    return redirect('/onboarding')
+
     @app.route("/")
     def index():
         """Dashboard / home page."""
         stats = engine.get_stats()
         return render_template("index.html", stats=stats)
 
+    @app.route("/topics")
+    def topics():
+        """Auto-discovered topic clusters."""
+        clusters = engine.discover_topics() if engine else []
+        return render_template("topics.html", clusters=clusters)
+
+    @app.route("/onboarding")
+    def onboarding():
+        """Onboarding wizard to solve the cold start problem."""
+        stats = engine.get_stats()
+        total_rated = stats["database"]["total_rated"]
+
+        if total_rated >= 5:
+            from flask import redirect
+            return redirect("/")
+
+        # Get diverse unrated papers
+        papers = engine.get_diverse_papers(limit=20)
+
+        return render_template("onboarding.html", papers=papers, total_rated=total_rated)
+
     @app.route("/papers")
     def papers():
         """Browse recommended papers or search papers."""
         query = request.args.get("q", "").strip()
+        search_mode = request.args.get("mode", "fts") # 'fts' or 'semantic'
         category = request.args.get("category", "").strip() or None
         date_from = request.args.get("date_from", "").strip() or None
         date_to = request.args.get("date_to", "").strip() or None
@@ -87,14 +121,17 @@ def _register_routes(app: Flask):
         per_page = int(request.args.get("per_page", 30))
 
         if query:
-            # Full-text search with optional filters
-            paper_list = engine.db.search_papers(
-                query=query,
-                category=category,
-                date_from=date_from,
-                date_to=date_to,
-                limit=200,
-            )
+            if search_mode == "semantic":
+                paper_list = engine.semantic_search(query=query, limit=200)
+            else:
+                # Full-text search with optional filters
+                paper_list = engine.db.search_papers(
+                    query=query,
+                    category=category,
+                    date_from=date_from,
+                    date_to=date_to,
+                    limit=200,
+                )
             filter_type = "search"
         elif tag:
             paper_list = engine.db.get_papers_by_tag(tag, limit=200)
@@ -141,6 +178,7 @@ def _register_routes(app: Flask):
                 p["rating"] = engine.db.get_latest_rating(p["arxiv_id"])
             p["tags"] = engine.db.get_paper_tags(p["arxiv_id"])
             p["collections"] = engine.db.get_paper_collections(p["arxiv_id"])
+            p["in_reading_list"] = engine.db.is_in_reading_list(p["arxiv_id"])
 
         categories = app.config.get("AI_PAPERS", {}).get("categories", [])
         collections = engine.db.get_collections() if engine else []
@@ -174,6 +212,8 @@ def _register_routes(app: Flask):
         paper["rating"] = engine.db.get_latest_rating(arxiv_id) if engine else None
         paper["tags"] = engine.db.get_paper_tags(arxiv_id) if engine else []
         paper["collections"] = engine.db.get_paper_collections(arxiv_id) if engine else []
+        paper["notes"] = engine.db.get_paper_notes(arxiv_id) if engine else []
+        paper["in_reading_list"] = engine.db.is_in_reading_list(arxiv_id) if engine else False
 
         # Get ratings history
         ratings_history = engine.db.get_ratings_history(arxiv_id) if engine else []
@@ -204,7 +244,7 @@ def _register_routes(app: Flask):
 
     @app.route("/api/rate", methods=["POST"])
     def rate_paper():
-        """API endpoint to rate a paper (thumbs up/down)."""
+        """API endpoint to rate a paper (1-5 stars, or -1 for skip)."""
         data = request.get_json()
         if not data:
             return jsonify({"error": "No JSON data provided"}), 400
@@ -215,11 +255,112 @@ def _register_routes(app: Flask):
         if not arxiv_id or rating is None:
             return jsonify({"error": "arxiv_id and rating are required"}), 400
 
-        if rating not in (0, 1):
-            return jsonify({"error": "rating must be 0 or 1"}), 400
+        if rating not in (-1, 0, 1, 2, 3, 4, 5):
+            return jsonify({"error": "rating must be -1 (skip) or 1-5 (stars)"}), 400
 
         result = engine.rate_paper(arxiv_id, rating)
         return jsonify(result)
+
+    @app.route("/reading-list")
+    def reading_list():
+        """Show the user's reading list."""
+        filter_type = request.args.get("filter", "unread")
+        if filter_type == "read":
+            papers = engine.db.get_reading_list(only_read=True)
+        else:
+            papers = engine.db.get_reading_list(only_unread=True)
+
+        # Add tags, collections, etc.
+        for p in papers:
+            p["rating"] = engine.db.get_latest_rating(p["arxiv_id"])
+            p["tags"] = engine.db.get_paper_tags(p["arxiv_id"])
+            p["collections"] = engine.db.get_paper_collections(p["arxiv_id"])
+            p["in_reading_list"] = True
+
+        return render_template("reading_list.html", papers=papers, filter_type=filter_type)
+
+    @app.route("/api/reading-list", methods=["POST"])
+    def add_to_reading_list():
+        """API endpoint to add a paper to the reading list."""
+        data = request.get_json() or {}
+        arxiv_id = data.get("arxiv_id")
+        if not arxiv_id:
+            return jsonify({"error": "arxiv_id is required"}), 400
+
+        success = engine.db.add_to_reading_list(arxiv_id) if engine else False
+        if not success:
+            return jsonify({"error": "failed to add to reading list"}), 500
+        return jsonify({"status": "ok"})
+
+    @app.route("/api/reading-list/<path:arxiv_id>", methods=["DELETE"])
+    def remove_from_reading_list(arxiv_id):
+        """API endpoint to remove a paper from the reading list."""
+        success = engine.db.remove_from_reading_list(arxiv_id) if engine else False
+        if not success:
+            return jsonify({"error": "failed to remove from reading list"}), 500
+        return jsonify({"status": "ok"})
+
+    @app.route("/api/reading-list/<path:arxiv_id>/read", methods=["PUT"])
+    def mark_paper_as_read(arxiv_id):
+        """API endpoint to mark a paper as read."""
+        success = engine.db.mark_as_read(arxiv_id) if engine else False
+        if not success:
+            return jsonify({"error": "failed to mark as read"}), 500
+        return jsonify({"status": "ok"})
+
+    @app.route("/api/explain/<path:arxiv_id>", methods=["GET"])
+    def explain_paper(arxiv_id):
+        """API endpoint to get explainability data for a recommendation."""
+        paper = engine.db.get_paper(arxiv_id) if engine else None
+        if not paper:
+            return jsonify({"error": "Paper not found"}), 404
+        
+        similar_liked = engine.get_similar_liked_papers(arxiv_id, limit=3) if engine else []
+        
+        return jsonify({
+            "arxiv_id": arxiv_id,
+            "similar_liked": similar_liked
+        })
+
+    @app.route("/api/papers/<path:arxiv_id>/notes", methods=["GET"])
+    def get_paper_notes(arxiv_id):
+        """API endpoint to get all notes for a paper."""
+        notes = engine.db.get_paper_notes(arxiv_id) if engine else []
+        return jsonify(notes)
+
+    @app.route("/api/papers/<path:arxiv_id>/notes", methods=["POST"])
+    def add_paper_note(arxiv_id):
+        """API endpoint to add a note to a paper."""
+        data = request.get_json() or {}
+        content = data.get("content", "").strip()
+        if not content:
+            return jsonify({"error": "content is required"}), 400
+
+        note_id = engine.db.add_note(arxiv_id, content) if engine else None
+        if note_id is None:
+            return jsonify({"error": "failed to add note"}), 500
+        return jsonify({"status": "ok", "id": note_id})
+
+    @app.route("/api/notes/<int:note_id>", methods=["PUT"])
+    def update_paper_note(note_id):
+        """API endpoint to update a paper note."""
+        data = request.get_json() or {}
+        content = data.get("content", "").strip()
+        if not content:
+            return jsonify({"error": "content is required"}), 400
+
+        success = engine.db.update_note(note_id, content) if engine else False
+        if not success:
+            return jsonify({"error": "failed to update note"}), 500
+        return jsonify({"status": "ok"})
+
+    @app.route("/api/notes/<int:note_id>", methods=["DELETE"])
+    def delete_paper_note(note_id):
+        """API endpoint to delete a paper note."""
+        success = engine.db.delete_note(note_id) if engine else False
+        if not success:
+            return jsonify({"error": "failed to delete note"}), 500
+        return jsonify({"status": "ok"})
 
     @app.route("/api/tags", methods=["GET"])
     def get_tags():
@@ -299,8 +440,9 @@ def _register_routes(app: Flask):
 
     @app.route("/api/search", methods=["GET"])
     def search_api():
-        """API endpoint to search papers using FTS."""
+        """API endpoint to search papers."""
         query = request.args.get("q", "").strip()
+        search_mode = request.args.get("mode", "fts")
         if not query:
             return jsonify([])
 
@@ -309,13 +451,16 @@ def _register_routes(app: Flask):
         date_to = request.args.get("date_to", "").strip() or None
         limit = request.args.get("limit", 50, type=int)
 
-        results = engine.db.search_papers(
-            query=query,
-            category=category,
-            date_from=date_from,
-            date_to=date_to,
-            limit=limit,
-        )
+        if search_mode == "semantic":
+            results = engine.semantic_search(query=query, limit=limit)
+        else:
+            results = engine.db.search_papers(
+                query=query,
+                category=category,
+                date_from=date_from,
+                date_to=date_to,
+                limit=limit,
+            )
         return jsonify(results)
 
     @app.route("/api/fetch", methods=["POST"])

@@ -141,44 +141,78 @@
         </div>
         {% endif %}
 
-        <div class="paper-list">
+        <div class="paper-list row" id="papers-container">
             {% for paper in papers %}
-    <div class="card mb-3 paper-card" id="paper-{{ paper.arxiv_id | replace('/', '-') | replace('.', '-') }}" data-arxiv-id="{{ paper.arxiv_id }}">
+    <div class="col-12 card mb-3 paper-card" id="paper-{{ paper.arxiv_id | replace('/', '-') | replace('.', '-') }}" data-arxiv-id="{{ paper.arxiv_id }}">
         <div class="card-body">
             <div class="d-flex justify-content-between align-items-start">
                 <div class="flex-grow-1">
                     <div class="d-flex align-items-start gap-2 mb-2">
                         <div class="flex-grow-1">
                             <h5 class="card-title mb-1">
-                                <a href="/papers/{{ paper.arxiv_id }}" class="text-decoration-none">
-                                    {{ paper.title | safe }}
-                                </a>
+                                <a href="/papers/{{ paper.arxiv_id }}" class="text-decoration-none text-light">{{ paper.title | safe }}</a>
+                                {% if paper.freshness_bonus is defined and paper.freshness_bonus > 0.05 %}
+                                <span class="badge bg-danger ms-2"><i class="bi bi-fire"></i> NEW</span>
+                                {% endif %}
+                                {% if paper.citation_count is defined and paper.citation_count > 0 %}
+                                <span class="badge bg-secondary ms-1" title="Citations from Semantic Scholar">
+                                    <i class="bi bi-chat-quote"></i> {{ paper.citation_count }}
+                                </span>
+                                {% endif %}
+                                {% if paper.score is defined and paper.score > 0 and filter_type != 'search' %}
+                                <span class="badge score-badge ms-2
+                                    {% if paper.score >= 0.8 %}bg-success
+                                    {% elif paper.score >= 0.5 %}bg-warning text-dark
+                                    {% else %}bg-secondary
+                                    {% endif %}" title="Base: {{ '%.2f' | format(paper.model_score) }}, Freshness: +{{ '%.2f' | format(paper.freshness_bonus) }}, Summary: +{{ '%.2f' | format(paper.summary_bonus) }}">
+                                    {{ "%.0f" | format(paper.score * 100) }}% Match
+                                </span>
+                                {% endif %}
                             </h5>
-                            {% if paper.freshness_bonus is defined and paper.freshness_bonus > 0.05 %}
-                            <span class="badge bg-danger"><i class="bi bi-fire"></i> NEW</span>
+                            {% if filter_type == 'unrated' %}
+                            <div class="mb-1 mt-2">
+                                {% if paper.reason_liked_paper %}
+                                <span class="badge bg-info-subtle text-info-emphasis" title="Similarity: {{ '%.2f' | format(paper.reason_liked_sim) }}">
+                                    <i class="bi bi-lightbulb"></i> Because you liked: {{ paper.reason_liked_paper[:60] }}...
+                                </span>
+                                {% endif %}
+                            </div>
                             {% endif %}
-                            {% if paper.score is defined and paper.score > 0 %}
-                            <span class="badge score-badge
-                                {% if paper.score >= 0.8 %}bg-success
-                                {% elif paper.score >= 0.5 %}bg-warning text-dark
-                                {% else %}bg-secondary
-                                {% endif %}">
-                                {{ "%.0f" | format(paper.score * 100) }}% Match
-                            </span>
+                            </div>
+                            </div>
+                        <div class="rating-stars d-flex gap-1 align-items-center flex-wrap">
+                            <div class="star-rating">
+                                {% for i in range(1, 6) %}
+                                <button class="btn btn-sm py-0 px-1 border-0 btn-rate-star {% if paper.rating and paper.rating >= i %}text-warning{% else %}text-secondary{% endif %}"
+                                        data-rating="{{ i }}"
+                                        onclick="ratePaper('{{ paper.arxiv_id }}', {{ i }}, this)"
+                                        title="Rate {{ i }} star{% if i > 1 %}s{% endif %}">
+                                    <i class="bi bi-star-fill"></i>
+                                </button>
+                                {% endfor %}
+                            </div>
+                            <button class="btn btn-sm btn-outline-secondary ms-1 btn-rate-skip {% if paper.rating == -1 %}active{% endif %}"
+                                    onclick="ratePaper('{{ paper.arxiv_id }}', -1, this)"
+                                    title="Skip this paper">
+                                <i class="bi bi-skip-forward"></i>
+                            </button>
+
+                            <!-- Reading List Button -->
+                            {% if paper.in_reading_list %}
+                            <button class="btn btn-sm btn-info active" 
+                                    onclick="removeFromReadingList('{{ paper.arxiv_id }}', this)"
+                                    title="Remove from reading list">
+                                <i class="bi bi-bookmark-fill"></i>
+                            </button>
+                            {% else %}
+                            <button class="btn btn-sm btn-outline-info" 
+                                    onclick="addToReadingList('{{ paper.arxiv_id }}', this)"
+                                    title="Save for later">
+                                <i class="bi bi-bookmark"></i>
+                            </button>
                             {% endif %}
                         </div>
-                        <div class="rating-buttons d-flex flex-column gap-2 flex-shrink-0">
-                            <button class="btn btn-sm btn-outline-success btn-rate {% if paper.rating == 1 %}active{% endif %}"
-                                    onclick="ratePaper('{{ paper.arxiv_id }}', 1, this)"
-                                    title="Thumbs up - I like this paper">
-                                <i class="bi bi-hand-thumbs-up-fill"></i>
-                            </button>
-                            <button class="btn btn-sm btn-outline-danger btn-rate {% if paper.rating == 0 %}active{% endif %}"
-                                    onclick="ratePaper('{{ paper.arxiv_id }}', 0, this)"
-                                    title="Thumbs down - Not interesting">
-                                <i class="bi bi-hand-thumbs-down-fill"></i>
-                            </button>
-                        </div>
+
                     </div>
 
                     <p class="text-muted mb-2">
@@ -259,27 +293,13 @@
 </div>
 
 {% if papers %}
-<nav class="mt-4">
-    <ul class="pagination justify-content-center">
-        {% if page > 1 %}
-        <li class="page-item">
-            <a class="page-link" href="/papers?filter={{ filter_type }}&page={{ page - 1 }}&per_page={{ per_page }}{% if q %}&q={{ q }}{% endif %}{% if category %}&category={{ category }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}">
-                <i class="bi bi-chevron-left"></i> Previous
-            </a>
-        </li>
-        {% endif %}
-        <li class="page-item active">
-            <span class="page-link">Page {{ page }}</span>
-        </li>
-        {% if papers | length == per_page %}
-        <li class="page-item">
-            <a class="page-link" href="/papers?filter={{ filter_type }}&page={{ page + 1 }}&per_page={{ per_page }}{% if q %}&q={{ q }}{% endif %}{% if category %}&category={{ category }}{% endif %}{% if date_from %}&date_from={{ date_from }}{% endif %}{% if date_to %}&date_to={{ date_to }}{% endif %}">
-                Next <i class="bi bi-chevron-right"></i>
-            </a>
-        </li>
-        {% endif %}
-    </ul>
-</nav>
+<div id="scroll-sentinel" class="text-center py-4 text-muted">
+    {% if papers | length == per_page %}
+    <div class="spinner-border spinner-border-sm" role="status"></div> Loading more...
+    {% else %}
+    <span>No more papers to load.</span>
+    {% endif %}
+</div>
 {% endif %}
     </div><!-- /col-lg-9 -->
 </div><!-- /row -->
@@ -287,13 +307,170 @@
 
 {% block scripts %}
 <script>
+// Data for infinite scroll
+let currentPage = {{ page }};
+let perPage = {{ per_page }};
+let filterType = '{{ filter_type }}';
+let queryParams = new URLSearchParams(window.location.search);
+let hasMore = {% if papers | length == per_page %}true{% else %}false{% endif %};
+let isLoading = false;
+
+// Selected paper tracking for keyboard navigation
+let selectedPaperIndex = -1;
+let paperCards = [];
+
+function updatePaperCardsList() {
+    paperCards = document.querySelectorAll('.paper-card');
+}
+
+function selectPaper(index) {
+    if (paperCards.length === 0) return;
+    
+    // Boundary checks
+    if (index < 0) index = 0;
+    if (index >= paperCards.length) index = paperCards.length - 1;
+    
+    // Clear previous selection visually
+    if (selectedPaperIndex >= 0 && selectedPaperIndex < paperCards.length) {
+        paperCards[selectedPaperIndex].classList.remove('border-info');
+    }
+    
+    selectedPaperIndex = index;
+    
+    // Apply visual selection
+    const selectedCard = paperCards[selectedPaperIndex];
+    selectedCard.classList.add('border-info');
+    
+    // Scroll into view if needed
+    const rect = selectedCard.getBoundingClientRect();
+    if (rect.top < 0 || rect.bottom > window.innerHeight) {
+        selectedCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+}
+
+async function rateSelectedPaper(rating) {
+    if (selectedPaperIndex === -1 || selectedPaperIndex >= paperCards.length) return;
+    
+    const card = paperCards[selectedPaperIndex];
+    const arxivId = card.closest('.col-12').id.replace('paper-', '');
+    
+    // Find the appropriate button to mimic a click
+    const btnSelector = rating === 1 ? '.btn-outline-success' : '.btn-outline-danger';
+    const btn = card.querySelector(btnSelector);
+    
+    if (btn) {
+        ratePaper(arxivId, rating, btn);
+    }
+}
+
+document.addEventListener('keydown', (e) => {
+    // Ignore if focus is in an input or textarea
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+        return;
+    }
+
+    if (e.key === 'j') {
+        e.preventDefault();
+        selectPaper(selectedPaperIndex + 1);
+    } else if (e.key === 'k') {
+        e.preventDefault();
+        selectPaper(selectedPaperIndex - 1);
+    } else if (e.key === 'u' && selectedPaperIndex !== -1) {
+        e.preventDefault();
+        rateSelectedPaper(1);
+    } else if (e.key === 'd' && selectedPaperIndex !== -1) {
+        e.preventDefault();
+        rateSelectedPaper(0);
+    }
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+    updatePaperCardsList();
+    
+    // Auto-select first paper if none selected
+    if (paperCards.length > 0 && selectedPaperIndex === -1) {
+        selectPaper(0);
+    }
+
+    const sentinel = document.getElementById('scroll-sentinel');
+    if (!sentinel || !hasMore) return;
+
+    const observer = new IntersectionObserver(async (entries) => {
+        const entry = entries[0];
+        if (entry.isIntersecting && !isLoading && hasMore) {
+            isLoading = true;
+            currentPage++;
+            
+            queryParams.set('page', currentPage);
+            
+            try {
+                // Fetch the next page HTML
+                const resp = await fetch(`/papers?${queryParams.toString()}`);
+                const html = await resp.text();
+                
+                // Parse it
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(html, 'text/html');
+                
+                // Extract paper cards
+                const newCards = doc.querySelectorAll('#papers-container > .col-12');
+                
+                if (newCards.length > 0) {
+                    const container = document.getElementById('papers-container');
+                    newCards.forEach(card => {
+                        container.appendChild(card);
+                    });
+                    
+                    // Re-render math in new cards
+                    renderFormattedText(container);
+                    
+                    // Update our navigation list
+                    updatePaperCardsList();
+                    
+                    // Check if there's more
+                    if (newCards.length < perPage) {
+                        hasMore = false;
+                        sentinel.innerHTML = '<span>No more papers to load.</span>';
+                    }
+                } else {
+                    hasMore = false;
+                    sentinel.innerHTML = '<span>No more papers to load.</span>';
+                }
+            } catch (err) {
+                console.error('Failed to fetch more papers:', err);
+            } finally {
+                isLoading = false;
+            }
+        }
+    }, { rootMargin: '400px' }); // Trigger 400px before reaching the sentinel
+
+    observer.observe(sentinel);
+});
 async function ratePaper(arxivId, rating, btn) {
     const card = btn.closest('.paper-card');
-    const buttons = card.querySelectorAll('.btn-rate');
+    const stars = card.querySelectorAll('.btn-rate-star');
+    const skipBtn = card.querySelector('.btn-rate-skip');
 
     // Visual feedback
-    buttons.forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
+    if (rating === -1) {
+        skipBtn.classList.add('active');
+        stars.forEach(s => {
+            s.classList.remove('text-warning');
+            s.classList.add('text-secondary');
+        });
+    } else {
+        skipBtn.classList.remove('active');
+        stars.forEach(s => {
+            const starVal = parseInt(s.getAttribute('data-rating'));
+            if (starVal <= rating) {
+                s.classList.remove('text-secondary');
+                s.classList.add('text-warning');
+            } else {
+                s.classList.remove('text-warning');
+                s.classList.add('text-secondary');
+            }
+        });
+    }
 
     try {
         const resp = await fetch('/api/rate', {
@@ -434,6 +611,47 @@ async function removeTag(arxivId, tag, btn) {
         }
     } catch (e) {
         console.error('Failed to remove tag:', e);
+    }
+}
+
+async function addToReadingList(arxivId, btn) {
+    try {
+        const resp = await fetch('/api/reading-list', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ arxiv_id: arxivId })
+        });
+        if (resp.ok) {
+            btn.classList.remove('btn-outline-info');
+            btn.classList.add('btn-info', 'active');
+            btn.setAttribute('onclick', `removeFromReadingList('${arxivId}', this)`);
+            btn.setAttribute('title', 'Remove from reading list');
+            btn.innerHTML = '<i class="bi bi-bookmark-fill"></i>';
+        }
+    } catch (e) {
+        console.error('Failed to add to reading list:', e);
+    }
+}
+
+async function removeFromReadingList(arxivId, btn) {
+    try {
+        const resp = await fetch(`/api/reading-list/${encodeURIComponent(arxivId)}`, {
+            method: 'DELETE'
+        });
+        if (resp.ok) {
+            btn.classList.remove('btn-info', 'active');
+            btn.classList.add('btn-outline-info');
+            btn.setAttribute('onclick', `addToReadingList('${arxivId}', this)`);
+            btn.setAttribute('title', 'Save for later');
+            btn.innerHTML = '<i class="bi bi-bookmark"></i>';
+            
+            // If we are on the reading list page, we might want to remove the card
+            if (window.location.pathname === '/reading-list') {
+                btn.closest('.col-12').remove();
+            }
+        }
+    } catch (e) {
+        console.error('Failed to remove from reading list:', e);
     }
 }
 </script>

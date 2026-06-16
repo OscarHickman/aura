@@ -26,12 +26,14 @@ class TestRecommendationEngine(unittest.TestCase):
     @patch("ai_papers.recommender.PaperDatabase")
     @patch("ai_papers.recommender.get_embedding_dim", return_value=3)
     @patch("ai_papers.recommender.embed_papers_batch")
-    @patch("ai_papers.recommender.fetch_papers_simple")
-    @patch("ai_papers.recommender.fetch_papers")
+    @patch("ai_papers.fetcher.SemanticScholarSource.fetch", return_value=[])
+    @patch("ai_papers.fetcher.ArxivSource.fetch_simple")
+    @patch("ai_papers.fetcher.ArxivSource.fetch")
     def test_fetch_new_papers_fallback_path(
         self,
         mock_fetch,
         mock_fetch_simple,
+        mock_s2,
         mock_embed,
         _mock_dim,
         mock_db_cls,
@@ -57,10 +59,12 @@ class TestRecommendationEngine(unittest.TestCase):
     @patch("ai_papers.recommender.PaperDatabase")
     @patch("ai_papers.recommender.get_embedding_dim", return_value=3)
     @patch("ai_papers.recommender.embed_papers_batch")
-    @patch("ai_papers.recommender.fetch_papers")
+    @patch("ai_papers.fetcher.SemanticScholarSource.fetch", return_value=[])
+    @patch("ai_papers.fetcher.ArxivSource.fetch")
     def test_fetch_new_papers_generate_summaries(
         self,
         mock_fetch,
+        mock_s2,
         mock_embed,
         _mock_dim,
         mock_db_cls,
@@ -211,6 +215,29 @@ class TestRecommendationEngine(unittest.TestCase):
         self.assertEqual(similar[0]["arxiv_id"], "2401.00002")
         # cosine similarity between [1, 0, 0] and [1, 1, 0] is 1 / sqrt(2) = 0.7071
         self.assertAlmostEqual(similar[0]["similarity"], 0.7071, places=3)
+
+    @patch("ai_papers.recommender.PreferenceModel")
+    @patch("ai_papers.recommender.PaperDatabase")
+    @patch("ai_papers.recommender.get_embedding_dim", return_value=3)
+    def test_get_diverse_papers(self, _mock_dim, mock_db_cls, _mock_model_cls):
+        db = Mock()
+        p1 = {"arxiv_id": "2401.00001", "title": "Paper 1"}
+        p2 = {"arxiv_id": "2401.00002", "title": "Paper 2"}
+        emb1 = np.array([1.0, 0.0, 0.0], dtype=np.float32)
+        emb2 = np.array([0.0, 1.0, 0.0], dtype=np.float32)
+
+        db.get_papers.return_value = [p1, p2]
+        db.get_papers_with_embeddings.return_value = [(p1, emb1), (p2, emb2)]
+        mock_db_cls.return_value = db
+
+        with tempfile.TemporaryDirectory() as td:
+            engine = RecommendationEngine(Path(td), ["astro-ph.CO"])
+            diverse = engine.get_diverse_papers(limit=2)
+
+        self.assertEqual(len(diverse), 2)
+        ids = [p["arxiv_id"] for p in diverse]
+        self.assertIn("2401.00001", ids)
+        self.assertIn("2401.00002", ids)
 
 
 if __name__ == "__main__":

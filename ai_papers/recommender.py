@@ -6,7 +6,7 @@ from pathlib import Path
 
 from .database import PaperDatabase
 from .embedder import embed_papers_batch, get_embedding_dim
-from .fetcher import fetch_papers, fetch_papers_simple
+from .fetcher import PaperSource, ArxivSource, SemanticScholarSource, RSSSource
 from .llm import generate_summary, get_default_provider, _load_providers_order
 from .model import PreferenceModel
 
@@ -21,12 +21,20 @@ class RecommendationEngine:
         data_dir: str | Path,
         categories: list[str],
         embedding_model: str = "all-MiniLM-L6-v2",
+        sources: list[PaperSource] = None,
+        rss_urls: list[str] = None,
     ):
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
         self.categories = categories
         self.embedding_model = embedding_model
+        
+        self.sources = sources or [
+            ArxivSource(), 
+            SemanticScholarSource(),
+            RSSSource(feed_urls=rss_urls)
+        ]
 
         # Initialize components
         self.db = PaperDatabase(self.data_dir / "papers.db")
@@ -43,36 +51,44 @@ class RecommendationEngine:
         days_back: int = 2,
         generate_summaries: bool = False,
     ) -> int:
-        """Fetch new papers from arXiv, embed them, and store in database.
+        """Fetch new papers from all sources, embed them, and store in database.
 
         Returns the number of new papers added.
         """
         logger.info(f"Fetching papers for categories: {self.categories}")
 
-        # Try date-filtered fetch first, fall back to simple fetch
-        papers = fetch_papers(
-            self.categories, max_results=max_results, days_back=days_back
-        )
-        if not papers:
-            logger.info("Date-filtered fetch returned no papers, trying simple fetch")
-            papers = fetch_papers_simple(self.categories, max_results=max_results)
+        all_papers = []
+        for source in self.sources:
+            try:
+                # Try date-filtered fetch first, fall back to simple fetch
+                papers = source.fetch(
+                    self.categories, max_results=max_results, days_back=days_back
+                )
+                if not papers:
+                    logger.info(f"Date-filtered fetch returned no papers for {source.__class__.__name__}, trying simple fetch")
+                    papers = source.fetch_simple(self.categories, max_results=max_results)
+                
+                if papers:
+                    all_papers.extend(papers)
+            except Exception as e:
+                logger.error(f"Error fetching from {source.__class__.__name__}: {e}")
 
-        if not papers:
-            logger.warning("No papers fetched")
+        if not all_papers:
+            logger.warning("No papers fetched from any source")
             return 0
 
         # Split fetched papers into new records and existing records that still
         # need summaries.
         existing_ids = set()
         papers_needing_summary = []
-        for paper in papers:
+        for paper in all_papers:
             existing_paper = self.db.get_paper(paper["arxiv_id"])
             if existing_paper:
                 existing_ids.add(paper["arxiv_id"])
                 if not existing_paper.get("summary"):
                     papers_needing_summary.append(paper)
 
-        new_papers = [p for p in papers if p["arxiv_id"] not in existing_ids]
+        new_papers = [p for p in all_papers if p["arxiv_id"] not in existing_ids]
 
         if not new_papers and not papers_needing_summary:
             logger.info("All fetched papers already in database with summaries")
@@ -221,18 +237,21 @@ class RecommendationEngine:
 
         # Get preference model scores
         if embeddings:
-            model_scores = self.preference_model.predict_batch(embeddings)
-            for paper, score in zip(scorable_papers, model_scores):
+            model_scores, uncertainties = self.preference_model.predict_batch(embeddings)
+            for paper, score, unc in zip(scorable_papers, model_scores, uncertainties):
                 paper["model_score"] = float(score)
+                paper["model_uncertainty"] = float(unc)
         else:
             for paper in scorable_papers:
                 paper["model_score"] = 0.5
+                paper["model_uncertainty"] = 0.0
 
         # Add unscorable papers
         scored_ids = {p["arxiv_id"] for p in scorable_papers}
         for paper in papers:
             if paper["arxiv_id"] not in scored_ids:
                 paper["model_score"] = 0.5
+                paper["model_uncertainty"] = 0.0
                 scorable_papers.append(paper)
 
         # Calculate composite score with freshness and summary bonuses
@@ -260,6 +279,32 @@ class RecommendationEngine:
                 min(1.0, base_score + freshness_bonus + summary_bonus), 4
             )
             paper["freshness_bonus"] = round(freshness_bonus, 4)
+            paper["summary_bonus"] = round(summary_bonus, 4)
+
+        # Explainability: attach the most similar liked paper to each recommendation
+        rated_papers = self.db.get_rated_papers()
+        liked_papers_emb = [(p, emb) for p, emb, rating in rated_papers if rating >= 4 or rating == 1]
+
+        if liked_papers_emb and scorable_papers:
+            liked_embs_mat = np.array([emb for p, emb in liked_papers_emb])
+            liked_embs_norm = np.linalg.norm(liked_embs_mat, axis=1, keepdims=True)
+            liked_embs_mat_normalized = np.divide(
+                liked_embs_mat,
+                liked_embs_norm,
+                out=np.zeros_like(liked_embs_mat),
+                where=liked_embs_norm != 0
+            )
+
+            for paper in scorable_papers:
+                if paper["arxiv_id"] in emb_map:
+                    paper_emb = emb_map[paper["arxiv_id"]]
+                    paper_norm = np.linalg.norm(paper_emb)
+                    if paper_norm > 0:
+                        paper_emb_normalized = paper_emb / paper_norm
+                        sims = np.dot(liked_embs_mat_normalized, paper_emb_normalized)
+                        best_idx = np.argmax(sims)
+                        paper["reason_liked_paper"] = liked_papers_emb[best_idx][0]["title"]
+                        paper["reason_liked_sim"] = round(float(sims[best_idx]), 4)
 
         # Sort by composite score, then by date (newest first)
         scorable_papers.sort(
@@ -272,18 +317,52 @@ class RecommendationEngine:
 
         return scorable_papers[:limit]
 
+    def get_similar_liked_papers(self, arxiv_id: str, limit: int = 3) -> list[dict]:
+        """Find the most similar papers that the user has previously liked.
+
+        Useful for recommendation explainability via a dedicated endpoint.
+        """
+        current_data = self.db.get_papers_with_embeddings([arxiv_id])
+        if not current_data:
+            return []
+
+        _, current_emb = current_data[0]
+
+        rated_papers = self.db.get_rated_papers()
+        liked_papers = [(p, emb) for p, emb, rating in rated_papers if rating >= 4 or rating == 1]
+
+        similarities = []
+        for paper, emb in liked_papers:
+            if paper["arxiv_id"] == arxiv_id:
+                continue
+
+            dot = np.dot(current_emb, emb)
+            norm_curr = np.linalg.norm(current_emb)
+            norm_other = np.linalg.norm(emb)
+
+            sim = float(dot / (norm_curr * norm_other)) if norm_curr > 0 and norm_other > 0 else 0.0
+
+            paper["similarity"] = round(sim, 4)
+            similarities.append(paper)
+
+        similarities.sort(key=lambda p: p["similarity"], reverse=True)
+        return similarities[:limit]
+
     def rate_paper(self, arxiv_id: str, rating: int) -> dict:
         """Rate a paper and immediately update the model (online learning).
 
         Args:
             arxiv_id: The arXiv paper ID.
-            rating: 1 for thumbs up, 0 for thumbs down.
+            rating: 1-5 for stars, -1 for skip.
 
         Returns:
             Dict with training result info.
         """
         # Save rating to database
         self.db.rate_paper(arxiv_id, rating)
+
+        if rating == -1:
+            return {"status": "rated", "trained": False, "reason": "skipped"}
 
         # Get paper embedding
         papers_emb = self.db.get_papers_with_embeddings([arxiv_id])
@@ -295,8 +374,16 @@ class RecommendationEngine:
             embedding,
         ) = papers_emb[0]
 
+        # Map legacy 0/1 to 0.0/1.0, and 1-5 stars to 0.0-1.0
+        if rating == 0:
+            label = 0.0
+        elif rating == 1:
+            label = 1.0
+        else:
+            label = (rating - 1) / 4.0
+
         # Online learning: train on this single example
-        loss = self.preference_model.train_single(embedding, float(rating))
+        loss = self.preference_model.train_single(embedding, label)
 
         return {
             "status": "rated",
@@ -328,7 +415,7 @@ class RecommendationEngine:
         self.preference_model.model_path = self.data_dir / "preference_model.pt"
 
         loss = self.preference_model.train_step(
-            embeddings, labels, epochs=epochs, progress_callback=progress_callback
+            embeddings, labels, epochs=epochs, progress_callback=progress_callback, use_scheduler=True
         )
 
         return {
@@ -391,6 +478,156 @@ class RecommendationEngine:
         # Sort by similarity descending
         similarities.sort(key=lambda p: p["similarity"], reverse=True)
         return similarities[:limit]
+
+    def semantic_search(self, query: str, limit: int = 20) -> list[dict]:
+        """Search for papers using semantic similarity to the query string."""
+        from .embedder import embed_text
+        
+        query_emb = embed_text(query, model_name=self.embedding_model)
+        
+        all_papers = self.db.get_papers_with_embeddings()
+        if not all_papers:
+            return []
+            
+        similarities = []
+        for paper, emb in all_papers:
+            dot = np.dot(query_emb, emb)
+            norm_curr = np.linalg.norm(query_emb)
+            norm_other = np.linalg.norm(emb)
+            
+            sim = float(dot / (norm_curr * norm_other)) if norm_curr > 0 and norm_other > 0 else 0.0
+            
+            paper["similarity"] = round(sim, 4)
+            paper["rating"] = self.db.get_latest_rating(paper["arxiv_id"])
+            similarities.append(paper)
+            
+        similarities.sort(key=lambda p: p["similarity"], reverse=True)
+        return similarities[:limit]
+
+    def get_diverse_papers(self, limit: int = 20) -> list[dict]:
+        """Get a diverse set of unrated papers using k-means clustering on embeddings.
+        
+        Useful for cold-start onboarding to capture broad user interests.
+        """
+        from sklearn.cluster import KMeans
+
+        papers = self.db.get_papers(limit=1000, unrated_only=True)
+        if not papers:
+            return []
+
+        if len(papers) <= limit:
+            return papers
+
+        arxiv_ids = [p["arxiv_id"] for p in papers]
+        papers_with_emb = self.db.get_papers_with_embeddings(arxiv_ids)
+
+        if len(papers_with_emb) < limit:
+            # Fallback if not enough embeddings: just return recent papers
+            return papers[:limit]
+
+        # Extract embeddings and corresponding paper dicts
+        embeddings = []
+        emb_papers = []
+        emb_map = {p["arxiv_id"]: emb for p, emb in papers_with_emb}
+        
+        for paper in papers:
+            if paper["arxiv_id"] in emb_map:
+                embeddings.append(emb_map[paper["arxiv_id"]])
+                emb_papers.append(paper)
+
+        X = np.array(embeddings)
+        
+        # Use k-means to find clusters
+        n_clusters = limit
+        kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+        labels = kmeans.fit_predict(X)
+
+        # Select one paper from each cluster closest to the centroid
+        diverse_papers = []
+        for i in range(n_clusters):
+            cluster_indices = np.where(labels == i)[0]
+            if len(cluster_indices) > 0:
+                # Find the paper closest to the cluster center
+                centroid = kmeans.cluster_centers_[i]
+                cluster_embeddings = X[cluster_indices]
+                distances = np.linalg.norm(cluster_embeddings - centroid, axis=1)
+                closest_index = cluster_indices[np.argmin(distances)]
+                diverse_papers.append(emb_papers[closest_index])
+
+        return diverse_papers
+
+    def discover_topics(self, n_clusters: int = 5, limit_papers: int = 500) -> list[dict]:
+        """Auto-discover topic clusters from recent papers using K-Means."""
+        from sklearn.cluster import KMeans
+        import collections
+        import re
+
+        papers = self.db.get_papers(limit=limit_papers)
+        if not papers:
+            return []
+
+        arxiv_ids = [p["arxiv_id"] for p in papers]
+        papers_with_emb = self.db.get_papers_with_embeddings(arxiv_ids)
+        
+        if len(papers_with_emb) < n_clusters:
+            return []
+
+        embeddings = []
+        emb_papers = []
+        emb_map = {p["arxiv_id"]: emb for p, emb in papers_with_emb}
+        
+        for paper in papers:
+            if paper["arxiv_id"] in emb_map:
+                embeddings.append(emb_map[paper["arxiv_id"]])
+                emb_papers.append(paper)
+
+        X = np.array(embeddings)
+        kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
+        labels = kmeans.fit_predict(X)
+
+        topics = []
+        stop_words = {"the", "a", "an", "and", "or", "but", "in", "on", "with", "to", "for", "of", "at", "by", "from", "is", "are", "was", "were", "be", "been", "being", "it", "this", "that", "these", "those", "we", "our", "us", "they", "their", "them", "as", "model", "models", "paper", "proposed", "method", "results", "using", "based", "which", "can", "new"}
+
+        for i in range(n_clusters):
+            cluster_indices = np.where(labels == i)[0]
+            if len(cluster_indices) == 0:
+                continue
+                
+            cluster_papers = [emb_papers[idx] for idx in cluster_indices]
+            
+            # Simple TF-IDF approximation for topic naming: extract common words from titles/abstracts
+            word_counts = collections.Counter()
+            for p in cluster_papers:
+                text = (p["title"] + " " + p["abstract"]).lower()
+                words = re.findall(r'\b[a-z]{3,}\b', text)
+                for w in words:
+                    if w not in stop_words:
+                        word_counts[w] += 1
+            
+            # Get top 3 words to form a name
+            top_words = [w for w, c in word_counts.most_common(5)]
+            topic_name = " ".join(top_words[:3]).title() if top_words else f"Topic {i+1}"
+            
+            # Find representative papers (closest to centroid)
+            centroid = kmeans.cluster_centers_[i]
+            cluster_embeddings = X[cluster_indices]
+            distances = np.linalg.norm(cluster_embeddings - centroid, axis=1)
+            
+            # Sort papers by distance to centroid
+            sorted_indices = np.argsort(distances)
+            top_papers = [cluster_papers[idx] for idx in sorted_indices[:5]]
+            
+            topics.append({
+                "id": i,
+                "name": topic_name,
+                "keywords": top_words,
+                "paper_count": len(cluster_papers),
+                "top_papers": top_papers
+            })
+
+        # Sort topics by size descending
+        topics.sort(key=lambda t: t["paper_count"], reverse=True)
+        return topics
 
     def close(self):
         """Clean up resources."""

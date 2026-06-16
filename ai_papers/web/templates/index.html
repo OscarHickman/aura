@@ -128,27 +128,6 @@
             </div>
         </div>
     </div>
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header">
-                <h5><i class="bi bi-cpu"></i> Model Info</h5>
-            </div>
-            <div class="card-body">
-                <table class="table table-sm">
-                    <tr><td>Model Parameters</td><td>{{ "{:,}".format(stats.model.parameters) }}</td></tr>
-                    <tr><td>Embedding Dimension</td><td>{{ stats.model.embedding_dim }}</td></tr>
-                    <tr><td>Learning Rate</td><td>{{ stats.model.learning_rate }}</td></tr>
-                    <tr><td>Total Trained</td><td>{{ stats.model.total_trained }}</td></tr>
-                    <tr><td>Categories</td><td>{{ stats.categories | join(", ") }}</td></tr>
-                </table>
-                {% if stats.model.recent_losses %}
-                <p class="text-muted mb-0">
-                    <small>Recent loss: {{ "%.4f" | format(stats.model.recent_losses[-1]) }}</small>
-                </p>
-                {% endif %}
-            </div>
-        </div>
-    </div>
 </div>
 
 <div id="status-toast" class="toast-container position-fixed bottom-0 end-0 p-3">

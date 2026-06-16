@@ -23,6 +23,12 @@ def get_model(model_name: str = "all-MiniLM-L6-v2"):
     return _model
 
 
+def embed_text(text: str, model_name: str = "all-MiniLM-L6-v2") -> np.ndarray:
+    """Create an embedding vector for arbitrary text (e.g., search queries)."""
+    model = get_model(model_name)
+    embedding = model.encode(text, normalize_embeddings=True)
+    return np.array(embedding, dtype=np.float32)
+
 def embed_paper(
     title: str, abstract: str, model_name: str = "all-MiniLM-L6-v2"
 ) -> np.ndarray:
