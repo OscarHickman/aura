@@ -6,19 +6,7 @@
 
 ---
 
-## Phase 1 — Foundation & Developer Experience
 
-*Make the codebase production-grade before building on top of it.*
-
-### 1.1 Logging & Error Observability
-**Why it matters:** Errors currently get swallowed or logged to stdout with no structure. Impossible to diagnose production issues.
-
-- [ ] Add structured JSON logging via `python-json-logger`
-- [ ] Add `X-Request-ID` header and thread-local context to all log lines
-- [ ] Add a `/api/logs` endpoint (last N lines, admin-only) for self-hosted debugging
-- [ ] Integrate Sentry SDK (optional, behind `SENTRY_DSN` env var)
-
----
 
 ## Phase 2 — Core UX Polish
 

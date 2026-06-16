@@ -2,12 +2,13 @@
 
 import logging
 import os
+import uuid
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, g
 
 from ..recommender import RecommendationEngine
-
 from ..config import get_validated_config
+from ..logging_config import setup_logging
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +17,9 @@ engine: RecommendationEngine | None = None
 
 def create_app(config_path: str | None = None) -> Flask:
     """Create and configure the Flask application."""
+    # Setup structured JSON logging
+    setup_logging(level=logging.INFO, structured=True)
+
     app = Flask(__name__)
 
     # Load config
@@ -37,6 +41,22 @@ def create_app(config_path: str | None = None) -> Flask:
         categories=config.get("categories", ["astro-ph.CO", "astro-ph.GA"]),
         embedding_model=config.get("embedding_model", "all-MiniLM-L6-v2"),
     )
+
+    # Register X-Request-ID hooks
+    @app.before_request
+    def before_request():
+        req_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
+        from ..logging_config import request_id_var
+        request_id_var.set(req_id)
+        g.request_id = req_id
+        logger.info(f"Incoming request: {request.method} {request.path}")
+
+    @app.after_request
+    def after_request(response):
+        req_id = getattr(g, "request_id", None)
+        if req_id:
+            response.headers["X-Request-ID"] = req_id
+        return response
 
     # Register routes
     _register_routes(app)
@@ -205,6 +225,34 @@ def _register_routes(app: Flask):
                     config_copy["llm"]["providers"][prov]["api_key"] = "********"
                     
         return jsonify(config_copy)
+
+    @app.route("/api/logs", methods=["GET"])
+    def get_logs():
+        """API endpoint to get rolling memory logs (admin token authenticated)."""
+        admin_token = os.environ.get("AURA_ADMIN_TOKEN")
+        if admin_token:
+            auth_header = request.headers.get("Authorization")
+            token = None
+            if auth_header and auth_header.startswith("Bearer "):
+                token = auth_header.split(" ", 1)[1]
+            if not token:
+                token = request.args.get("token")
+            if token != admin_token:
+                return jsonify({"error": "Unauthorized"}), 401
+
+        limit = request.args.get("limit", 100, type=int)
+        from ..logging_config import memory_log_handler
+        raw_logs = memory_log_handler.get_logs()
+        
+        import json
+        logs = []
+        for line in raw_logs:
+            try:
+                logs.append(json.loads(line))
+            except Exception:
+                logs.append({"raw": line})
+                
+        return jsonify(logs[-limit:])
 
     @app.route("/health")
     def health():

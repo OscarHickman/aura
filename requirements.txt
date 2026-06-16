@@ -25,3 +25,7 @@ apscheduler>=3.10
 pytest>=9.1.0
 pytest-cov>=6.0.0
 mypy>=2.1.0
+
+# Logging & Observability
+python-json-logger>=2.0.0
+sentry-sdk>=2.0.0
