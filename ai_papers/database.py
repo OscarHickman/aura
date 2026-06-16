@@ -70,6 +70,40 @@ class PaperDatabase:
             CREATE INDEX IF NOT EXISTS idx_ratings_arxiv_id ON ratings(arxiv_id);
             CREATE INDEX IF NOT EXISTS idx_ratings_rated_at ON ratings(rated_at);
             CREATE INDEX IF NOT EXISTS idx_task_history_status ON task_history(status);
+
+            -- FTS5 virtual table for full-text search
+            CREATE VIRTUAL TABLE IF NOT EXISTS papers_fts USING fts5(
+                arxiv_id UNINDEXED,
+                title,
+                abstract
+            );
+
+            -- Triggers to keep FTS table in sync
+            CREATE TRIGGER IF NOT EXISTS papers_ai AFTER INSERT ON papers BEGIN
+                INSERT INTO papers_fts(arxiv_id, title, abstract)
+                VALUES (new.arxiv_id, new.title, new.abstract);
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS papers_ad AFTER DELETE ON papers BEGIN
+                DELETE FROM papers_fts WHERE arxiv_id = old.arxiv_id;
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS papers_au AFTER UPDATE OF title, abstract ON papers BEGIN
+                UPDATE papers_fts SET
+                    title = new.title,
+                    abstract = new.abstract
+                WHERE arxiv_id = old.arxiv_id;
+            END;
+        """)
+        self.conn.commit()
+
+        # Backfill existing papers into the FTS virtual table
+        self.conn.execute("""
+            INSERT INTO papers_fts(arxiv_id, title, abstract)
+            SELECT arxiv_id, title, abstract FROM papers
+            WHERE NOT EXISTS (
+                SELECT 1 FROM papers_fts WHERE papers_fts.arxiv_id = papers.arxiv_id
+            )
         """)
         self.conn.commit()
 
