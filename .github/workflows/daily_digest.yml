@@ -74,6 +74,7 @@ jobs:
         # Commit if there are changes
         if ! git diff-index --quiet HEAD; then
           git commit -m "chore: update paper database and model [skip ci]"
+          git pull --rebase origin main
           git push
         else
           echo "No database changes to commit."
