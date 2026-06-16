@@ -65,7 +65,7 @@ class PreferenceModel:
 
         # Training stats
         self.total_trained = 0
-        self.train_history = []
+        self.train_history: list[dict] = []
 
         # Load existing model if available
         if self.model_path.exists():

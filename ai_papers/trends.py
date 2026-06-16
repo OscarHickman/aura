@@ -62,7 +62,8 @@ def _generate_generic_text(prompt: str) -> str:
                     max_tokens=300,
                     temperature=0.5,
                 )
-                return message.choices[0].message.content.strip()
+                content = message.choices[0].message.content
+                return content.strip() if content else ""
             except Exception as e:
                 logger.warning(f"Groq generic text generation failed: {e}")
         elif p == "openai":

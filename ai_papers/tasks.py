@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 # Load config
 config_path = os.environ.get("AI_PAPERS_CONFIG", "config.yaml")
-config = {}
+config: dict = {}
 if os.path.exists(config_path):
     with open(config_path) as f:
         config = yaml.safe_load(f) or {}

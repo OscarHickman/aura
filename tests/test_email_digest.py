@@ -120,6 +120,81 @@ class TestEmailDigest(unittest.TestCase):
         mock_graph_send.assert_called_once()
         engine.close.assert_called_once()
 
+    @patch("smtplib.SMTP_SSL")
+    def test_send_smtp_email_ssl(self, mock_smtp_ssl_cls):
+        mock_smtp = Mock()
+        mock_smtp_ssl_cls.return_value.__enter__.return_value = mock_smtp
+        
+        cfg = {
+            "smtp_host": "smtp.ssl.com",
+            "smtp_port": 465,
+            "smtp_username": "user",
+            "smtp_password": "pwd",
+            "from_email": "from@test.com",
+            "to_email": "to@test.com",
+            "use_ssl": True
+        }
+        
+        email_digest._send_smtp_email(cfg, "Sub", "Text", "HTML")
+        mock_smtp_ssl_cls.assert_called_once_with("smtp.ssl.com", 465, timeout=30)
+        mock_smtp.login.assert_called_once_with("user", "pwd")
+        mock_smtp.send_message.assert_called_once()
+
+    @patch("smtplib.SMTP")
+    @patch("ssl.create_default_context")
+    def test_send_smtp_email_tls(self, mock_ssl_context, mock_smtp_cls):
+        mock_smtp = Mock()
+        mock_smtp_cls.return_value.__enter__.return_value = mock_smtp
+        
+        cfg = {
+            "smtp_host": "smtp.tls.com",
+            "smtp_port": 587,
+            "smtp_username": "user",
+            "smtp_password": "pwd",
+            "from_email": "from@test.com",
+            "to_email": "to@test.com",
+            "use_ssl": False,
+            "use_tls": True
+        }
+        
+        email_digest._send_smtp_email(cfg, "Sub", "Text", "HTML")
+        mock_smtp_cls.assert_called_once_with("smtp.tls.com", 587, timeout=30)
+        mock_smtp.starttls.assert_called_once()
+        mock_smtp.login.assert_called_once_with("user", "pwd")
+        mock_smtp.send_message.assert_called_once()
+
+    @patch("requests.post")
+    @patch("ai_papers.email_digest._acquire_graph_token", return_value="token123")
+    def test_send_graph_email_failure(self, mock_token, mock_post):
+        mock_resp = Mock()
+        mock_resp.status_code = 500
+        mock_resp.text = "Internal error"
+        mock_post.return_value = mock_resp
+        
+        cfg = {
+            "from_email": "from@test.com",
+            "to_email": "to@test.com",
+        }
+        
+        with self.assertRaises(RuntimeError) as ctx:
+            email_digest._send_graph_email(cfg, "Sub", "Text", "HTML")
+        self.assertIn("Microsoft Graph send failed", str(ctx.exception))
+
+    def test_collect_top_papers_with_summaries_fallback(self):
+        engine = Mock()
+        engine.get_recommendations.return_value = [
+            {"arxiv_id": "1", "title": "Paper 1", "summary": ""},
+            {"arxiv_id": "2", "title": "Paper 2", "summary": "AI FAIL"},
+        ]
+        engine.generate_summary_for_paper.side_effect = [
+            {"summary": "Gen summary 1"},
+            {"summary": ""}, # Generates empty summary (so it falls back to AI FAIL)
+        ]
+        
+        res = email_digest._collect_top_papers_with_summaries(engine, 2)
+        self.assertEqual(res[0]["summary"], "Gen summary 1")
+        self.assertEqual(res[1]["summary"], "AI FAIL")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -3,7 +3,7 @@
 import logging
 import time
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Any
 from xml.etree import ElementTree
 
 import requests
@@ -63,7 +63,7 @@ def fetch_papers(
     while start < max_results:
         query = f"({cat_query}) AND submittedDate:[{date_from}0000 TO {date_to}2359]"
 
-        params = {
+        params: dict[str, Any] = {
             "search_query": query,
             "start": start,
             "max_results": batch_size,
@@ -119,7 +119,7 @@ def fetch_papers_simple(
     batch_size = min(max_results, 100)
 
     while start < max_results:
-        params = {
+        params: dict[str, Any] = {
             "search_query": cat_query,
             "start": start,
             "max_results": batch_size,
@@ -160,23 +160,30 @@ def fetch_papers_simple(
 def _parse_entry(entry: ElementTree.Element) -> Optional[dict]:
     """Parse a single arXiv Atom entry into a paper dict."""
     try:
-        arxiv_id_raw = entry.find(f"{ATOM_NS}id").text.strip()
+        id_elem = entry.find(f"{ATOM_NS}id")
+        if id_elem is None or not id_elem.text:
+            return None
+        arxiv_id_raw = id_elem.text.strip()
         # Extract just the ID part: "http://arxiv.org/abs/2401.12345v1" -> "2401.12345"
         arxiv_id = arxiv_id_raw.split("/abs/")[-1]
         # Remove version suffix
         if "v" in arxiv_id:
             arxiv_id = arxiv_id.rsplit("v", 1)[0]
 
-        title = entry.find(f"{ATOM_NS}title").text.strip()
+        title_elem = entry.find(f"{ATOM_NS}title")
+        title = title_elem.text.strip() if (title_elem is not None and title_elem.text) else ""
         title = " ".join(title.split())  # Normalize whitespace
 
-        abstract = entry.find(f"{ATOM_NS}summary").text.strip()
+        summary_elem = entry.find(f"{ATOM_NS}summary")
+        abstract = summary_elem.text.strip() if (summary_elem is not None and summary_elem.text) else ""
         abstract = " ".join(abstract.split())
 
         authors = []
         for author_elem in entry.findall(f"{ATOM_NS}author"):
-            name = author_elem.find(f"{ATOM_NS}name").text.strip()
-            authors.append(name)
+            name_elem = author_elem.find(f"{ATOM_NS}name")
+            if name_elem is not None and name_elem.text:
+                name = name_elem.text.strip()
+                authors.append(name)
 
         categories = []
         for cat_elem in entry.findall(f"{ARXIV_NS}primary_category"):
@@ -186,7 +193,8 @@ def _parse_entry(entry: ElementTree.Element) -> Optional[dict]:
             if term not in categories:
                 categories.append(term)
 
-        published = entry.find(f"{ATOM_NS}published").text.strip()
+        pub_elem = entry.find(f"{ATOM_NS}published")
+        published = pub_elem.text.strip() if (pub_elem is not None and pub_elem.text) else ""
 
         # Get URLs
         url = arxiv_id_raw

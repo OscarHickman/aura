@@ -92,6 +92,55 @@ class TestPaperDatabase(unittest.TestCase):
         self.assertEqual(stats["total_papers"], 2)
         self.assertEqual(stats["total_rated"], 1)
 
+    def test_summary_failed_and_needing_summary(self):
+        p1 = make_paper("2401.00001")
+        p2 = make_paper("2401.00002")
+        self.db.add_paper(p1)
+        self.db.add_paper(p2)
+        
+        # Initially both need summaries
+        needing = self.db.get_papers_needing_summary(include_failed=True)
+        self.assertEqual(len(needing), 2)
+        
+        # Mark one failed
+        self.db.update_summary("2401.00001", "AI Fail")
+        
+        # Check needing summary excluding failed (only p2 should be returned)
+        needing_no_failed = self.db.get_papers_needing_summary(include_failed=False)
+        self.assertEqual(len(needing_no_failed), 1)
+        self.assertEqual(needing_no_failed[0]["arxiv_id"], "2401.00002")
+        
+        # Check needing summary including failed (both returned)
+        needing_with_failed = self.db.get_papers_needing_summary(include_failed=True)
+        self.assertEqual(len(needing_with_failed), 2)
+
+    def test_task_tracking_lifecycle(self):
+        task_id = "task-uuid-123"
+        self.db.create_task_entry(task_id, "fetch_papers", "PENDING")
+        
+        status = self.db.get_task_status(task_id)
+        self.assertEqual(status["status"], "PENDING")
+        self.assertEqual(status["task_type"], "fetch_papers")
+        
+        self.db.update_task_progress(task_id, progress=5, total=10, status="RUNNING")
+        status = self.db.get_task_status(task_id)
+        self.assertEqual(status["status"], "RUNNING")
+        self.assertEqual(status["progress"], 5)
+        self.assertEqual(status["total"], 10)
+        
+        self.db.complete_task(task_id, "SUCCESS", result={"new": 3})
+        status = self.db.get_task_status(task_id)
+        self.assertEqual(status["status"], "SUCCESS")
+        self.assertEqual(status["result"], {"new": 3})
+        
+        # Complete with error
+        task_id_err = "task-uuid-err"
+        self.db.create_task_entry(task_id_err, "retrain", "PENDING")
+        self.db.complete_task(task_id_err, "FAILURE", error="Boom")
+        status = self.db.get_task_status(task_id_err)
+        self.assertEqual(status["status"], "FAILURE")
+        self.assertEqual(status["error"], "Boom")
+
 
 if __name__ == "__main__":
     unittest.main()

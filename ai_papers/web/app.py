@@ -11,10 +11,10 @@ from ..config import get_validated_config
 
 logger = logging.getLogger(__name__)
 
-engine: RecommendationEngine = None
+engine: RecommendationEngine | None = None
 
 
-def create_app(config_path: str = None) -> Flask:
+def create_app(config_path: str | None = None) -> Flask:
     """Create and configure the Flask application."""
     app = Flask(__name__)
 

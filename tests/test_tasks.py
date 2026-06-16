@@ -125,5 +125,36 @@ class TestCeleryTasks(unittest.TestCase):
         mock_engine.db.complete_task.assert_called_with("retrain-123", status="SUCCESS", result={"status": "retrained"})
         self.assertEqual(res["status"], "retrained")
 
+    @patch("ai_papers.tasks.RecommendationEngine")
+    def test_generate_missing_summaries_task_failure(self, mock_engine_cls):
+        mock_engine = Mock()
+        mock_engine_cls.return_value = mock_engine
+        mock_engine.generate_missing_summaries.side_effect = Exception("error summarizing")
+        
+        mock_request = Mock()
+        mock_request.id = "summarize-fail"
+        with patch.object(generate_missing_summaries_task.__class__, 'request', new_callable=PropertyMock) as mock_req_prop:
+            mock_req_prop.return_value = mock_request
+            with self.assertRaises(Exception):
+                generate_missing_summaries_task.run(limit=10, include_failed=True)
+                
+        mock_engine.db.complete_task.assert_called_with("summarize-fail", status="FAILURE", error="error summarizing")
+
+    @patch("ai_papers.tasks.RecommendationEngine")
+    def test_retrain_full_task_failure(self, mock_engine_cls):
+        mock_engine = Mock()
+        mock_engine_cls.return_value = mock_engine
+        mock_engine.retrain_full.side_effect = Exception("error retraining")
+        
+        mock_request = Mock()
+        mock_request.id = "retrain-fail"
+        with patch.object(retrain_full_task.__class__, 'request', new_callable=PropertyMock) as mock_req_prop:
+            mock_req_prop.return_value = mock_request
+            with self.assertRaises(Exception):
+                retrain_full_task.run(epochs=10)
+                
+        mock_engine.db.complete_task.assert_called_with("retrain-fail", status="FAILURE", error="error retraining")
+
+
 if __name__ == "__main__":
     unittest.main()

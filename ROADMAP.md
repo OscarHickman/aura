@@ -10,35 +10,7 @@
 
 *Make the codebase production-grade before building on top of it.*
 
-### 1.1 Async Task Queue
-**Why it matters:** Every slow operation (fetch, embed, summarize, retrain) currently blocks a Flask worker thread. Users see a spinner with no feedback and get a timeout on large batches.
-
-- [ ] Add Celery + Redis (or RQ) for background jobs
-- [ ] Convert `fetch_new_papers`, `generate_missing_summaries`, and `retrain_full` to tasks
-- [ ] Add `/api/tasks/{id}` polling endpoint so the UI can show live progress
-- [ ] Replace `time.sleep(3)` rate-limit pauses with Celery `countdown` retry
-- [ ] Add a task history table to the database
-
-### 1.2 Configuration Overhaul
-**Why it matters:** Credentials live in `user_credentials/*.json` files with no validation at startup. Users only discover missing config at runtime.
-
-- [ ] Consolidate all config into `config.yaml` with a JSON Schema for validation
-- [ ] Support `.env` file loading via `python-dotenv` for secrets
-- [ ] Fail fast at startup with a clear error message for missing required fields
-- [ ] Add a `/api/config` read-only endpoint (no secrets) so the UI can reflect live config
-- [ ] Generate a `config.example.yaml` from the schema
-
-### 1.3 Test Coverage & Quality
-**Why it matters:** Current tests are unit-level. There are no integration tests for the web routes and no E2E coverage of the rating → train loop.
-
-- [ ] Add pytest (replace `unittest`) and `pytest-cov` for coverage reporting
-- [ ] Write integration tests for all Flask routes using `app.test_client()`
-- [ ] Add a fixtures file with a seeded in-memory database
-- [ ] Write an E2E test for the fetch → embed → rate → score change flow
-- [ ] Add `mypy` for type checking; fix all current type errors
-- [ ] Enforce 80% coverage in CI (`pytest --cov --cov-fail-under=80`)
-
-### 1.4 Logging & Error Observability
+### 1.1 Logging & Error Observability
 **Why it matters:** Errors currently get swallowed or logged to stdout with no structure. Impossible to diagnose production issues.
 
 - [ ] Add structured JSON logging via `python-json-logger`
@@ -364,18 +336,15 @@
 
 | Priority | Phase | Reason |
 |----------|-------|--------|
-| 1 | 1.1 Async Tasks | Unblocks all other UX work; blocking web workers is a hard ceiling |
-| 2 | 1.3 Tests / Coverage | Required before refactoring anything else safely |
-| 3 | 1.2 Config Overhaul | Users currently fail silently; must fix before wider use |
-| 4 | 2.1 Full-Text Search | Most common missing feature for any paper tool |
-| 5 | 2.3 Tags & Collections | Second most impactful daily-use feature |
-| 6 | 3.1 Cold Start Bootstrap | Required before sharing with anyone new |
-| 7 | 3.2 Explainability | Builds trust in recommendations |
-| 8 | 2.2 Paper Detail Page | Makes AURA a destination, not a redirect to arXiv |
-| 9 | 5.1 Multi-User Auth | Required for lab/team use |
-| 10 | 7.3 BibTeX Export | Closes the loop with existing research workflows |
-| 11 | 4.1–4.2 Multi-Source | Expands addressable content meaningfully |
-| 12 | 9.1–9.2 Deep Summaries / Q&A | The "wow" feature that no other tool does as well |
+| 1 | 2.1 Full-Text Search | Most common missing feature for any paper tool |
+| 2 | 2.3 Tags & Collections | Second most impactful daily-use feature |
+| 3 | 3.1 Cold Start Bootstrap | Required before sharing with anyone new |
+| 4 | 3.2 Explainability | Builds trust in recommendations |
+| 5 | 2.2 Paper Detail Page | Makes AURA a destination, not a redirect to arXiv |
+| 6 | 5.1 Multi-User Auth | Required for lab/team use |
+| 7 | 7.3 BibTeX Export | Closes the loop with existing research workflows |
+| 8 | 4.1–4.2 Multi-Source | Expands addressable content meaningfully |
+| 9 | 9.1–9.2 Deep Summaries / Q&A | The "wow" feature that no other tool does as well |
 
 ---
 

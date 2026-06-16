@@ -56,6 +56,36 @@ class TestRecommendationEngine(unittest.TestCase):
     @patch("ai_papers.recommender.PreferenceModel")
     @patch("ai_papers.recommender.PaperDatabase")
     @patch("ai_papers.recommender.get_embedding_dim", return_value=3)
+    @patch("ai_papers.recommender.embed_papers_batch")
+    @patch("ai_papers.recommender.fetch_papers")
+    def test_fetch_new_papers_generate_summaries(
+        self,
+        mock_fetch,
+        mock_embed,
+        _mock_dim,
+        mock_db_cls,
+        _mock_model_cls,
+    ):
+        mock_fetch.return_value = [_paper("1"), _paper("2")]
+        mock_embed.return_value = [np.array([0.1, 0.2, 0.3], dtype=np.float32)]
+
+        db = Mock()
+        db.get_paper.side_effect = lambda arxiv_id: {"arxiv_id": "2", "summary": ""} if arxiv_id == "2" else None
+        db.add_papers_batch.return_value = 1
+        mock_db_cls.return_value = db
+
+        with tempfile.TemporaryDirectory() as td:
+            engine = RecommendationEngine(Path(td), ["astro-ph.CO"])
+            with patch.object(engine, "_generate_summaries_for_papers", return_value=["summary1"]) as mock_gen:
+                with patch.object(engine, "generate_missing_summaries") as mock_missing:
+                    added = engine.fetch_new_papers(max_results=10, generate_summaries=True)
+                    self.assertEqual(added, 1)
+                    mock_gen.assert_called_once()
+                    mock_missing.assert_called_once_with(limit=1, include_failed=False)
+
+    @patch("ai_papers.recommender.PreferenceModel")
+    @patch("ai_papers.recommender.PaperDatabase")
+    @patch("ai_papers.recommender.get_embedding_dim", return_value=3)
     def test_get_recommendations_defaults_when_no_embeddings(
         self, _mock_dim, mock_db_cls, _mock_model_cls
     ):
@@ -111,6 +141,50 @@ class TestRecommendationEngine(unittest.TestCase):
         self.assertEqual(result["status"], "rated")
         self.assertTrue(result["trained"])
         model.train_single.assert_called_once()
+
+    @patch("ai_papers.recommender.PreferenceModel")
+    @patch("ai_papers.recommender.PaperDatabase")
+    @patch("ai_papers.recommender.get_embedding_dim", return_value=3)
+    def test_rate_paper_no_embedding(self, _mock_dim, mock_db_cls, _mock_model_cls):
+        db = Mock()
+        db.get_papers_with_embeddings.return_value = []
+        mock_db_cls.return_value = db
+
+        with tempfile.TemporaryDirectory() as td:
+            engine = RecommendationEngine(Path(td), ["astro-ph.CO"])
+            result = engine.rate_paper("2401.00001", 1)
+
+        self.assertEqual(result["status"], "rated")
+        self.assertFalse(result["trained"])
+        self.assertEqual(result["reason"], "no embedding")
+
+    @patch("ai_papers.recommender.PreferenceModel")
+    @patch("ai_papers.recommender.PaperDatabase")
+    @patch("ai_papers.recommender.get_embedding_dim", return_value=3)
+    def test_retrain_full_no_data(self, _mock_dim, mock_db_cls, _mock_model_cls):
+        db = Mock()
+        db.get_training_data.return_value = ([], [])
+        mock_db_cls.return_value = db
+
+        with tempfile.TemporaryDirectory() as td:
+            engine = RecommendationEngine(Path(td), ["astro-ph.CO"])
+            result = engine.retrain_full()
+
+        self.assertEqual(result["status"], "no_data")
+
+    @patch("ai_papers.recommender.PreferenceModel")
+    @patch("ai_papers.recommender.PaperDatabase")
+    @patch("ai_papers.recommender.get_embedding_dim", return_value=3)
+    def test_generate_missing_summaries_no_work(self, _mock_dim, mock_db_cls, _mock_model_cls):
+        db = Mock()
+        db.get_papers_needing_summary.return_value = []
+        mock_db_cls.return_value = db
+
+        with tempfile.TemporaryDirectory() as td:
+            engine = RecommendationEngine(Path(td), ["astro-ph.CO"])
+            result = engine.generate_missing_summaries()
+
+        self.assertEqual(result["status"], "no_work")
 
 
 if __name__ == "__main__":

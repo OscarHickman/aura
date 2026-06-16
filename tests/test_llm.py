@@ -3,7 +3,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from ai_papers import llm
 
@@ -98,6 +98,68 @@ class TestLLM(unittest.TestCase):
         ):
             summary = llm.generate_summary("t", "a")
             self.assertEqual(summary, "Final clean summary.")
+
+    @patch("ai_papers.llm._resolve_api_key", return_value="test-key")
+    @patch("ai_papers.llm._get_provider_setting", return_value="llama-3.1-8b-instant")
+    def test_summarize_groq_success(self, mock_setting, mock_key):
+        mock_client = Mock()
+        mock_message = Mock()
+        mock_message.choices = [Mock()]
+        mock_message.choices[0].message.content = "Groq summary response"
+        mock_client.chat.completions.create.return_value = mock_message
+        
+        with patch("groq.Groq", return_value=mock_client):
+            summary = llm._summarize_groq("Title", "Abstract")
+            self.assertEqual(summary, "Groq summary response")
+
+    @patch("ai_papers.llm._resolve_api_key", return_value="test-key")
+    def test_summarize_google_success(self, mock_key):
+        self._http_patcher.stop() # stop the safety rail mock temporarily
+        
+        mock_resp = Mock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "candidates": [
+                {
+                    "content": {
+                        "parts": [
+                            {"text": "Google Gemini summary response"}
+                        ]
+                    }
+                }
+            ]
+        }
+        
+        with patch("ai_papers.llm.requests.post", return_value=mock_resp) as mock_post:
+            summary = llm._summarize_google("Title", "Abstract", retry=False)
+            self.assertEqual(summary, "Google Gemini summary response")
+            mock_post.assert_called_once()
+            
+        self._http_patcher.start() # restart safety rail mock
+
+    @patch("ai_papers.llm._resolve_api_key", return_value="test-key")
+    def test_summarize_openai_success(self, mock_key):
+        mock_client = Mock()
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = "OpenAI summary response"
+        mock_client.chat.completions.create.return_value = mock_response
+        
+        with patch("openai.OpenAI", return_value=mock_client):
+            summary = llm._summarize_openai("Title", "Abstract")
+            self.assertEqual(summary, "OpenAI summary response")
+
+    @patch("ai_papers.llm._resolve_api_key", return_value="test-key")
+    def test_summarize_anthropic_success(self, mock_key):
+        mock_client = Mock()
+        mock_message = Mock()
+        mock_message.content = [Mock()]
+        mock_message.content[0].text = "Anthropic summary response"
+        mock_client.messages.create.return_value = mock_message
+        
+        with patch("anthropic.Anthropic", return_value=mock_client):
+            summary = llm._summarize_anthropic("Title", "Abstract")
+            self.assertEqual(summary, "Anthropic summary response")
 
 
 if __name__ == "__main__":

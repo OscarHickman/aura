@@ -20,3 +20,8 @@ groq>=0.4.0            # Fast default provider with free tier
 
 # Scheduler (optional, for daily auto-fetch)
 apscheduler>=3.10
+
+# Dev / Testing
+pytest>=9.1.0
+pytest-cov>=6.0.0
+mypy>=2.1.0
