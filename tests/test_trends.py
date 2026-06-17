@@ -67,6 +67,70 @@ class TestTrends(unittest.TestCase):
     @patch("ai_papers.trends._generate_generic_text")
     @patch("ai_papers.trends.get_model")
     @patch("ai_papers.trends.load_topics", return_value=["Machine learning"])
+    def test_verbose_discovery_response_not_saved(self, mock_load_topics, mock_get_model, mock_gen_text):
+        """LLM returning a verbose paragraph instead of keywords must not corrupt saved topics."""
+        verbose_response = (
+            "None of these topics are directly related to the following emerging new subfields:\n\n"
+            "Cosmological Distance Tensions, Cosmic-Ray Ionization, Dark Sector Interactions, "
+            "Intrinsic Entropy Couplings.\n\nTherefore, the new keywords to track are: "
+            "Cosmological Distance Tensions, Cosmic-Ray Ionization."
+        )
+        mock_gen_text.side_effect = lambda prompt: verbose_response if "emerging" in prompt else "trend summary"
+
+        mock_st = Mock()
+        mock_st.encode.return_value = np.array([[0.5, 0.5]])
+        mock_get_model.return_value = mock_st
+
+        with tempfile.TemporaryDirectory() as td:
+            db_path = Path(td) / "papers.db"
+            db = PaperDatabase(db_path)
+            from datetime import datetime
+            now_iso = datetime.utcnow().isoformat()
+            db.add_paper(
+                {"arxiv_id": "2401.00002", "title": "A Paper", "abstract": "An abstract.",
+                 "authors": ["Ada"], "categories": ["astro-ph.CO"], "published": now_iso},
+                embedding=np.array([0.5, 0.5], dtype=np.float32)
+            )
+            db.close()
+
+            trends.generate_monthly_trends(td)
+            saved_topics = trends.load_topics(td)
+            for t in saved_topics:
+                self.assertLessEqual(len(t.split()), 5, f"Topic looks like a sentence: {t!r}")
+                self.assertNotIn(":", t, f"Topic contains colon: {t!r}")
+                self.assertNotIn(".", t, f"Topic contains period: {t!r}")
+
+    @patch("ai_papers.trends._generate_generic_text")
+    @patch("ai_papers.trends.get_model")
+    @patch("ai_papers.trends.load_topics", return_value=["Machine learning"])
+    def test_no_provider_response_not_saved(self, mock_load_topics, mock_get_model, mock_gen_text):
+        """'No AI provider available' fallback must never be saved as a topic."""
+        mock_gen_text.return_value = "No AI provider available to generate trends."
+
+        mock_st = Mock()
+        mock_st.encode.return_value = np.array([[0.5, 0.5]])
+        mock_get_model.return_value = mock_st
+
+        with tempfile.TemporaryDirectory() as td:
+            db_path = Path(td) / "papers.db"
+            db = PaperDatabase(db_path)
+            from datetime import datetime
+            now_iso = datetime.utcnow().isoformat()
+            db.add_paper(
+                {"arxiv_id": "2401.00003", "title": "A Paper", "abstract": "An abstract.",
+                 "authors": ["Ada"], "categories": ["astro-ph.CO"], "published": now_iso},
+                embedding=np.array([0.5, 0.5], dtype=np.float32)
+            )
+            db.close()
+
+            trends.generate_monthly_trends(td)
+            saved_topics = trends.load_topics(td)
+            for t in saved_topics:
+                self.assertNotIn("no ai provider", t.lower())
+
+    @patch("ai_papers.trends._generate_generic_text")
+    @patch("ai_papers.trends.get_model")
+    @patch("ai_papers.trends.load_topics", return_value=["Machine learning"])
     def test_generate_monthly_trends(self, mock_load_topics, mock_get_model, mock_gen_text):
         mock_gen_text.side_effect = lambda prompt: "dynamic_topic" if "emerging" in prompt else "trend summary"
         

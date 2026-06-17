@@ -184,9 +184,18 @@ def generate_monthly_trends(data_dir: str | Path, embedding_model: str = "all-Mi
     )
     
     new_topics_str = _generate_generic_text(discovery_prompt)
-    if new_topics_str and new_topics_str.strip().upper() != "NONE":
+    normalized = new_topics_str.strip().upper() if new_topics_str else ""
+    no_provider = "NO AI PROVIDER AVAILABLE"
+    if normalized and normalized != "NONE" and no_provider not in normalized:
         suggested = [t.strip().lower() for t in new_topics_str.split(",") if t.strip()]
-        valid_new = [t for t in suggested if len(t) > 3 and t not in [existing.lower() for existing in topics]]
+        existing_lower = {e.lower() for e in topics}
+        valid_new = [
+            t for t in suggested
+            if 3 < len(t) <= 60
+            and len(t.split()) <= 5
+            and t not in existing_lower
+            and not any(c in t for c in (".", "\n", ":"))
+        ][:2]
         if valid_new:
             logger.info(f"Discovered new dynamic topics: {valid_new}")
             topics.extend(valid_new)
