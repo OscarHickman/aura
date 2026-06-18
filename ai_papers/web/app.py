@@ -115,6 +115,8 @@ def _register_routes(app: Flask):
         category = request.args.get("category", "").strip() or None
         date_from = request.args.get("date_from", "").strip() or None
         date_to = request.args.get("date_to", "").strip() or None
+        has_code = request.args.get("has_code", type=int)
+        has_data = request.args.get("has_data", type=int)
         tag = request.args.get("tag", "").strip() or None
         collection_id = request.args.get("collection_id", type=int)
         filter_type = request.args.get("filter", "unrated")
@@ -131,6 +133,8 @@ def _register_routes(app: Flask):
                     category=category,
                     date_from=date_from,
                     date_to=date_to,
+                    has_code=has_code,
+                    has_data=has_data,
                     limit=200,
                 )
             filter_type = "search"
@@ -198,6 +202,8 @@ def _register_routes(app: Flask):
             category=category,
             date_from=date_from,
             date_to=date_to,
+            has_code=has_code,
+            has_data=has_data,
             selected_tag=tag,
             selected_collection_id=collection_id,
         )

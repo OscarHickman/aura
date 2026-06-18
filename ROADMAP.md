@@ -230,11 +230,7 @@
 ## Phase 12 — Simulation-Based Inference & Computational Cosmology
 
 ### 12.1 Code & Data Release Detection
-- [ ] At ingest, scan abstracts for GitHub, GitLab, Zenodo, Figshare, and CDS URLs
-- [ ] Add `has_code` (bool) and `has_data` (bool) columns to the `papers` table
-- [ ] Show "Code" and "Data" badges on paper cards
-- [ ] Add `has_code` / `has_data` toggle filters to the papers page
-- [ ] Optionally fetch the linked GitHub repo metadata
+- [ ] Optionally fetch the linked GitHub repo metadata (stars, last commit, language)
 
 ### 12.2 SBI & Neural Inference Topic Seeds
 - [ ] Add to `DEFAULT_TOPICS`: `"neural posterior estimation"`, `"normalizing flows cosmology"`, `"field level inference"`, `"neural compression"`, `"likelihood free inference"`, `"implicit likelihood inference"`, `"amortized inference"`
@@ -291,17 +287,16 @@
 
 | Priority | Phase | Reason |
 |----------|-------|--------|
-| 1 | 12.1 Code & Data Release Detection | Highest-signal filter for a computational cosmologist |
-| 2 | 5.1 Multi-User Auth | Required for lab/team use |
-| 3 | 12.2 SBI Topic Seeds | Improves recall for the user's primary research area |
-| 4 | 11.1 NASA ADS Integration | Canonical citation data source for astronomy |
-| 5 | 11.4 Author Tracking | Daily-use workflow for following collaborators and groups |
-| 6 | 13.1 "My Papers" Citation Alerts | Automates a manual tracking task |
-| 7 | 7.3 BibTeX Export | Closes the loop with existing research workflows |
-| 8 | 11.3 Cosmological Statistics Extraction | Improves clustering and recommendation precision |
-| 9 | 13.4 Study Notes & Thesis Export | High value for PhD students |
-| 10 | 4.1–4.2 Multi-Source | Expands addressable content meaningfully |
-| 11 | 9.1–9.2 Deep Summaries / Q&A | The "wow" feature that no other tool does as well |
+| 1 | 5.1 Multi-User Auth | Required for lab/team use |
+| 2 | 12.2 SBI Topic Seeds | Improves recall for the user's primary research area |
+| 3 | 11.1 NASA ADS Integration | Canonical citation data source for astronomy |
+| 4 | 11.4 Author Tracking | Daily-use workflow for following collaborators and groups |
+| 5 | 13.1 "My Papers" Citation Alerts | Automates a manual tracking task |
+| 6 | 7.3 BibTeX Export | Closes the loop with existing research workflows |
+| 7 | 11.3 Cosmological Statistics Extraction | Improves clustering and recommendation precision |
+| 8 | 13.4 Study Notes & Thesis Export | High value for PhD students |
+| 9 | 4.1–4.2 Multi-Source | Expands addressable content meaningfully |
+| 10 | 9.1–9.2 Deep Summaries / Q&A | The "wow" feature that no other tool does as well |
 
 ---
 

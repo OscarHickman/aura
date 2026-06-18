@@ -240,6 +240,8 @@ class TestWebApp(unittest.TestCase):
             category="astro-ph.CO",
             date_from="2026-01-01",
             date_to="2026-01-02",
+            has_code=None,
+            has_data=None,
             limit=200
         )
 

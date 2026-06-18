@@ -38,7 +38,9 @@ class PaperDatabase:
                 embedding BLOB,
                 summary TEXT,
                 source TEXT DEFAULT 'arxiv',
-                citation_count INTEGER DEFAULT 0
+                citation_count INTEGER DEFAULT 0,
+                has_code INTEGER DEFAULT 0,
+                has_data INTEGER DEFAULT 0
             );
 
             CREATE TABLE IF NOT EXISTS ratings (
@@ -182,10 +184,12 @@ class PaperDatabase:
             emb_blob = embedding.tobytes() if embedding is not None else None
             source = paper.get("source", "arxiv")
             citation_count = paper.get("citation_count", 0)
+            has_code = paper.get("has_code", 0)
+            has_data = paper.get("has_data", 0)
             cursor = self.conn.execute(
                 """INSERT OR IGNORE INTO papers
-                   (arxiv_id, title, abstract, authors, categories, published, url, pdf_url, fetched_at, embedding, summary, source, citation_count)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                   (arxiv_id, title, abstract, authors, categories, published, url, pdf_url, fetched_at, embedding, summary, source, citation_count, has_code, has_data)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     paper["arxiv_id"],
                     paper["title"],
@@ -200,6 +204,8 @@ class PaperDatabase:
                     summary,
                     source,
                     citation_count,
+                    has_code,
+                    has_data,
                 ),
             )
             self.conn.commit()
@@ -224,11 +230,13 @@ class PaperDatabase:
             summary = summaries[i] if summaries and i < len(summaries) else None
             source = paper.get("source", "arxiv")
             citation_count = paper.get("citation_count", 0)
+            has_code = paper.get("has_code", 0)
+            has_data = paper.get("has_data", 0)
             try:
                 cursor = self.conn.execute(
                     """INSERT OR IGNORE INTO papers
-                       (arxiv_id, title, abstract, authors, categories, published, url, pdf_url, fetched_at, embedding, summary, source, citation_count)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                       (arxiv_id, title, abstract, authors, categories, published, url, pdf_url, fetched_at, embedding, summary, source, citation_count, has_code, has_data)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         paper["arxiv_id"],
                         paper["title"],
@@ -243,6 +251,8 @@ class PaperDatabase:
                         summary,
                         source,
                         citation_count,
+                        has_code,
+                        has_data,
                     ),
                 )
                 if cursor.rowcount > 0:
@@ -575,30 +585,22 @@ class PaperDatabase:
         category: Optional[str] = None,
         date_from: Optional[str] = None,
         date_to: Optional[str] = None,
+        has_code: Optional[int] = None,
+        has_data: Optional[int] = None,
         limit: int = 50,
     ) -> list[dict]:
-        """Search papers using SQLite FTS5.
-
-        Args:
-            query: The search terms (will be sanitised).
-            category: Optional category filter.
-            date_from: Optional starting date (YYYY-MM-DD).
-            date_to: Optional ending date (YYYY-MM-DD).
-            limit: Maximum number of results to return.
-        """
+        """Search papers using SQLite FTS5."""
         import re
         words = re.findall(r'\w+', query)
         if not words:
             return []
 
-        # Sanitise: wrap each word in double quotes and join with AND
         fts_query = ' AND '.join(f'"{w}"' for w in words)
 
         where_clauses = ["papers_fts MATCH ?"]
         params: list[str | int] = [fts_query]
 
         if category:
-            # Match category inside the JSON array representation
             where_clauses.append("p.categories LIKE ?")
             params.append(f'%"{category}"%')
 
@@ -607,7 +609,6 @@ class PaperDatabase:
             params.append(date_from)
 
         if date_to:
-            # If date_to is YYYY-MM-DD, expand it to include the whole day
             if len(date_to) == 10:
                 where_clauses.append("p.published <= ?")
                 params.append(f"{date_to}T23:59:59")
@@ -615,12 +616,18 @@ class PaperDatabase:
                 where_clauses.append("p.published <= ?")
                 params.append(date_to)
 
+        if has_code is not None:
+            where_clauses.append("p.has_code = ?")
+            params.append(has_code)
+
+        if has_data is not None:
+            where_clauses.append("p.has_data = ?")
+            params.append(has_data)
+
         where_clause = " AND ".join(where_clauses)
 
-        # Use SQLite FTS5 highlight function to highlight matches.
-        # Columns are: 0: arxiv_id (unindexed), 1: title, 2: abstract.
         sql = f"""
-            SELECT 
+            SELECT
                 p.arxiv_id,
                 highlight(papers_fts, 1, '<mark>', '</mark>') as title,
                 highlight(papers_fts, 2, '<mark>', '</mark>') as abstract,
@@ -630,7 +637,10 @@ class PaperDatabase:
                 p.url,
                 p.pdf_url,
                 p.fetched_at,
-                p.summary
+                p.summary,
+                p.citation_count,
+                p.has_code,
+                p.has_data
             FROM papers_fts
             JOIN papers p ON p.arxiv_id = papers_fts.arxiv_id
             WHERE {where_clause}

@@ -8,7 +8,35 @@ from xml.etree import ElementTree
 
 import requests
 
+import re
+
 logger = logging.getLogger(__name__)
+
+
+def detect_code_and_data(text: str) -> tuple[int, int]:
+    """Scan text for code and data repository URLs. Returns (has_code, has_data)."""
+    if not text:
+        return 0, 0
+        
+    code_patterns = [
+        r"github\.com/[\w\-\.]+/\w+",
+        r"gitlab\.com/[\w\-\.]+/\w+",
+        r"bitbucket\.org/[\w\-\.]+/\w+",
+    ]
+    
+    data_patterns = [
+        r"zenodo\.org/record/\d+",
+        r"doi\.org/10\.5281/zenodo\.\d+",
+        r"figshare\.com/articles?/[\w\-\.]+/\d+",
+        r"cds\.cern\.ch/record/\d+",
+        r"datadryad\.org/stash/dataset/doi:\d+\.\d+/[\w\-\.]+",
+        r"huggingface\.co/datasets/[\w\-\.]+/\w+",
+    ]
+    
+    has_code = 1 if any(re.search(p, text, re.IGNORECASE) for p in code_patterns) else 0
+    has_data = 1 if any(re.search(p, text, re.IGNORECASE) for p in data_patterns) else 0
+    
+    return has_code, has_data
 
 
 class PaperSource(Protocol):
@@ -191,6 +219,9 @@ class ArxivSource:
                 if link.get("title") == "pdf":
                     pdf_url = link.get("href", "")
 
+            # Detect code/data
+            has_code, has_data = detect_code_and_data(abstract)
+
             return {
                 "arxiv_id": arxiv_id,
                 "title": title,
@@ -201,6 +232,8 @@ class ArxivSource:
                 "url": url,
                 "pdf_url": pdf_url,
                 "source": "arxiv",
+                "has_code": has_code,
+                "has_data": has_data,
             }
         except (AttributeError, IndexError) as e:
             logger.warning(f"Failed to parse arXiv entry: {e}")
@@ -296,10 +329,13 @@ class SemanticScholarSource:
                 year = entry.get("year")
                 pub_date = f"{year}-01-01" if year else datetime.utcnow().isoformat()[:10]
 
+            abstract = entry.get("abstract", "No Abstract")
+            has_code, has_data = detect_code_and_data(abstract)
+
             return {
                 "arxiv_id": arxiv_id,
                 "title": entry.get("title", "No Title"),
-                "abstract": entry.get("abstract", "No Abstract"),
+                "abstract": abstract,
                 "authors": authors,
                 "categories": categories,
                 "published": pub_date,
@@ -307,6 +343,8 @@ class SemanticScholarSource:
                 "pdf_url": "", # S2 doesn't always provide PDF direct link
                 "source": "semanticscholar",
                 "citation_count": entry.get("citationCount", 0),
+                "has_code": has_code,
+                "has_data": has_data,
             }
         except Exception as e:
             logger.warning(f"Failed to parse Semantic Scholar entry: {e}")
@@ -400,10 +438,13 @@ class BiorxivSource:
             authors_str = entry.get("authors", "")
             authors = [a.strip() for a in authors_str.split(",") if a.strip()]
 
+            abstract = entry.get("abstract", "No Abstract")
+            has_code, has_data = detect_code_and_data(abstract)
+
             return {
                 "arxiv_id": f"biorxiv-{clean_id}",
                 "title": entry.get("title", "No Title"),
-                "abstract": entry.get("abstract", "No Abstract"),
+                "abstract": abstract,
                 "authors": authors,
                 "categories": [entry.get("category", "bioRxiv")],
                 "published": entry.get("date", ""),
@@ -411,6 +452,8 @@ class BiorxivSource:
                 "pdf_url": f"https://www.biorxiv.org/content/{doi}.full.pdf",
                 "source": "biorxiv",
                 "citation_count": 0,
+                "has_code": has_code,
+                "has_data": has_data,
             }
         except Exception as e:
             logger.warning(f"Failed to parse bioRxiv entry: {e}")
@@ -496,16 +539,21 @@ class RSSSource:
             elif "updated_parsed" in entry:
                 published = time.strftime("%Y-%m-%dT%H:%M:%SZ", entry.updated_parsed)
 
+            abstract = entry.get("summary") or entry.get("description", "No Abstract")
+            has_code, has_data = detect_code_and_data(abstract)
+
             return {
                 "arxiv_id": clean_id,
                 "title": entry.get("title", "No Title"),
-                "abstract": entry.get("summary") or entry.get("description", "No Abstract"),
+                "abstract": abstract,
                 "authors": authors,
                 "categories": [feed_title],
                 "published": published,
                 "url": entry.get("link", ""),
                 "pdf_url": "",
                 "source": "rss",
+                "has_code": has_code,
+                "has_data": has_data,
             }
         except Exception as e:
             logger.warning(f"Failed to parse RSS entry: {e}")
