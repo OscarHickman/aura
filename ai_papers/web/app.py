@@ -230,8 +230,15 @@ def _register_routes(app: Flask):
         # Get all collections for the dropdown
         collections = engine.db.get_collections() if engine else []
 
+        # Link to NASA ADS (works for arXiv IDs)
+        ads_url = None
+        if not arxiv_id.startswith("s2:") and not arxiv_id.startswith("biorxiv-"):
+             ads_url = f"https://ui.adsabs.harvard.edu/search/q=arxiv:{arxiv_id}"
+
         # ar5iv URL for HTML view
-        ar5iv_url = f"https://ar5iv.labs.arxiv.org/html/{arxiv_id}"
+        ar5iv_url = None
+        if not arxiv_id.startswith("s2:") and not arxiv_id.startswith("biorxiv-"):
+            ar5iv_url = f"https://ar5iv.labs.arxiv.org/html/{arxiv_id}"
 
         return render_template(
             "paper_detail.html",
@@ -241,6 +248,7 @@ def _register_routes(app: Flask):
             same_author_papers=same_author_papers,
             collections=collections,
             ar5iv_url=ar5iv_url,
+            ads_url=ads_url,
         )
 
     @app.route("/api/rate", methods=["POST"])

@@ -10,15 +10,6 @@
 
 *Make the daily workflow actually pleasant.*
 
-### 2.2 Paper Detail Page
-**Why it matters:** Users want to read the abstract, see similar papers, and take notes without leaving AURA.
-
-- [ ] Dedicated route: `/papers/{arxiv_id}`
-- [ ] Show full abstract with LaTeX rendering
-- [ ] List 5 most similar papers (already in DB) on the sidebar
-- [ ] Links to PDF, arXiv page, and NASA ADS
-- [ ] Integrated note-taking area (saves to `notes` table)
-
 ---
 
 ## Phase 3 — ML & Recommendation Improvements

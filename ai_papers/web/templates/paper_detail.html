@@ -26,14 +26,15 @@
                         <div class="star-rating bg-dark border border-secondary rounded px-2 py-1">
                             {% for i in range(1, 6) %}
                             <button class="btn btn-sm py-0 px-1 border-0 btn-rate-star {% if paper.rating and paper.rating >= i %}text-warning{% else %}text-secondary{% endif %}"
-                                    onclick="ratePaper('{{ paper.arxiv_id }}', {{ i }})"
+                                    data-rating="{{ i }}"
+                                    onclick="ratePaper('{{ paper.arxiv_id }}', {{ i }}, this)"
                                     title="Rate {{ i }} star{% if i > 1 %}s{% endif %}">
                                 <i class="bi bi-star-fill"></i>
                             </button>
                             {% endfor %}
                             <div class="vr mx-1"></div>
-                            <button class="btn btn-sm py-0 px-1 border-0 btn-rate-skip {% if paper.rating == -1 %}text-primary{% else %}text-secondary{% endif %}"
-                                    onclick="ratePaper('{{ paper.arxiv_id }}', -1)"
+                            <button class="btn btn-sm py-0 px-1 border-0 btn-rate-skip {% if paper.rating == -1 %}text-primary active{% else %}text-secondary{% endif %}"
+                                    onclick="ratePaper('{{ paper.arxiv_id }}', -1, this)"
                                     title="Skip this paper">
                                 <i class="bi bi-skip-forward-fill"></i>
                             </button>
@@ -213,9 +214,16 @@
                         <i class="bi bi-file-pdf"></i> Download PDF
                     </a>
                     {% endif %}
+                    {% if ads_url %}
+                    <a href="{{ ads_url }}" target="_blank" class="btn btn-outline-info">
+                        <i class="bi bi-box-arrow-up-right"></i> View on NASA ADS
+                    </a>
+                    {% endif %}
+                    {% if ar5iv_url %}
                     <a href="{{ ar5iv_url }}" target="_blank" class="btn btn-outline-success">
                         <i class="bi bi-file-html"></i> View HTML Version (ar5iv)
                     </a>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -311,7 +319,34 @@
 
 {% block scripts %}
 <script>
-async function ratePaper(arxivId, rating) {
+async function ratePaper(arxivId, rating, btn) {
+    const card = btn.closest('.paper-card');
+    const stars = card.querySelectorAll('.btn-rate-star');
+    const skipBtn = card.querySelector('.btn-rate-skip');
+
+    // Visual feedback
+    if (rating === -1) {
+        skipBtn.classList.add('text-primary', 'active');
+        skipBtn.classList.remove('text-secondary');
+        stars.forEach(s => {
+            s.classList.remove('text-warning');
+            s.classList.add('text-secondary');
+        });
+    } else {
+        skipBtn.classList.remove('text-primary', 'active');
+        skipBtn.classList.add('text-secondary');
+        stars.forEach(s => {
+            const starVal = parseInt(s.getAttribute('data-rating'));
+            if (starVal <= rating) {
+                s.classList.remove('text-secondary');
+                s.classList.add('text-warning');
+            } else {
+                s.classList.remove('text-warning');
+                s.classList.add('text-secondary');
+            }
+        });
+    }
+
     try {
         const resp = await fetch('/api/rate', {
             method: 'POST',
@@ -319,9 +354,7 @@ async function ratePaper(arxivId, rating) {
             body: JSON.stringify({ arxiv_id: arxivId, rating: rating })
         });
         
-        if (resp.ok) {
-            window.location.reload();
-        } else {
+        if (!resp.ok) {
             const data = await resp.json();
             alert(data.error || 'Rating failed');
         }
