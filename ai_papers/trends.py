@@ -109,7 +109,7 @@ def _generate_generic_text(prompt: str) -> str:
                     "https://generativelanguage.googleapis.com/v1beta/"
                     f"models/gemini-2.0-flash:generateContent?key={api_key}"
                 )
-                payload = {
+                payload: dict = {
                     "contents": [{"parts": [{"text": prompt}]}],
                     "generationConfig": {"temperature": 0.5, "maxOutputTokens": 300},
                 }

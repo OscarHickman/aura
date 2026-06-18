@@ -363,7 +363,7 @@ class BiorxivSource:
         days_back: int = 1,
     ) -> list[dict]:
         """Fetch papers from bioRxiv."""
-        papers = []
+        papers: list[dict] = []
         seen_dois = set()
 
         end_date = datetime.utcnow()
