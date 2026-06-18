@@ -97,7 +97,32 @@ def _generate_generic_text(prompt: str) -> str:
                 return message.content[0].text.strip()
             except Exception as e:
                 logger.warning(f"Anthropic generic text generation failed: {e}")
-                
+        elif p == "google":
+            try:
+                import requests as _requests
+                api_key = _resolve_api_key(None, "GOOGLE_API_KEY", "google")
+                if not api_key:
+                    api_key = _resolve_api_key(None, "GEMINI_API_KEY", "google")
+                if not api_key:
+                    continue
+                endpoint = (
+                    "https://generativelanguage.googleapis.com/v1beta/"
+                    f"models/gemini-2.0-flash:generateContent?key={api_key}"
+                )
+                payload = {
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {"temperature": 0.5, "maxOutputTokens": 300},
+                }
+                resp = _requests.post(endpoint, json=payload, timeout=30)
+                resp.raise_for_status()
+                data = resp.json()
+                parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
+                text = "".join(part.get("text", "") for part in parts).strip()
+                if text:
+                    return text
+            except Exception as e:
+                logger.warning(f"Google/Gemini generic text generation failed: {e}")
+
     return "No AI provider available to generate trends."
 
 

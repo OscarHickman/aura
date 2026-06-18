@@ -63,7 +63,7 @@ class TestLLM(unittest.TestCase):
             cred = Path(td)
             with patch("ai_papers.llm._credentials_dir", return_value=cred):
                 llm._providers_order_cache = None
-                self.assertEqual(llm._load_providers_order(), ["groq"])
+                self.assertEqual(llm._load_providers_order(), ["groq", "google"])
 
                 (cred / "llm_providers.json").write_text(
                     json.dumps({"order": ["openai", "groq"]})

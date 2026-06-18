@@ -64,10 +64,10 @@ def _load_providers_order() -> list[str]:
 
     path = _credentials_dir() / "llm_providers.json"
     if not path.exists():
-        return ["groq"]
+        return ["groq", "google"]
     try:
         data = json.loads(path.read_text())
-        return data.get("order", ["groq"])
+        return data.get("order", ["groq", "google"])
     except Exception as e:
         _warn_once(f"Failed to read llm_providers.json: {e}")
         return ["groq"]
@@ -257,6 +257,10 @@ def _summarize_groq(
                 )
                 return _clean_summary_text(message.choices[0].message.content)
             except Exception as error:
+                error_str = str(error).lower()
+                if "429" in error_str or "rate limit" in error_str or "too many requests" in error_str:
+                    logger.warning("Groq rate limit hit (429); skipping to next provider.")
+                    return None
                 logger.warning(f"Groq model '{model_name}' failed: {error}")
 
         logger.error("Groq API error: all candidate Groq models failed")
