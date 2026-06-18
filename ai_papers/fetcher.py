@@ -241,7 +241,7 @@ class SemanticScholarSource:
         keywords = [query_map.get(cat, cat) for cat in categories]
         search_query = " | ".join(keywords)
 
-        params = {
+        params: dict[str, str | int] = {
             "query": search_query,
             "limit": min(max_results, 100),
             "fields": "externalIds,title,abstract,authors,year,publicationDate,url,citationCount,s2FieldsOfStudy",
@@ -316,7 +316,7 @@ class SemanticScholarSource:
 class RSSSource:
     """Fetches papers from generic journal RSS feeds."""
 
-    def __init__(self, feed_urls: list[str] = None):
+    def __init__(self, feed_urls: list[str] | None = None):
         self.feed_urls = feed_urls or []
 
     def fetch(
@@ -327,8 +327,8 @@ class RSSSource:
     ) -> list[dict]:
         """Fetch papers from configured RSS feeds."""
         import feedparser
-        
-        papers = []
+
+        papers: list[dict] = []
         seen_ids = set()
         
         cutoff_date = datetime.utcnow() - timedelta(days=days_back)

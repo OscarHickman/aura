@@ -939,7 +939,7 @@ class PaperDatabase:
             FROM papers p
             JOIN reading_list rl ON p.arxiv_id = rl.arxiv_id
         """
-        params = []
+        params: list[str] = []
         if only_unread:
             query += " WHERE rl.read_at IS NULL"
         elif only_read:

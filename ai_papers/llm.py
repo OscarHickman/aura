@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 import re
 import time
-from typing import Optional
+from typing import Any, Optional
 
 import requests
 
@@ -281,7 +281,7 @@ def _summarize_google(
         "https://generativelanguage.googleapis.com/v1beta/"
         f"models/gemini-2.0-flash:generateContent?key={api_key}"
     )
-    payload = {
+    payload: Any = {
         "contents": [{"parts": [{"text": _build_summary_prompt(title, abstract)}]}],
         "generationConfig": {"temperature": 0.4, "maxOutputTokens": 150},
     }

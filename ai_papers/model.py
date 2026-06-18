@@ -8,6 +8,7 @@ This model IS the user's preference config - saved and loaded as a .pt file.
 import logging
 from pathlib import Path
 import random
+from typing import Any
 
 import numpy as np
 import torch
@@ -119,13 +120,13 @@ class PreferenceModel:
                 scores = self.model(x).cpu().numpy().tolist()
                 return scores, [0.0] * len(scores)
                 
-            batch_scores = []
+            raw_scores: list[Any] = []
             for _ in range(num_samples):
-                batch_scores.append(self.model(x).cpu().numpy())
-                
-            batch_scores = np.stack(batch_scores)
-            mean_scores = np.mean(batch_scores, axis=0).tolist()
-            uncertainties = np.std(batch_scores, axis=0).tolist()
+                raw_scores.append(self.model(x).cpu().numpy())
+
+            stacked = np.stack(raw_scores)
+            mean_scores = np.mean(stacked, axis=0).tolist()
+            uncertainties = np.std(stacked, axis=0).tolist()
             
         return mean_scores, uncertainties
 

@@ -3,6 +3,7 @@
 import logging
 import numpy as np
 from pathlib import Path
+from typing import cast
 
 from .database import PaperDatabase
 from .embedder import embed_papers_batch, get_embedding_dim
@@ -21,8 +22,8 @@ class RecommendationEngine:
         data_dir: str | Path,
         categories: list[str],
         embedding_model: str = "all-MiniLM-L6-v2",
-        sources: list[PaperSource] = None,
-        rss_urls: list[str] = None,
+        sources: list[PaperSource] | None = None,
+        rss_urls: list[str] | None = None,
     ):
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
@@ -596,7 +597,7 @@ class RecommendationEngine:
             cluster_papers = [emb_papers[idx] for idx in cluster_indices]
             
             # Simple TF-IDF approximation for topic naming: extract common words from titles/abstracts
-            word_counts = collections.Counter()
+            word_counts: collections.Counter[str] = collections.Counter()
             for p in cluster_papers:
                 text = (p["title"] + " " + p["abstract"]).lower()
                 words = re.findall(r'\b[a-z]{3,}\b', text)
@@ -626,7 +627,7 @@ class RecommendationEngine:
             })
 
         # Sort topics by size descending
-        topics.sort(key=lambda t: t["paper_count"], reverse=True)
+        topics.sort(key=lambda t: cast(int, t["paper_count"]), reverse=True)
         return topics
 
     def close(self):

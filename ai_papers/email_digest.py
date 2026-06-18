@@ -7,7 +7,7 @@ import ssl
 from datetime import date
 from email.message import EmailMessage
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import requests
 
@@ -118,7 +118,7 @@ def _send_graph_email(email_config: dict, subject: str, text_body: str, html_bod
     """Send mail through Microsoft Graph using delegated OAuth."""
     access_token = _acquire_graph_token(email_config)
 
-    payload = {
+    payload: Any = {
         "message": {
             "subject": subject,
             "body": {
