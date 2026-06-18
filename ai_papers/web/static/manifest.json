@@ -1,0 +1,17 @@
+{
+  "name": "AURA - Research Discovery",
+  "short_name": "AURA",
+  "description": "Self-hostable research discovery platform",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#212529",
+  "theme_color": "#212529",
+  "icons": [
+    {
+      "src": "https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/icons/stars.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

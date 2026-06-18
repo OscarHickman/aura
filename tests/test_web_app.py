@@ -7,8 +7,21 @@ class TestWebApp(unittest.TestCase):
     def setUp(self):
         self.engine = Mock()
         self.engine.get_stats.return_value = {
-            "database": {"total_papers": 10, "with_embeddings": 8, "total_rated": 5},
-            "model": {"parameters": 100, "embedding_dim": 384, "learning_rate": 0.001, "total_trained": 10},
+            "database": {
+                "total_papers": 10, 
+                "with_embeddings": 8, 
+                "total_rated": 5,
+                "thumbs_up": 3,
+                "thumbs_down": 2,
+                "with_summaries": 4
+            },
+            "model": {
+                "parameters": 100, 
+                "embedding_dim": 384, 
+                "learning_rate": 0.001, 
+                "total_trained": 10,
+                "replay_buffer_size": 5
+            },
             "categories": ["astro-ph.CO", "astro-ph.GA"],
             "data_dir": "data"
         }
@@ -107,7 +120,21 @@ class TestWebApp(unittest.TestCase):
         # Test health check
         resp = self.client.get("/health")
         self.assertEqual(resp.status_code, 200)
-        self.assertEqual(resp.get_json(), {"status": "ok"})
+        data = resp.get_json()
+        self.assertEqual(data["status"], "ok")
+        self.assertIn("details", data)
+        self.assertEqual(data["details"]["db"], "ok")
+
+    def test_metrics_endpoint(self):
+        # Test Prometheus metrics endpoint
+        resp = self.client.get("/metrics")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.mimetype, "text/plain")
+        content = resp.data.decode("utf-8")
+        self.assertIn("aura_papers_total", content)
+        self.assertIn("aura_model_trained_samples_total", content)
+        self.assertIn("# HELP", content)
+        self.assertIn("# TYPE", content)
 
     def test_onboarding_route_and_redirect(self):
         # When user has >= 5 ratings, onboarding redirects to /

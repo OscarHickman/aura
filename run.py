@@ -34,9 +34,24 @@ def load_config(config_path: str = "config.yaml") -> dict:
         sys.exit(1)
 
 
+def cmd_migrate(args, config):
+    """Run database migrations."""
+    import subprocess
+    print("Running database migrations...")
+    try:
+        subprocess.run(["alembic", "upgrade", "head"], check=True)
+        print("Migrations complete.")
+    except Exception as e:
+        print(f"Migration failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
 def cmd_serve(args, config):
     """Start the Flask web server."""
     from ai_papers.web.app import create_app
+
+    if args.migrate:
+        cmd_migrate(args, config)
 
     app = create_app(args.config)
 
@@ -61,6 +76,7 @@ def cmd_fetch(args, config):
         data_dir=config.get("data_dir", "data"),
         categories=config.get("categories", ["astro-ph.CO", "astro-ph.GA"]),
         embedding_model=config.get("embedding_model", "all-MiniLM-L6-v2"),
+        sources_config=config.get("sources", {}),
     )
 
     fetch_config = config.get("fetch", {})
@@ -85,6 +101,7 @@ def cmd_summarize(args, config):
         data_dir=config.get("data_dir", "data"),
         categories=config.get("categories", ["astro-ph.CO", "astro-ph.GA"]),
         embedding_model=config.get("embedding_model", "all-MiniLM-L6-v2"),
+        sources_config=config.get("sources", {}),
     )
 
     result = engine.generate_missing_summaries(
@@ -103,6 +120,7 @@ def cmd_recommend(args, config):
         data_dir=config.get("data_dir", "data"),
         categories=config.get("categories", ["astro-ph.CO", "astro-ph.GA"]),
         embedding_model=config.get("embedding_model", "all-MiniLM-L6-v2"),
+        sources_config=config.get("sources", {}),
     )
 
     papers = engine.get_recommendations(limit=args.limit, unrated_only=True)
@@ -134,6 +152,7 @@ def cmd_retrain(args, config):
         data_dir=config.get("data_dir", "data"),
         categories=config.get("categories", ["astro-ph.CO", "astro-ph.GA"]),
         embedding_model=config.get("embedding_model", "all-MiniLM-L6-v2"),
+        sources_config=config.get("sources", {}),
     )
 
     result = engine.retrain_full(epochs=args.epochs)
@@ -163,6 +182,7 @@ def cmd_stats(args, config):
         data_dir=config.get("data_dir", "data"),
         categories=config.get("categories", ["astro-ph.CO", "astro-ph.GA"]),
         embedding_model=config.get("embedding_model", "all-MiniLM-L6-v2"),
+        sources_config=config.get("sources", {}),
     )
 
     stats = engine.get_stats()
@@ -218,7 +238,10 @@ def main():
     # serve
     serve_parser = subparsers.add_parser("serve", help="Start the web UI")
     serve_parser.add_argument(
-        "--scheduler", action="store_true", help="Enable daily auto-fetch scheduler"
+        "--scheduler", action="store_true", help="Enable daily auto-fetch"
+    )
+    serve_parser.add_argument(
+        "--migrate", action="store_true", help="Run migrations before starting"
     )
 
     # fetch
@@ -271,6 +294,9 @@ def main():
     # stats
     subparsers.add_parser("stats", help="Show system stats")
 
+    # migrate
+    subparsers.add_parser("migrate", help="Run database migrations")
+
     args = parser.parse_args()
 
     # Setup logging
@@ -295,6 +321,7 @@ def main():
         "email-digest": cmd_email_digest,
         "retrain": cmd_retrain,
         "stats": cmd_stats,
+        "migrate": cmd_migrate,
     }
 
     commands[args.command](args, config)

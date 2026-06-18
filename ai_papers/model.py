@@ -70,7 +70,7 @@ class PreferenceModel:
         self.train_history: list[dict] = []
         
         # Experience replay buffer
-        self.replay_buffer: list[tuple[np.ndarray, float]] = []
+        self.replay_buffer: list[tuple] = []
         self.max_replay_size = 1000
 
         # Load existing model if available
@@ -193,11 +193,15 @@ class PreferenceModel:
         return final_loss
 
     def train_single(
-        self, embedding: np.ndarray, label: float, epochs: int = 10
+        self, embedding: np.ndarray, label: float, epochs: int = 10, arxiv_id: str | None = None
     ) -> float:
         """Train on a single paper feedback using experience replay."""
         # Add to replay buffer
-        self.replay_buffer.append((embedding, label))
+        if arxiv_id:
+            # Remove any existing entry for this paper (re-rating)
+            self.replay_buffer = [item for item in self.replay_buffer if len(item) < 3 or item[2] != arxiv_id]
+
+        self.replay_buffer.append((embedding, label, arxiv_id))
         if len(self.replay_buffer) > self.max_replay_size:
             self.replay_buffer.pop(0)
 
@@ -207,7 +211,7 @@ class PreferenceModel:
             batch = random.sample(self.replay_buffer[:-1], batch_size - 1)
         else:
             batch = []
-        batch.append((embedding, label))
+        batch.append((embedding, label, arxiv_id))
 
         batch_embeddings = [b[0] for b in batch]
         batch_labels = [b[1] for b in batch]

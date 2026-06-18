@@ -7,7 +7,7 @@ from typing import cast
 
 from .database import PaperDatabase
 from .embedder import embed_papers_batch, get_embedding_dim
-from .fetcher import PaperSource, ArxivSource, SemanticScholarSource, RSSSource
+from .fetcher import PaperSource, ArxivSource, SemanticScholarSource, RSSSource, BiorxivSource
 from .llm import generate_summary, get_default_provider, _load_providers_order
 from .model import PreferenceModel
 
@@ -24,6 +24,7 @@ class RecommendationEngine:
         embedding_model: str = "all-MiniLM-L6-v2",
         sources: list[PaperSource] | None = None,
         rss_urls: list[str] | None = None,
+        sources_config: dict[str, bool] | None = None,
     ):
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
@@ -31,11 +32,20 @@ class RecommendationEngine:
         self.categories = categories
         self.embedding_model = embedding_model
         
-        self.sources = sources or [
-            ArxivSource(), 
-            SemanticScholarSource(),
-            RSSSource(feed_urls=rss_urls)
-        ]
+        if sources:
+            self.sources = sources
+        else:
+            self.sources = []
+            sc = sources_config or {"arxiv": True, "semantic_scholar": True, "biorxiv": True, "rss": True}
+            
+            if sc.get("arxiv", True):
+                self.sources.append(ArxivSource())
+            if sc.get("semantic_scholar", True):
+                self.sources.append(SemanticScholarSource())
+            if sc.get("biorxiv", True):
+                self.sources.append(BiorxivSource())
+            if sc.get("rss", True):
+                self.sources.append(RSSSource(feed_urls=rss_urls))
 
         # Initialize components
         self.db = PaperDatabase(self.data_dir / "papers.db")
@@ -275,12 +285,18 @@ class RecommendationEngine:
                 0.05 if paper.get("summary") and paper["summary"] != "AI Fail" else 0
             )
 
+            # Citation bonus: log-scaled boost based on citation count
+            import math
+            citation_count = paper.get("citation_count") or 0
+            citation_bonus = min(0.1, math.log10(citation_count + 1) * 0.02)
+
             # Combine scores
             paper["score"] = round(
-                min(1.0, base_score + freshness_bonus + summary_bonus), 4
+                min(1.0, base_score + freshness_bonus + summary_bonus + citation_bonus), 4
             )
             paper["freshness_bonus"] = round(freshness_bonus, 4)
             paper["summary_bonus"] = round(summary_bonus, 4)
+            paper["citation_bonus"] = round(citation_bonus, 4)
 
         # Explainability: attach the most similar liked paper to each recommendation
         rated_papers = self.db.get_rated_papers()
@@ -384,7 +400,7 @@ class RecommendationEngine:
             label = (rating - 1) / 4.0
 
         # Online learning: train on this single example
-        loss = self.preference_model.train_single(embedding, label)
+        loss = self.preference_model.train_single(embedding, label, arxiv_id=arxiv_id)
 
         return {
             "status": "rated",

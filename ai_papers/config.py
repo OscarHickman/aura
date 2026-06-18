@@ -52,6 +52,13 @@ def get_validated_config(config_path: str = "config.yaml") -> dict:
     config["scheduler"].setdefault("fetch_hour", 6)
     config["scheduler"].setdefault("fetch_minute", 0)
     
+    # Sources defaults
+    sources = config.setdefault("sources", {})
+    sources.setdefault("arxiv", True)
+    sources.setdefault("semantic_scholar", True)
+    sources.setdefault("biorxiv", True)
+    sources.setdefault("rss", True)
+    
     # 2. Merge Legacy and Env configurations
     email = config.setdefault("email", {})
     old_email_path = Path("user_credentials/email_config.json")

@@ -43,6 +43,7 @@ def fetch_papers_task(self, max_results=200, days_back=2, generate_summaries=Fal
         data_dir=config.get("data_dir", "data"),
         categories=config.get("categories", ["astro-ph.CO", "astro-ph.GA"]),
         embedding_model=config.get("embedding_model", "all-MiniLM-L6-v2"),
+        sources_config=config.get("sources", {}),
     )
     
     task_id = self.request.id
@@ -70,6 +71,7 @@ def fetch_papers_page_task(self, task_id, categories, max_results, days_back, ge
         data_dir=config.get("data_dir", "data"),
         categories=categories,
         embedding_model=config.get("embedding_model", "all-MiniLM-L6-v2"),
+        sources_config=config.get("sources", {}),
     )
     
     try:
@@ -190,6 +192,7 @@ def generate_missing_summaries_task(self, limit=50, include_failed=True):
         data_dir=config.get("data_dir", "data"),
         categories=config.get("categories", ["astro-ph.CO", "astro-ph.GA"]),
         embedding_model=config.get("embedding_model", "all-MiniLM-L6-v2"),
+        sources_config=config.get("sources", {}),
     )
     
     task_id = self.request.id
@@ -219,6 +222,7 @@ def retrain_full_task(self, epochs=20):
         data_dir=config.get("data_dir", "data"),
         categories=config.get("categories", ["astro-ph.CO", "astro-ph.GA"]),
         embedding_model=config.get("embedding_model", "all-MiniLM-L6-v2"),
+        sources_config=config.get("sources", {}),
     )
     
     task_id = self.request.id

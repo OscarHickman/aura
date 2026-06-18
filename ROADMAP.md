@@ -6,39 +6,18 @@
 
 ---
 
-
-
 ## Phase 2 — Core UX Polish
 
 *Make the daily workflow actually pleasant.*
 
-### 2.3 Tagging & Collections
-**Why it matters:** A researcher needs to organize papers — "papers for my thesis", "papers to discuss at journal club", "papers I cited". Currently there is no way to do this.
+### 2.2 Paper Detail Page
+**Why it matters:** Users want to read the abstract, see similar papers, and take notes without leaving AURA.
 
-- [x] Add `tags` and `collections` tables to the database
-- [x] API: `POST /papers/{id}/tags`, `GET /tags`, `DELETE /papers/{id}/tags/{tag}`
-- [x] API: `POST /collections`, `POST /collections/{id}/papers`
-- [x] UI: inline tag editor on paper cards
-- [x] UI: collections sidebar in the papers view
-- [x] UI: filter papers view by tag or collection
-
-### 2.4 Reading List / Queue
-**Why it matters:** "Read later" is the most common research workflow action. No such concept exists in AURA today.
-
-- [x] Add a `reading_list` table (paper_id, added_at, read_at)
-- [x] "Save for later" button on every paper card
-- [x] `/reading-list` page with unread/read tabs
-- [x] Mark as read action removes from unread queue
-
-### 2.5 UI Modernisation
-**Why it matters:** The current Bootstrap UI has two duplicate "Model Info" cards on the dashboard, hardcoded category strings in templates, and no keyboard shortcuts — all friction for daily use.
-
-- [x] Fix duplicate Model Info cards on dashboard
-- [x] Add keyboard shortcuts: `j`/`k` navigate papers, `u`/`d` rate thumbs up/down, `/` focus search
-- [x] Add infinite scroll or virtual list for the papers page (remove manual pagination)
-- [x] Add a dark mode toggle (localStorage-persisted)
-- [ ] Make the layout responsive / mobile-friendly (PWA-ready)
-- [ ] Add skeleton loading states instead of blocking page loads
+- [ ] Dedicated route: `/papers/{arxiv_id}`
+- [ ] Show full abstract with LaTeX rendering
+- [ ] List 5 most similar papers (already in DB) on the sidebar
+- [ ] Links to PDF, arXiv page, and NASA ADS
+- [ ] Integrated note-taking area (saves to `notes` table)
 
 ---
 
@@ -46,75 +25,8 @@
 
 *Make the recommendations actually learn better and faster.*
 
-### 3.1 Cold Start Bootstrap
-**Why it matters:** A fresh user with zero ratings sees no differentiation — every paper scores ~0.5. They need to rate ≥5 papers before recommendations diverge. This kills first-run experience.
-
-- [x] Add an onboarding wizard: show 20 diverse papers across categories for initial rating
-- [x] Cluster papers by topic (k-means on embeddings) and sample one from each cluster
-- [x] Show "What are you interested in?" topic picker that pre-seeds ratings
-- [x] Document the minimum ratings needed for each confidence level
-
-### 3.2 Recommendation Explainability
-**Why it matters:** Users don't know *why* AURA ranks a paper highly. Is it because of the topic? A similar paper they liked? The opacity erodes trust.
-
-- [x] For each recommendation, find the 3 most similar liked papers (nearest neighbors in embedding space)
-- [x] Show "Because you liked: [paper title]" on each card
-- [x] Expose `GET /api/explain/{arxiv_id}` endpoint returning influencing papers
-- [x] Add visual score breakdown: model score + freshness boost + summary bonus
-
 ### 3.3 Better Model Architecture
-**Why it matters:** The current 384→128→64→32→1 network is tiny and trained with online SGD one sample at a time — it forgets earlier ratings when it overtrains on recent ones (catastrophic forgetting).
-
-- [x] Implement experience replay: keep a sliding window buffer of past ratings; include them in every `train_single` call
-- [x] Add learning rate scheduling (`CosineAnnealingLR`) for full retrains
-- [x] Expose model confidence / uncertainty via MC Dropout at inference
 - [ ] Add A/B testing capability: shadow model trained on different hyperparameters
-- [x] Persist `train_history` to the database (or checkpoint) for loss curve visualization
-
-### 3.4 Semantic Search & Topic Clustering
-**Why it matters:** Beyond keyword search, researchers want "find papers like this one" and "what is the field talking about this week?"
-
-- [x] Implement "find similar" via cosine similarity across all stored embeddings (no external vector DB needed at this scale)
-- [x] Add a `/topics` page with auto-discovered topic clusters (k-means, elbow method for k)
-- [x] Show per-topic paper counts and trend arrows (week-over-week)
-- [x] Link topics to the existing trends engine in `trends.py`
-
-### 3.5 Feedback Quality Improvements
-**Why it matters:** Binary thumbs up/down is too coarse. Researchers have nuanced opinions: "relevant topic but bad paper", "not my field now but save for later."
-
-- [x] Add 5-star granular rating (maps to 0.0–1.0 labels for the model)
-- [x] Add "skip" action (excludes paper from training, not just unrated)
-- [x] Add "save for later" (soft positive signal for the model)
-- [ ] Track rating change events (re-rating) as model update signals
-
----
-
-## Phase 4 — Multi-Source Paper Ingestion
-
-*Break out of arXiv-only.*
-
-### 4.1 Source Abstraction Layer
-**Why it matters:** Everything in `fetcher.py` is arXiv-specific. Adding a new source requires rewriting the fetcher.
-
-- [x] Define a `PaperSource` protocol (abstract base) with `fetch(categories, max_results, days_back) -> list[Paper]`
-- [x] Refactor `fetcher.py` as `ArxivSource` implementing the protocol
-- [x] Add `source` column to `papers` table (tracks origin for deduplication and display)
-- [x] Update `RecommendationEngine` to accept a list of sources
-
-### 4.2 Semantic Scholar Integration
-- [x] Implement `SemanticScholarSource` using the free S2 API
-- [x] Map S2 fields to the common `Paper` schema
-- [x] Add citation count to the paper schema and show it on cards
-- [ ] Use citation count as an optional secondary ranking signal
-
-### 4.3 RSS / Journal Feed Support
-- [x] Implement a generic `RSSSource` that parses journal RSS feeds (Nature, Science, MNRAS, ApJ, etc.)
-- [x] Allow users to add custom RSS URLs via the settings page (documented in config)
-- [x] Store feed metadata so papers can be linked back to their journal
-
-### 4.4 bioRxiv / medRxiv Support
-- [ ] Implement `BiorxivSource` using the bioRxiv API
-- [ ] Allow users to configure which preprint servers to include
 
 ---
 
@@ -147,11 +59,6 @@
 ## Phase 6 — Collaboration & Sharing
 
 *Research is social.*
-
-### 6.1 Paper Annotations & Notes
-- [x] Add `annotations` table: `user_id`, `arxiv_id`, `text`, `highlight_range`, `created_at`
-- [x] Show inline note editor on the paper detail page
-- [x] Export notes to markdown or BibTeX comment fields
 
 ### 6.2 Shared Collections
 - [ ] Collections can be made public or shared with specific users
@@ -215,16 +122,7 @@
 - [ ] Sanitize all user input before storing (tags, collection names, notes)
 - [ ] Add SQL injection audit (parameterized queries are used, but verify fully)
 
-### 8.3 Database Migrations
-**Why it matters:** Adding new columns currently requires manual SQLite surgery. There is no migration history.
-
-- [ ] Add Alembic for schema migrations
-- [ ] Write migration scripts for all schema changes going forward
-- [ ] Add `--migrate` flag to startup to auto-apply pending migrations
-
 ### 8.4 Monitoring & Health
-- [ ] Extend `/health` to return degraded status if embedding model failed to load or DB is unresponsive
-- [ ] Add `/metrics` endpoint in Prometheus exposition format (paper counts, rating counts, task queue depth)
 - [ ] Add Grafana dashboard JSON to `deploy/`
 - [ ] Add container health check in `Dockerfile`
 
@@ -301,19 +199,132 @@
 
 ---
 
+## Phase 11 — Astronomy Domain Intelligence
+
+*Purpose-built for the workflows of astronomers and cosmologists.*
+
+### 11.1 NASA ADS Integration
+- [ ] Implement `ADSSource` using the ADS API (`ui.adsabs.harvard.edu/api`)
+- [ ] Map ADS fields to the `Paper` schema: `bibcode`, `citation_count`, `read_count`, `refereed` flag
+- [ ] Add `refereed` boolean column to `papers` table
+- [ ] Daily background job to refresh ADS citation counts for stored papers
+- [ ] Surface citation count and refereed badge on paper cards
+- [ ] Use ADS `read_count` as an optional secondary ranking signal
+
+### 11.2 Survey & Mission Paper Tracking
+- [ ] Add `surveys` table: `id`, `name`, `keywords` (JSON list of trigger terms)
+- [ ] Auto-tag papers that mention a tracked survey in title or abstract
+- [ ] Default survey list: DESI, Euclid, Rubin LSST, SKA, Simons Observatory, CMB-S4, HSC, DES, Planck
+- [ ] UI: filter papers view by survey/instrument tag
+- [ ] Digest: include a "From the surveys" sub-section in the email
+
+### 11.3 Cosmological Statistics & Method Extraction
+- [ ] LLM-powered metadata extraction pass running after fetch (before embedding):
+  - **Observable:** power spectrum, correlation function, bispectrum, void statistics, CMB temperature/polarization, weak lensing, shear
+  - **Dataset:** BOSS, DESI, HSC, DES, Planck, SPT, ACT, IllustrisTNG, CAMELS, EAGLE
+  - **Method:** MCMC, nested sampling, SBI, neural posterior estimation, emulator, N-body, semi-analytic model
+- [ ] Store extracted tags in the `tags` table with `source='auto'`
+- [ ] Use extracted method/dataset tags to boost recommendation precision
+- [ ] Filter UI: show papers by observable or method type
+
+### 11.4 Author & Research Group Tracking
+- [ ] Add `tracked_authors` table: `id`, `name`, `orcid` (optional), `affiliation` (optional), `relationship` (`follow` | `collaborator`)
+- [ ] At fetch time, flag papers where any tracked author appears in the author list
+- [ ] UI: "From authors you follow" badge on paper cards
+- [ ] `/settings/authors` page to add/remove tracked authors
+- [ ] Digest: "From your network" section for papers by tracked authors
+- [ ] Import collaborators in bulk from a BibTeX file's `author` fields
+
+### 11.5 arXiv Category Expansion for Computational Cosmology
+- [ ] Add `astro-ph.IM` to `config.example.yaml` defaults
+- [ ] Document optional `cs.LG` and `stat.ML` categories in `config.example.yaml`
+- [ ] Add cross-listing deduplication: a paper in both `astro-ph.CO` and `cs.LG` stores once with both category labels
+
+### 11.6 Topic Discovery Quality Gate
+- [ ] Tighten the validation regex in `generate_monthly_trends`
+- [ ] Add minimum meaningful-word check: topics must contain 2–5 words
+- [ ] Add an LLM-as-judge confirmation step
+- [ ] One-time cleanup script to purge existing junk entries from `data/research_topics.json`
+
+---
+
+## Phase 12 — Simulation-Based Inference & Computational Cosmology
+
+### 12.1 Code & Data Release Detection
+- [ ] At ingest, scan abstracts for GitHub, GitLab, Zenodo, Figshare, and CDS URLs
+- [ ] Add `has_code` (bool) and `has_data` (bool) columns to the `papers` table
+- [ ] Show "Code" and "Data" badges on paper cards
+- [ ] Add `has_code` / `has_data` toggle filters to the papers page
+- [ ] Optionally fetch the linked GitHub repo metadata
+
+### 12.2 SBI & Neural Inference Topic Seeds
+- [ ] Add to `DEFAULT_TOPICS`: `"neural posterior estimation"`, `"normalizing flows cosmology"`, `"field level inference"`, `"neural compression"`, `"likelihood free inference"`, `"implicit likelihood inference"`, `"amortized inference"`
+- [ ] Add to `DEFAULT_TOPICS`: `"two point statistics"`, `"galaxy power spectrum"`, `"higher order statistics cosmology"`, `"summary statistics inference"`
+- [ ] Group topics in `research_topics.json` by section (`sbi`, `galaxy_statistics`, `ml_methods`)
+
+### 12.3 Simulation & Inference Code Awareness
+- [ ] Add a `simulation_codes` list to `config.yaml`
+- [ ] Auto-tag papers mentioning listed simulations/codes at fetch time
+- [ ] Show simulation/code badges on paper cards
+- [ ] Filter papers view by simulation or code name
+- [ ] Default list: IllustrisTNG, CAMELS, EAGLE, Millennium, GADGET, RAMSES, GALFORM, CAMB, CLASS, Cobaya, emcee, MultiNest, PolyChord, JAX, sbi (Python library)
+
+### 12.4 Dataset & Benchmark Velocity Alerts
+- [ ] Track weekly paper count per auto-detected dataset/simulation tag
+- [ ] Alert when a tracked keyword appears in >N papers within any rolling 7-day window
+- [ ] Surface alerts as a "Spike Alert" banner in the `/trends` UI and in the email digest
+- [ ] Store weekly velocity history in the database
+
+---
+
+## Phase 13 — Personal Research Context
+
+### 13.1 "My Papers" — Citation Tracking
+- [ ] Add `my_papers` table: user registers own arXiv IDs or DOIs
+- [ ] UI: `/my-papers` page with an "Add paper" form
+- [ ] When the ADS citation refresh job runs, check newly stored papers against `my_papers` citing lists
+- [ ] Badge papers that cite the user's work: "Cites your work"
+- [ ] Digest: "Papers citing your work this week" section
+
+### 13.2 Collaborator Feed
+- [ ] Reuse `tracked_authors.relationship = 'collaborator'` from Phase 11.4
+- [ ] Collaborator papers receive a configurable score boost and a "From your group" badge
+- [ ] Pin collaborator papers at the top of the recommend view
+- [ ] Weekly digest section: "From your group this week"
+
+### 13.3 Conference & Proposal Deadline Calendar
+- [ ] Add `events` table: `id`, `name`, `date`, `type`
+- [ ] `/settings/calendar` page to add/edit events
+- [ ] Annotate the trend with the nearest upcoming or just-passed event
+- [ ] Display upcoming events (next 30 days) in the dashboard sidebar
+- [ ] Default seeds: major annual cosmology conferences + recurring ESO/HST/JWST proposal windows
+
+### 13.4 Structured Study Notes & Thesis Export
+- [ ] Extend paper detail page with a structured "Study Notes" template
+- [ ] Auto-save notes as Markdown to the `annotations` table with `type='study_note'`
+- [ ] Export all study notes for a collection to a single Markdown file
+- [ ] When exporting, prepend the BibTeX citation for each paper
+- [ ] `/notes` dashboard showing all papers with study notes
+
+---
+
 ## Priority Order (Suggested)
 
 | Priority | Phase | Reason |
 |----------|-------|--------|
-| 1 | 2.1 Full-Text Search | Most common missing feature for any paper tool |
-| 2 | 2.3 Tags & Collections | Second most impactful daily-use feature |
-| 3 | 3.1 Cold Start Bootstrap | Required before sharing with anyone new |
-| 4 | 3.2 Explainability | Builds trust in recommendations |
-| 5 | 2.2 Paper Detail Page | Makes AURA a destination, not a redirect to arXiv |
-| 6 | 5.1 Multi-User Auth | Required for lab/team use |
-| 7 | 7.3 BibTeX Export | Closes the loop with existing research workflows |
-| 8 | 4.1–4.2 Multi-Source | Expands addressable content meaningfully |
-| 9 | 9.1–9.2 Deep Summaries / Q&A | The "wow" feature that no other tool does as well |
+| 1 | 2.2 Paper Detail Page | Makes AURA a destination, not a redirect to arXiv |
+| 2 | 11.6 Topic Discovery Quality Gate | Existing bug corrupts `research_topics.json` |
+| 3 | 12.1 Code & Data Release Detection | Highest-signal filter for a computational cosmologist |
+| 4 | 5.1 Multi-User Auth | Required for lab/team use |
+| 5 | 12.2 SBI Topic Seeds | Improves recall for the user's primary research area |
+| 6 | 11.1 NASA ADS Integration | Canonical citation data source for astronomy |
+| 7 | 11.4 Author Tracking | Daily-use workflow for following collaborators and groups |
+| 8 | 13.1 "My Papers" Citation Alerts | Automates a manual tracking task |
+| 9 | 7.3 BibTeX Export | Closes the loop with existing research workflows |
+| 10 | 11.3 Cosmological Statistics Extraction | Improves clustering and recommendation precision |
+| 11 | 13.4 Study Notes & Thesis Export | High value for PhD students |
+| 12 | 4.1–4.2 Multi-Source | Expands addressable content meaningfully |
+| 13 | 9.1–9.2 Deep Summaries / Q&A | The "wow" feature that no other tool does as well |
 
 ---
 

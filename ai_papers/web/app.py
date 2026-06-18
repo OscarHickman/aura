@@ -41,6 +41,7 @@ def create_app(config_path: str | None = None) -> Flask:
         categories=config.get("categories", ["astro-ph.CO", "astro-ph.GA"]),
         embedding_model=config.get("embedding_model", "all-MiniLM-L6-v2"),
         rss_urls=config.get("rss_feeds", []),
+        sources_config=config.get("sources", {}),
     )
 
     # Register X-Request-ID hooks
@@ -577,8 +578,82 @@ def _register_routes(app: Flask):
 
     @app.route("/health")
     def health():
-        """Simple health check for load balancers and orchestrators."""
-        return jsonify({"status": "ok"}), 200
+        """Health check returning degraded status if components fail."""
+        status = "ok"
+        code = 200
+        details = {}
+        
+        try:
+            # Check DB
+            engine.db.conn.execute("SELECT 1")
+            details["db"] = "ok"
+        except Exception as e:
+            status = "degraded"
+            code = 503
+            details["db"] = f"error: {str(e)}"
+            
+        try:
+            # Check embedding model status (lazy loaded)
+            from ..embedder import _model
+            if _model is not None:
+                details["embedder"] = "ok"
+            else:
+                details["embedder"] = "lazy_not_loaded"
+                
+            # Check preference model
+            if engine.preference_model and engine.preference_model.model:
+                details["preference_model"] = "ok"
+            else:
+                status = "degraded"
+                code = 503
+                details["preference_model"] = "not_loaded"
+                
+        except Exception as e:
+            status = "degraded"
+            code = 503
+            details["embedder"] = f"error: {str(e)}"
+
+        return jsonify({"status": status, "details": details}), code
+
+    @app.route("/metrics")
+    def metrics():
+        """Prometheus metrics endpoint."""
+        stats = engine.get_stats()
+        db = stats["database"]
+        model = stats["model"]
+        
+        lines = [
+            "# HELP aura_papers_total Total number of papers in database",
+            "# TYPE aura_papers_total gauge",
+            f"aura_papers_total {db['total_papers']}",
+            
+            "# HELP aura_papers_with_embeddings_total Papers with embeddings",
+            "# TYPE aura_papers_with_embeddings_total gauge",
+            f"aura_papers_with_embeddings_total {db['with_embeddings']}",
+            
+            "# HELP aura_papers_rated_total Total unique papers rated",
+            "# TYPE aura_papers_rated_total gauge",
+            f"aura_papers_rated_total {db['total_rated']}",
+            
+            "# HELP aura_papers_liked_total Total papers with positive rating",
+            "# TYPE aura_papers_liked_total gauge",
+            f"aura_papers_liked_total {db['thumbs_up']}",
+            
+            "# HELP aura_papers_disliked_total Total papers with negative rating",
+            "# TYPE aura_papers_disliked_total gauge",
+            f"aura_papers_disliked_total {db['thumbs_down']}",
+            
+            "# HELP aura_model_trained_samples_total Total samples the model was trained on",
+            "# TYPE aura_model_trained_samples_total counter",
+            f"aura_model_trained_samples_total {model['total_trained']}",
+            
+            "# HELP aura_model_replay_buffer_size Current size of experience replay buffer",
+            "# TYPE aura_model_replay_buffer_size gauge",
+            f"aura_model_replay_buffer_size {model['replay_buffer_size']}",
+        ]
+        
+        from flask import Response
+        return Response("\n".join(lines) + "\n", mimetype="text/plain")
 
     @app.route("/fetch")
     def fetch_page():

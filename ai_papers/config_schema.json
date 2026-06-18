@@ -157,6 +157,16 @@
         }
       },
       "additionalProperties": false
+    },
+    "sources": {
+      "type": "object",
+      "properties": {
+        "arxiv": { "type": "boolean" },
+        "semantic_scholar": { "type": "boolean" },
+        "biorxiv": { "type": "boolean" },
+        "rss": { "type": "boolean" }
+      },
+      "additionalProperties": false
     }
   },
   "required": [

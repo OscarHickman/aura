@@ -313,6 +313,110 @@ class SemanticScholarSource:
             return None
 
 
+class BiorxivSource:
+    """Fetches papers from the bioRxiv API."""
+
+    BIORXIV_API_URL = "https://api.biorxiv.org/details/biorxiv"
+
+    def fetch(
+        self,
+        categories: list[str],
+        max_results: int = 50,
+        days_back: int = 1,
+    ) -> list[dict]:
+        """Fetch papers from bioRxiv."""
+        papers = []
+        seen_dois = set()
+
+        end_date = datetime.utcnow()
+        start_date = end_date - timedelta(days=days_back)
+        
+        date_from = start_date.strftime("%Y-%m-%d")
+        date_to = end_date.strftime("%Y-%m-%d")
+
+        # bioRxiv API is date-based: /details/biorxiv/YYYY-MM-DD/YYYY-MM-DD/cursor
+        cursor = 0
+        while len(papers) < max_results:
+            url = f"{self.BIORXIV_API_URL}/{date_from}/{date_to}/{cursor}/json"
+            logger.info(f"Fetching bioRxiv papers: {url}")
+
+            try:
+                resp = requests.get(url, timeout=30)
+                resp.raise_for_status()
+                data = resp.json()
+            except Exception as e:
+                logger.error(f"bioRxiv API request failed: {e}")
+                break
+
+            collection = data.get("collection", [])
+            if not collection:
+                break
+
+            for entry in collection:
+                # Filter by category if possible
+                paper_cat = entry.get("category", "").lower()
+                
+                # If categories are provided, check if this paper matches any of them
+                if categories:
+                    match = False
+                    for cat in categories:
+                        if cat.lower() in paper_cat or paper_cat in cat.lower():
+                            match = True
+                            break
+                    if not match:
+                        continue
+
+                paper = self._parse_entry(entry)
+                if paper and paper["arxiv_id"] not in seen_dois:
+                    seen_dois.add(paper["arxiv_id"])
+                    papers.append(paper)
+                    if len(papers) >= max_results:
+                        break
+            
+            cursor += len(collection)
+            if len(collection) < 100:
+                break
+            
+            # Be polite
+            time.sleep(1)
+
+        return papers
+
+    def fetch_simple(self, categories: list[str], max_results: int = 50) -> list[dict]:
+        """Simple fetch for bioRxiv (last 7 days)."""
+        return self.fetch(categories, max_results=max_results, days_back=7)
+
+    def _parse_entry(self, entry: dict) -> Optional[dict]:
+        """Parse a bioRxiv entry into a paper dict."""
+        try:
+            doi = entry.get("doi")
+            if not doi:
+                return None
+                
+            # Clean ID for database
+            clean_id = doi.replace("/", "-")
+            
+            # Authors (bioRxiv returns a comma-separated string)
+            authors_str = entry.get("authors", "")
+            authors = [a.strip() for a in authors_str.split(",") if a.strip()]
+
+            return {
+                "arxiv_id": f"biorxiv-{clean_id}",
+                "title": entry.get("title", "No Title"),
+                "abstract": entry.get("abstract", "No Abstract"),
+                "authors": authors,
+                "categories": [entry.get("category", "bioRxiv")],
+                "published": entry.get("date", ""),
+                "url": f"https://doi.org/{doi}",
+                "pdf_url": f"https://www.biorxiv.org/content/{doi}.full.pdf",
+                "source": "biorxiv",
+                "citation_count": 0,
+            }
+        except Exception as e:
+            logger.warning(f"Failed to parse bioRxiv entry: {e}")
+            return None
+
+
 class RSSSource:
     """Fetches papers from generic journal RSS feeds."""
 
