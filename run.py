@@ -174,6 +174,13 @@ def cmd_email_digest(args, config):
     print(json.dumps(result, indent=2))
 
 
+def cmd_cleanup_topics(args, config):
+    """Cleanup junk entries from research_topics.json."""
+    from ai_papers.trends import cleanup_topics
+    data_dir = config.get("data_dir", "data")
+    cleanup_topics(data_dir)
+
+
 def cmd_stats(args, config):
     """Show system statistics."""
     from ai_papers.recommender import RecommendationEngine
@@ -294,6 +301,9 @@ def main():
     # stats
     subparsers.add_parser("stats", help="Show system stats")
 
+    # cleanup-topics
+    subparsers.add_parser("cleanup-topics", help="Remove junk from research_topics.json")
+
     # migrate
     subparsers.add_parser("migrate", help="Run database migrations")
 
@@ -322,6 +332,7 @@ def main():
         "retrain": cmd_retrain,
         "stats": cmd_stats,
         "migrate": cmd_migrate,
+        "cleanup-topics": cmd_cleanup_topics,
     }
 
     commands[args.command](args, config)

@@ -132,7 +132,14 @@ class TestTrends(unittest.TestCase):
     @patch("ai_papers.trends.get_model")
     @patch("ai_papers.trends.load_topics", return_value=["Machine learning"])
     def test_generate_monthly_trends(self, mock_load_topics, mock_get_model, mock_gen_text):
-        mock_gen_text.side_effect = lambda prompt: "dynamic_topic" if "emerging" in prompt else "trend summary"
+        def mock_gen_response(prompt):
+            if "emerging" in prompt:
+                return "dynamic topic"
+            if "distinct scientific" in prompt:
+                return "YES"
+            return "trend summary"
+            
+        mock_gen_text.side_effect = mock_gen_response
         
         # Mock sentence-transformers model. Topic embedding must be a 1D vector (dim 2)
         mock_st = Mock()
@@ -166,7 +173,7 @@ class TestTrends(unittest.TestCase):
             
             # Check if dynamic topic was added
             topics = trends.load_topics(td)
-            self.assertIn("dynamic_topic", topics)
+            self.assertIn("dynamic topic", topics)
 
 
 if __name__ == "__main__":

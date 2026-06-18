@@ -6,12 +6,6 @@
 
 ---
 
-## Phase 2 — Core UX Polish
-
-*Make the daily workflow actually pleasant.*
-
----
-
 ## Phase 3 — ML & Recommendation Improvements
 
 *Make the recommendations actually learn better and faster.*
@@ -231,12 +225,6 @@
 - [ ] Document optional `cs.LG` and `stat.ML` categories in `config.example.yaml`
 - [ ] Add cross-listing deduplication: a paper in both `astro-ph.CO` and `cs.LG` stores once with both category labels
 
-### 11.6 Topic Discovery Quality Gate
-- [ ] Tighten the validation regex in `generate_monthly_trends`
-- [ ] Add minimum meaningful-word check: topics must contain 2–5 words
-- [ ] Add an LLM-as-judge confirmation step
-- [ ] One-time cleanup script to purge existing junk entries from `data/research_topics.json`
-
 ---
 
 ## Phase 12 — Simulation-Based Inference & Computational Cosmology
@@ -303,19 +291,17 @@
 
 | Priority | Phase | Reason |
 |----------|-------|--------|
-| 1 | 2.2 Paper Detail Page | Makes AURA a destination, not a redirect to arXiv |
-| 2 | 11.6 Topic Discovery Quality Gate | Existing bug corrupts `research_topics.json` |
-| 3 | 12.1 Code & Data Release Detection | Highest-signal filter for a computational cosmologist |
-| 4 | 5.1 Multi-User Auth | Required for lab/team use |
-| 5 | 12.2 SBI Topic Seeds | Improves recall for the user's primary research area |
-| 6 | 11.1 NASA ADS Integration | Canonical citation data source for astronomy |
-| 7 | 11.4 Author Tracking | Daily-use workflow for following collaborators and groups |
-| 8 | 13.1 "My Papers" Citation Alerts | Automates a manual tracking task |
-| 9 | 7.3 BibTeX Export | Closes the loop with existing research workflows |
-| 10 | 11.3 Cosmological Statistics Extraction | Improves clustering and recommendation precision |
-| 11 | 13.4 Study Notes & Thesis Export | High value for PhD students |
-| 12 | 4.1–4.2 Multi-Source | Expands addressable content meaningfully |
-| 13 | 9.1–9.2 Deep Summaries / Q&A | The "wow" feature that no other tool does as well |
+| 1 | 12.1 Code & Data Release Detection | Highest-signal filter for a computational cosmologist |
+| 2 | 5.1 Multi-User Auth | Required for lab/team use |
+| 3 | 12.2 SBI Topic Seeds | Improves recall for the user's primary research area |
+| 4 | 11.1 NASA ADS Integration | Canonical citation data source for astronomy |
+| 5 | 11.4 Author Tracking | Daily-use workflow for following collaborators and groups |
+| 6 | 13.1 "My Papers" Citation Alerts | Automates a manual tracking task |
+| 7 | 7.3 BibTeX Export | Closes the loop with existing research workflows |
+| 8 | 11.3 Cosmological Statistics Extraction | Improves clustering and recommendation precision |
+| 9 | 13.4 Study Notes & Thesis Export | High value for PhD students |
+| 10 | 4.1–4.2 Multi-Source | Expands addressable content meaningfully |
+| 11 | 9.1–9.2 Deep Summaries / Q&A | The "wow" feature that no other tool does as well |
 
 ---
 

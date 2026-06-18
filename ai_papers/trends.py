@@ -214,16 +214,56 @@ def generate_monthly_trends(data_dir: str | Path, embedding_model: str = "all-Mi
     if normalized and normalized != "NONE" and no_provider not in normalized:
         suggested = [t.strip().lower() for t in new_topics_str.split(",") if t.strip()]
         existing_lower = {e.lower() for e in topics}
-        valid_new = [
-            t for t in suggested
-            if 3 < len(t) <= 60
-            and len(t.split()) <= 5
-            and t not in existing_lower
-            and not any(c in t for c in (".", "\n", ":"))
-        ][:2]
+        
+        # Enhanced validation regex/logic
+        import re
+        # Rejects starting with conjunctions, or having punctuation markers
+        junk_pattern = re.compile(r"^(and|the|a|an|with|from|to|for|of|by|in|on|at|as|but|or)\b|[.:;!?\n]", re.IGNORECASE)
+        
+        candidates = []
+        for t in suggested:
+            words = t.split()
+            if (2 <= len(words) <= 5 and 
+                3 < len(t) <= 60 and 
+                t not in existing_lower and 
+                not junk_pattern.search(t)):
+                candidates.append(t)
+        
+        valid_new = []
+        for t in candidates[:2]:
+            # LLM-as-judge confirmation
+            judge_prompt = (
+                f"Is '{t}' a real and distinct scientific research area or methodology? "
+                f"Answer exactly 'YES' or 'NO'."
+            )
+            confirmation = _generate_generic_text(judge_prompt)
+            if confirmation and "YES" in confirmation.upper():
+                valid_new.append(t)
+
         if valid_new:
             logger.info(f"Discovered new dynamic topics: {valid_new}")
             topics.extend(valid_new)
             save_topics(data_dir, topics)
             
     return trends
+
+
+def cleanup_topics(data_dir: str | Path):
+    """One-time cleanup script to purge existing junk entries from research_topics.json."""
+    topics = load_topics(data_dir)
+    import re
+    junk_pattern = re.compile(r"^(and|the|a|an|with|from|to|for|of|by|in|on|at|as|but|or)\b|[.:;!?\n]", re.IGNORECASE)
+    
+    cleaned = []
+    for t in topics:
+        words = t.split()
+        if (len(words) >= 2 and 
+            not junk_pattern.search(t) and 
+            t not in cleaned):
+            cleaned.append(t)
+        elif t in DEFAULT_TOPICS and t not in cleaned:
+            cleaned.append(t)
+            
+    if len(cleaned) < len(topics):
+        logger.info(f"Cleaned up {len(topics) - len(cleaned)} junk topics.")
+        save_topics(data_dir, cleaned)
