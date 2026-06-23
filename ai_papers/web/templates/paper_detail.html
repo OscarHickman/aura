@@ -1,6 +1,26 @@
 {% extends "base.html" %}
 {% block title %}{{ paper.title | safe }} - AI Papers{% endblock %}
 
+{% block head %}
+    <!-- Reference Manager Export Link Relations -->
+    <link rel="alternate" type="application/x-bibtex" href="{{ url_for('export_paper_bibtex', arxiv_id=paper.arxiv_id) }}">
+    <link rel="alternate" type="application/x-research-info-systems" href="{{ url_for('export_paper_ris', arxiv_id=paper.arxiv_id) }}">
+
+    <!-- HighWire Press Metadata Tags -->
+    <meta name="citation_title" content="{{ paper.title }}">
+    {% for author in paper.authors %}
+    <meta name="citation_author" content="{{ author }}">
+    {% endfor %}
+    <meta name="citation_publication_date" content="{{ paper.published[:10] }}">
+    <meta name="citation_arxiv_id" content="{{ paper.arxiv_id }}">
+    {% if paper.pdf_url %}
+    <meta name="citation_pdf_url" content="{{ paper.pdf_url }}">
+    {% endif %}
+    {% if paper.url %}
+    <meta name="citation_abstract_html_url" content="{{ paper.url }}">
+    {% endif %}
+{% endblock %}
+
 {% block content %}
 <div class="mb-3">
     <a href="/papers" class="btn btn-outline-secondary btn-sm">
@@ -54,6 +74,25 @@
                             <i class="bi bi-bookmark"></i>
                         </button>
                         {% endif %}
+                        
+                        <!-- Export Reference Dropdown -->
+                        <div class="dropdown">
+                            <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false" title="Export citation">
+                                <i class="bi bi-box-arrow-up"></i> Export
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end">
+                                <li>
+                                    <a class="dropdown-item" href="{{ url_for('export_paper_bibtex', arxiv_id=paper.arxiv_id) }}">
+                                        <i class="bi bi-file-code me-2"></i>BibTeX (.bib)
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item" href="{{ url_for('export_paper_ris', arxiv_id=paper.arxiv_id) }}">
+                                        <i class="bi bi-file-earmark-arrow-up me-2"></i>RIS (.ris)
+                                    </a>
+                                </li>
+                            </ul>
+                        </div>
                     </div>
                 </div>
 

@@ -37,10 +37,10 @@
 ### 7.3 Reference Manager Export
 **Why it matters:** Researchers live in Zotero and Mendeley. Discovered papers should flow directly into their citation manager.
 
-- [ ] Add `/papers/{id}/export/bibtex` endpoint
-- [ ] Add `/papers/export/bibtex?collection={id}` for bulk export
-- [ ] Add `/papers/export/ris` for RIS format
-- [ ] Add Zotero Connector compatibility header so the browser extension works
+- [x] Add `/papers/{id}/export/bibtex` endpoint
+- [x] Add `/papers/export/bibtex?collection={id}` for bulk export
+- [x] Add `/papers/export/ris` for RIS format
+- [x] Add Zotero Connector compatibility header so the browser extension works
 
 ### 7.4 Browser Extension
 - [ ] Simple Chrome/Firefox extension: "Add to AURA" button on arXiv paper pages

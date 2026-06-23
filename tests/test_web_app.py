@@ -510,5 +510,81 @@ class TestWebApp(unittest.TestCase):
         self.assertEqual(resp.get_json(), {"status": "ok"})
         self.assertTrue(self.engine.db.update_user.called)
 
+    def test_reference_manager_export(self):
+        # Mock paper
+        test_paper = {
+            "arxiv_id": "2401.00001",
+            "title": "A Great Astro Paper",
+            "abstract": "A great abstract about stars.",
+            "authors": ["Ada Lovelace", "Charles Babbage"],
+            "categories": ["astro-ph.CO"],
+            "url": "http://arxiv.org/abs/2401.00001",
+            "pdf_url": "http://arxiv.org/pdf/2401.00001.pdf",
+            "published": "2026-01-01T00:00:00Z"
+        }
+        self.engine.db.get_paper.return_value = test_paper
+        
+        # 1. Test single paper BibTeX export
+        resp = self.client.get("/papers/2401.00001/export/bibtex")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.mimetype, "application/x-bibtex")
+        self.assertIn(b"@article{2401.00001,", resp.data)
+        self.assertIn(b"title={A Great Astro Paper}", resp.data)
+        self.assertIn(b"author={Ada Lovelace and Charles Babbage}", resp.data)
+        self.assertIn(b"journal={arXiv preprint arXiv:2401.00001}", resp.data)
+        self.assertIn(b"year={2026}", resp.data)
+        self.assertIn(b"archivePrefix={arXiv}", resp.data)
+        self.assertIn(b"primaryClass={astro-ph.CO}", resp.data)
+        
+        # 2. Test single paper RIS export
+        resp = self.client.get("/papers/2401.00001/export/ris")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.mimetype, "application/x-research-info-systems")
+        self.assertIn(b"TY  - JOUR", resp.data)
+        self.assertIn(b"TI  - A Great Astro Paper", resp.data)
+        self.assertIn(b"AU  - Ada Lovelace", resp.data)
+        self.assertIn(b"AU  - Charles Babbage", resp.data)
+        self.assertIn(b"JO  - arXiv preprint arXiv:2401.00001", resp.data)
+        self.assertIn(b"PY  - 2026", resp.data)
+        self.assertIn(b"ER  -", resp.data)
+        
+        # 3. Test bulk BibTeX export (collection ownership verified)
+        self.engine.db.get_collection.return_value = {"id": 1, "user_id": 1, "name": "My List", "is_public": 0}
+        self.engine.db.get_collection_papers.return_value = [test_paper]
+        resp = self.client.get("/papers/export/bibtex?collection=1")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.mimetype, "application/x-bibtex")
+        self.assertIn(b"@article{2401.00001,", resp.data)
+        
+        # 4. Test bulk RIS export (collection ownership verified)
+        resp = self.client.get("/papers/export/ris?collection=1")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.mimetype, "application/x-research-info-systems")
+        self.assertIn(b"TY  - JOUR", resp.data)
+        
+        # 5. Test single RIS export via query parameter
+        resp = self.client.get("/papers/export/ris?arxiv_id=2401.00001")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.mimetype, "application/x-research-info-systems")
+        self.assertIn(b"TY  - JOUR", resp.data)
+        
+        # 6. Test unauthorized collection export (different user, not public)
+        self.engine.db.get_collection.return_value = {"id": 2, "user_id": 2, "name": "Secret List", "is_public": 0}
+        resp = self.client.get("/papers/export/bibtex?collection=2")
+        self.assertEqual(resp.status_code, 403)
+        
+        # 7. Test Zotero Connector compatibility header on paper detail
+        self.engine.db.get_latest_rating.return_value = None
+        self.engine.db.get_paper_tags.return_value = []
+        self.engine.db.get_paper_collections.return_value = []
+        self.engine.db.get_paper_notes.return_value = []
+        self.engine.db.is_in_reading_list.return_value = False
+        resp = self.client.get("/papers/2401.00001")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("Link", resp.headers)
+        link_header = resp.headers["Link"]
+        self.assertIn("export/bibtex", link_header)
+        self.assertIn("export/ris", link_header)
+
 if __name__ == "__main__":
     unittest.main()

@@ -12,11 +12,49 @@
         <i class="bi bi-hand-thumbs-down-fill text-danger"></i> Disliked Papers
         {% elif filter_type == 'search' %}
         <i class="bi bi-search"></i> Search Results
+        {% elif filter_type.startswith('collection:') %}
+        <i class="bi bi-collection-play text-info"></i> {{ filter_type | title }}
+        {% elif filter_type.startswith('tag:') %}
+        <i class="bi bi-tag text-warning"></i> {{ filter_type }}
         {% else %}
-        <i class="bi bi-journals"></i> All Papers
+        <i class="bi bi-journals"></i> {{ filter_type }}
         {% endif %}
     </h1>
-    {% if filter_type != 'search' %}
+    {% if selected_collection_id %}
+    <div class="d-flex gap-2 align-items-center">
+        <div class="dropdown">
+            <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                <i class="bi bi-box-arrow-up"></i> Export Collection
+            </button>
+            <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end">
+                <li>
+                    <a class="dropdown-item" href="{{ url_for('export_bulk_bibtex', collection=selected_collection_id) }}">
+                        <i class="bi bi-file-code me-2"></i>BibTeX (.bib)
+                    </a>
+                </li>
+                <li>
+                    <a class="dropdown-item" href="{{ url_for('export_ris', collection=selected_collection_id) }}">
+                        <i class="bi bi-file-earmark-arrow-up me-2"></i>RIS (.ris)
+                    </a>
+                </li>
+            </ul>
+        </div>
+        <div class="btn-group">
+            <a href="/papers?filter=unrated" class="btn btn-outline-primary {% if filter_type == 'unrated' %}active{% endif %}">
+                Recommended
+            </a>
+            <a href="/papers?filter=liked" class="btn btn-outline-success {% if filter_type == 'liked' %}active{% endif %}">
+                Liked
+            </a>
+            <a href="/papers?filter=disliked" class="btn btn-outline-danger {% if filter_type == 'disliked' %}active{% endif %}">
+                Disliked
+            </a>
+            <a href="/papers?filter=all" class="btn btn-outline-secondary {% if filter_type == 'all' %}active{% endif %}">
+                All
+            </a>
+        </div>
+    </div>
+    {% elif filter_type != 'search' %}
     <div class="btn-group">
         <a href="/papers?filter=unrated" class="btn btn-outline-primary {% if filter_type == 'unrated' %}active{% endif %}">
             Recommended

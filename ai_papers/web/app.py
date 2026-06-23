@@ -51,6 +51,82 @@ def _get_current_user_id() -> int:
     return 1
 
 
+def _paper_to_bibtex(paper: dict) -> str:
+    """Format a paper dictionary into a BibTeX string."""
+    cite_key = paper.get("arxiv_id", "").replace("/", "_")
+    title = paper.get("title", "").replace("\n", " ").strip()
+    authors = " and ".join(paper.get("authors", []))
+    
+    pub_date = paper.get("published", "")
+    year = "2026"
+    if pub_date:
+        try:
+            year = pub_date[:4]
+        except Exception:
+            pass
+            
+    eprint = paper.get("arxiv_id", "")
+    categories = paper.get("categories", [])
+    primary_class = categories[0] if categories else ""
+    
+    lines = [
+        f"@article{{{cite_key},",
+        f"  title={{{title}}},",
+        f"  author={{{authors}}},",
+        f"  journal={{arXiv preprint arXiv:{eprint}}},",
+        f"  year={{{year}}},",
+        f"  eprint={{{eprint}}},",
+        f"  archivePrefix={{arXiv}},"
+    ]
+    if primary_class:
+        lines.append(f"  primaryClass={{{primary_class}}},")
+    if paper.get("url"):
+        lines.append(f"  url={{{paper['url']}}},")
+        
+    lines[-1] = lines[-1].rstrip(",")
+    lines.append("}")
+    return "\n".join(lines)
+
+
+def _paper_to_ris(paper: dict) -> str:
+    """Format a paper dictionary into an RIS string."""
+    lines = []
+    lines.append("TY  - JOUR")
+    
+    title = paper.get("title", "").replace("\n", " ").strip()
+    lines.append(f"TI  - {title}")
+    
+    for author in paper.get("authors", []):
+        lines.append(f"AU  - {author}")
+        
+    eprint = paper.get("arxiv_id", "")
+    lines.append(f"JO  - arXiv preprint arXiv:{eprint}")
+    
+    pub_date = paper.get("published", "")
+    year = ""
+    if pub_date:
+        try:
+            year = pub_date[:4]
+        except Exception:
+            pass
+    if year:
+        lines.append(f"PY  - {year}")
+        
+    if paper.get("url"):
+        lines.append(f"UR  - {paper['url']}")
+        
+    abstract = paper.get("abstract", "").replace("\n", " ").strip()
+    if abstract:
+        lines.append(f"AB  - {abstract}")
+        
+    categories = paper.get("categories", [])
+    for cat in categories:
+        lines.append(f"KW  - {cat}")
+        
+    lines.append("ER  - ")
+    return "\r\n".join(lines)
+
+
 def create_app(config_path: str | None = None) -> Flask:
     """Create and configure the Flask application."""
     setup_logging(level=logging.INFO, structured=True)
@@ -362,16 +438,26 @@ def _register_routes(app: Flask) -> None:
         if not arxiv_id.startswith("s2:") and not arxiv_id.startswith("biorxiv-"):
             ar5iv_url = f"https://ar5iv.labs.arxiv.org/html/{arxiv_id}"
 
-        return render_template(
-            "paper_detail.html",
-            paper=paper,
-            ratings_history=ratings_history,
-            similar_papers=similar_papers,
-            same_author_papers=same_author_papers,
-            collections=collections,
-            ar5iv_url=ar5iv_url,
-            ads_url=ads_url,
+        from flask import make_response
+        response = make_response(
+            render_template(
+                "paper_detail.html",
+                paper=paper,
+                ratings_history=ratings_history,
+                similar_papers=similar_papers,
+                same_author_papers=same_author_papers,
+                collections=collections,
+                ar5iv_url=ar5iv_url,
+                ads_url=ads_url,
+            )
         )
+        bibtex_url = url_for("export_paper_bibtex", arxiv_id=arxiv_id)
+        ris_url = url_for("export_paper_ris", arxiv_id=arxiv_id)
+        response.headers["Link"] = (
+            f'<{bibtex_url}>; rel="alternate"; type="application/x-bibtex", '
+            f'<{ris_url}>; rel="alternate"; type="application/x-research-info-systems"'
+        )
+        return response
 
     @app.route("/api/rate", methods=["POST"])
     @login_required
@@ -1001,3 +1087,117 @@ def _register_routes(app: Flask) -> None:
         config = app.config.get("AI_PAPERS", {})
         tokens = engine.db.get_user_tokens(uid) if engine else []
         return render_template("settings.html", stats=stats_data, config=config, tokens=tokens)
+
+    @app.route("/papers/<path:arxiv_id>/export/bibtex")
+    @login_required
+    def export_paper_bibtex(arxiv_id):
+        if not engine:
+            return "Engine not initialized", 500
+        paper = engine.db.get_paper(arxiv_id)
+        if not paper:
+            return "Paper not found", 404
+        
+        bibtex_content = _paper_to_bibtex(paper)
+        from flask import Response
+        filename = f"{arxiv_id.replace('/', '_')}.bib"
+        return Response(
+            bibtex_content,
+            mimetype="application/x-bibtex",
+            headers={"Content-Disposition": f"attachment; filename=\"{filename}\""}
+        )
+
+    @app.route("/papers/<path:arxiv_id>/export/ris")
+    @login_required
+    def export_paper_ris(arxiv_id):
+        if not engine:
+            return "Engine not initialized", 500
+        paper = engine.db.get_paper(arxiv_id)
+        if not paper:
+            return "Paper not found", 404
+        
+        ris_content = _paper_to_ris(paper)
+        from flask import Response
+        filename = f"{arxiv_id.replace('/', '_')}.ris"
+        return Response(
+            ris_content,
+            mimetype="application/x-research-info-systems",
+            headers={"Content-Disposition": f"attachment; filename=\"{filename}\""}
+        )
+
+    @app.route("/papers/export/bibtex")
+    @login_required
+    def export_bulk_bibtex():
+        if not engine:
+            return "Engine not initialized", 500
+            
+        uid = _get_current_user_id()
+        collection_id = request.args.get("collection")
+        
+        if not collection_id:
+            return "Missing collection ID", 400
+            
+        try:
+            coll_id = int(collection_id)
+        except ValueError:
+            return "Invalid collection ID", 400
+            
+        collection = engine.db.get_collection(coll_id)
+        if not collection or (collection["user_id"] != uid and not collection.get("is_public")):
+            return "Collection not found or access denied", 403
+            
+        papers = engine.db.get_collection_papers(coll_id, limit=1000)
+        
+        bibtex_entries = []
+        for paper in papers:
+            bibtex_entries.append(_paper_to_bibtex(paper))
+            
+        bibtex_content = "\n\n".join(bibtex_entries)
+        from flask import Response
+        filename = f"collection_{coll_id}.bib"
+        return Response(
+            bibtex_content,
+            mimetype="application/x-bibtex",
+            headers={"Content-Disposition": f"attachment; filename=\"{filename}\""}
+        )
+
+    @app.route("/papers/export/ris")
+    @login_required
+    def export_ris():
+        if not engine:
+            return "Engine not initialized", 500
+            
+        uid = _get_current_user_id()
+        arxiv_id = request.args.get("arxiv_id")
+        collection_id = request.args.get("collection")
+        
+        if arxiv_id:
+            paper = engine.db.get_paper(arxiv_id)
+            if not paper:
+                return "Paper not found", 404
+            ris_content = _paper_to_ris(paper)
+            filename = f"{arxiv_id.replace('/', '_')}.ris"
+        elif collection_id:
+            try:
+                coll_id = int(collection_id)
+            except ValueError:
+                return "Invalid collection ID", 400
+                
+            collection = engine.db.get_collection(coll_id)
+            if not collection or (collection["user_id"] != uid and not collection.get("is_public")):
+                return "Collection not found or access denied", 403
+                
+            papers = engine.db.get_collection_papers(coll_id, limit=1000)
+            ris_entries = []
+            for paper in papers:
+                ris_entries.append(_paper_to_ris(paper))
+            ris_content = "\r\n\r\n".join(ris_entries)
+            filename = f"collection_{coll_id}.ris"
+        else:
+            return "Missing arxiv_id or collection parameter", 400
+            
+        from flask import Response
+        return Response(
+            ris_content,
+            mimetype="application/x-research-info-systems",
+            headers={"Content-Disposition": f"attachment; filename=\"{filename}\""}
+        )
