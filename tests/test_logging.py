@@ -67,28 +67,52 @@ class TestLoggingAndObservability(unittest.TestCase):
             logger.propagate = True
 
     def test_flask_request_id_headers_and_logs_endpoint(self):
-        # Use a temporary database directory config to create app
-        with patch("ai_papers.web.app.get_validated_config") as mock_cfg:
+        _test_user = {
+            "id": 1, "email": "log@test.com", "password_hash": "hashed",
+            "is_admin": 1, "is_active": 1, "created_at": "2024-01-01T00:00:00",
+        }
+        with patch("ai_papers.web.app.get_validated_config") as mock_cfg, \
+             patch("ai_papers.web.app.RecommendationEngine") as mock_engine_cls:
             mock_cfg.return_value = {
                 "data_dir": "/tmp/dummy_aura_log_test",
                 "categories": ["astro-ph.CO"],
                 "embedding_model": "all-MiniLM-L6-v2"
             }
-            with patch("ai_papers.web.app.RecommendationEngine"):
-                app = create_app()
-                
+            mock_eng = mock_engine_cls.return_value
+            mock_eng.db.count_users.return_value = 0
+            mock_eng.db.create_user.return_value = _test_user
+            mock_eng.db.get_user_by_email.return_value = _test_user
+            mock_eng.db.get_user_by_id.return_value = _test_user
+            mock_eng.db.get_user_tokens.return_value = []
+            mock_eng.get_stats.return_value = {
+                "database": {"total_papers": 0, "with_embeddings": 0, "total_rated": 5,
+                             "thumbs_up": 0, "thumbs_down": 0, "with_summaries": 0},
+                "model": {"parameters": 0, "embedding_dim": 384, "learning_rate": 0.001,
+                          "total_trained": 0, "replay_buffer_size": 0},
+                "categories": [], "data_dir": "data"
+            }
+            app = create_app()
+
         app.testing = True
         client = app.test_client()
+
+        # Log in so /api/logs route is accessible
+        with patch("ai_papers.web.app.generate_password_hash", return_value="hashed"), \
+             patch("ai_papers.web.app.check_password_hash", return_value=True):
+            client.post("/register", data={"email": "log@test.com", "password": "pass123",
+                                           "confirm_password": "pass123"}, follow_redirects=True)
+            client.post("/login", data={"email": "log@test.com", "password": "pass123"},
+                        follow_redirects=True)
 
         # 1. Verify X-Request-ID propagation
         custom_req_id = "test-uuid-999"
         resp = client.get("/health", headers={"X-Request-ID": custom_req_id})
         self.assertEqual(resp.headers.get("X-Request-ID"), custom_req_id)
-        
+
         # Verify logger contains custom_req_id in memory logs
         logs = memory_log_handler.get_logs()
         self.assertTrue(len(logs) > 0)
-        
+
         # 2. Verify /api/logs endpoint returns log objects
         resp = client.get("/api/logs")
         self.assertEqual(resp.status_code, 200)

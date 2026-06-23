@@ -136,6 +136,42 @@
     </div>
 </div>
 
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-key"></i> API Tokens</h5>
+                <button class="btn btn-primary btn-sm" onclick="createToken()">
+                    <i class="bi bi-plus-circle me-1"></i>New Token
+                </button>
+            </div>
+            <div class="card-body">
+                <p class="text-muted small">Use API tokens to authenticate requests from scripts or external tools. Tokens are shown only once on creation.</p>
+                {% if tokens %}
+                <table class="table table-sm">
+                    <thead><tr><th>Token</th><th>Created</th><th></th></tr></thead>
+                    <tbody>
+                        {% for t in tokens %}
+                        <tr>
+                            <td><code class="text-muted">{{ t.token[:8] }}&hellip;</code></td>
+                            <td class="text-muted small">{{ t.created_at[:10] }}</td>
+                            <td><button class="btn btn-link text-danger btn-sm p-0" onclick="revokeToken({{ t.id }})">Revoke</button></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p class="text-muted small">No tokens yet.</p>
+                {% endif %}
+                <div id="new-token-display" class="alert alert-success d-none mt-2">
+                    <strong>New token (copy now &mdash; won't be shown again):</strong><br>
+                    <code id="new-token-value"></code>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div id="status-toast" class="toast-container position-fixed bottom-0 end-0 p-3">
     <div class="toast" role="alert" id="actionToast">
         <div class="toast-header">
@@ -224,6 +260,26 @@ async function resetModel() {
     } catch (e) {
         showToast('Error', 'Reset failed: ' + e.message);
     }
+}
+
+async function createToken() {
+    const r = await fetch('/api/tokens', { method: 'POST', headers: {'Content-Type': 'application/json'} });
+    const d = await r.json();
+    if (d.token) {
+        document.getElementById('new-token-value').textContent = d.token;
+        document.getElementById('new-token-display').classList.remove('d-none');
+        setTimeout(() => location.reload(), 8000);
+    } else {
+        showToast('Error', d.error || 'Failed to create token');
+    }
+}
+
+async function revokeToken(id) {
+    if (!confirm('Revoke this token?')) return;
+    const r = await fetch('/api/tokens/' + id, { method: 'DELETE' });
+    const d = await r.json();
+    if (d.status === 'ok') location.reload();
+    else showToast('Error', d.error || 'Failed to revoke token');
 }
 </script>
 {% endblock %}

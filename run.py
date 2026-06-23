@@ -174,6 +174,21 @@ def cmd_email_digest(args, config):
     print(json.dumps(result, indent=2))
 
 
+def cmd_group_digest(args, config):
+    """Send a group digest email to all members of a group."""
+    from ai_papers.email_digest import send_group_digest_email
+
+    result = send_group_digest_email(
+        data_dir=config.get("data_dir", "data"),
+        group_id=args.group_id,
+        categories=config.get("categories", ["astro-ph.CO", "astro-ph.GA"]),
+        embedding_model=config.get("embedding_model", "all-MiniLM-L6-v2"),
+        email_config_path=args.email_config,
+        top_n=args.top_n,
+    )
+    print(json.dumps(result, indent=2))
+
+
 def cmd_cleanup_topics(args, config):
     """Cleanup junk entries from research_topics.json."""
     from ai_papers.trends import cleanup_topics
@@ -298,6 +313,23 @@ def main():
         help="Path to email config JSON",
     )
 
+    # group digest
+    group_parser = subparsers.add_parser(
+        "group-digest",
+        help="Email group recommended papers to group members",
+    )
+    group_parser.add_argument(
+        "--group-id", type=int, required=True, help="ID of the research group"
+    )
+    group_parser.add_argument(
+        "--top-n", type=int, default=5, help="Number of papers to include"
+    )
+    group_parser.add_argument(
+        "--email-config",
+        default="user_credentials/email_config.json",
+        help="Path to email config JSON",
+    )
+
     # stats
     subparsers.add_parser("stats", help="Show system stats")
 
@@ -329,6 +361,7 @@ def main():
         "summarize": cmd_summarize,
         "recommend": cmd_recommend,
         "email-digest": cmd_email_digest,
+        "group-digest": cmd_group_digest,
         "retrain": cmd_retrain,
         "stats": cmd_stats,
         "migrate": cmd_migrate,

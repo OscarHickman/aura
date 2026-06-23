@@ -217,22 +217,22 @@ def generate_missing_summaries_task(self, limit=50, include_failed=True):
         engine.close()
 
 @celery_app.task(bind=True)
-def retrain_full_task(self, epochs=20):
+def retrain_full_task(self, epochs=20, user_id=1):
     engine = RecommendationEngine(
         data_dir=config.get("data_dir", "data"),
         categories=config.get("categories", ["astro-ph.CO", "astro-ph.GA"]),
         embedding_model=config.get("embedding_model", "all-MiniLM-L6-v2"),
         sources_config=config.get("sources", {}),
     )
-    
+
     task_id = self.request.id
     engine.db.create_task_entry(task_id, "retrain", status="RUNNING")
-    
+
     def progress_callback(current, total):
         engine.db.update_task_progress(task_id, progress=current, total=total)
-        
+
     try:
-        result = engine.retrain_full(epochs=epochs, progress_callback=progress_callback)
+        result = engine.retrain_full(epochs=epochs, user_id=user_id, progress_callback=progress_callback)
         engine.db.complete_task(task_id, status="SUCCESS", result=result)
         return result
     except Exception as e:

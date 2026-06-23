@@ -195,6 +195,59 @@ class TestEmailDigest(unittest.TestCase):
         self.assertEqual(res[0]["summary"], "Gen summary 1")
         self.assertEqual(res[1]["summary"], "AI FAIL")
 
+    @patch("ai_papers.email_digest._send_smtp_email")
+    @patch("ai_papers.email_digest.RecommendationEngine")
+    def test_send_group_digest_email(self, mock_engine_cls, mock_send):
+        engine = Mock()
+        engine.db.get_group.return_value = {"id": 1, "name": "Lab Group"}
+        engine.db.get_group_members.return_value = [
+            {"id": 1, "email": "alice@example.com"},
+            {"id": 2, "email": "bob@example.com"}
+        ]
+        engine.db.get_group_paper_feed.return_value = [
+            {
+                "arxiv_id": "2401.00001",
+                "title": "Paper G",
+                "authors": ["Ada"],
+                "best_rating": 5,
+                "url": "http://arxiv.org/abs/2401.00001",
+                "summary": "Group paper summary",
+            }
+        ]
+        mock_engine_cls.return_value = engine
+
+        with tempfile.TemporaryDirectory() as td:
+            cfg = Path(td) / "email.json"
+            cfg.write_text(
+                """
+{
+  "smtp_host": "smtp.example.com",
+  "smtp_port": 587,
+  "smtp_username": "u",
+  "smtp_password": "p",
+  "from_email": "from@example.com",
+  "to_email": "to@example.com",
+  "use_tls": true,
+  "use_ssl": false
+}
+                """.strip()
+            )
+
+            result = email_digest.send_group_digest_email(
+                data_dir="data",
+                group_id=1,
+                categories=["astro-ph.CO"],
+                embedding_model="all-MiniLM-L6-v2",
+                email_config_path=str(cfg),
+                top_n=3,
+            )
+
+        self.assertEqual(result["status"], "sent")
+        self.assertTrue(result["sent"])
+        self.assertEqual(result["sent_count"], 2)
+        self.assertEqual(result["sent_to"], ["alice@example.com", "bob@example.com"])
+        self.assertEqual(mock_send.call_count, 2)
+        engine.close.assert_called_once()
 
 if __name__ == "__main__":
     unittest.main()

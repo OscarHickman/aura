@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Public Collections — AURA{% endblock %}
+{% block content %}
+<h2 class="mb-4"><i class="bi bi-collection me-2"></i>Public Collections</h2>
+
+{% if collections %}
+<div class="row">
+  {% for coll in collections %}
+  <div class="col-md-4 mb-3">
+    <div class="card border-secondary h-100">
+      <div class="card-body">
+        <h6 class="card-title">
+          <a href="/collections/{{ coll.slug }}" class="text-decoration-none">{{ coll.name }}</a>
+        </h6>
+        {% if coll.description %}<p class="text-muted small mb-2">{{ coll.description }}</p>{% endif %}
+        <div class="text-muted small">
+          <i class="bi bi-file-text me-1"></i>{{ coll.paper_count }} papers
+          &nbsp;&bull;&nbsp;
+          <i class="bi bi-person me-1"></i>{{ coll.owner_email }}
+        </div>
+      </div>
+      <div class="card-footer bg-transparent border-0">
+        <a href="/collections/{{ coll.slug }}" class="btn btn-outline-secondary btn-sm">View</a>
+        <button class="btn btn-outline-primary btn-sm" onclick="forkCollection({{ coll.id }})">
+          <i class="bi bi-git me-1"></i>Fork
+        </button>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="text-muted text-center py-5">
+  <i class="bi bi-collection display-4 d-block mb-3"></i>
+  No public collections yet. Share a collection from your <a href="/settings">Settings</a> page.
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+async function forkCollection(id) {
+  const r = await fetch('/api/collections/' + id + '/fork', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({})
+  });
+  const d = await r.json();
+  if (d.status === 'ok') {
+    alert('Collection forked! View it in your Settings page.');
+  } else {
+    alert('Error: ' + (d.error || JSON.stringify(d)));
+  }
+}
+</script>
+{% endblock %}

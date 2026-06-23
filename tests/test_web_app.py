@@ -91,11 +91,44 @@ class TestWebApp(unittest.TestCase):
         self.engine.retrain_full.return_value = {"status": "retrained"}
         self.engine.fetch_new_papers.return_value = 3
 
+        # Multi-user mocks required by Flask-Login
+        _test_user = {
+            "id": 1,
+            "email": "test@example.com",
+            "password_hash": "hashed",
+            "is_admin": 1,
+            "is_active": 1,
+            "created_at": "2024-01-01T00:00:00",
+        }
+        self.engine.db.count_users.return_value = 0
+        self.engine.db.create_user.return_value = _test_user
+        self.engine.db.get_user_by_email.return_value = _test_user
+        self.engine.db.get_user_by_id.return_value = _test_user
+        self.engine.db.get_user_tokens.return_value = []
+        self.engine.db.get_user_groups.return_value = []
+        self.engine.db.get_all_groups.return_value = []
+        self.engine.db.get_public_collections.return_value = []
+        self.engine.db.get_all_users.return_value = [_test_user]
+        self.engine.db.get_fetch_log.return_value = []
+
         with patch("ai_papers.web.app.RecommendationEngine", return_value=self.engine):
             app = create_app()
 
         app.testing = True
         self.client = app.test_client()
+
+        # Register and log in so Flask-Login doesn't redirect all routes
+        with patch("ai_papers.web.app.generate_password_hash", return_value="hashed"), \
+             patch("ai_papers.web.app.check_password_hash", return_value=True):
+            self.client.post("/register", data={
+                "email": "test@example.com",
+                "password": "password123",
+                "confirm_password": "password123",
+            }, follow_redirects=True)
+            self.client.post("/login", data={
+                "email": "test@example.com",
+                "password": "password123",
+            }, follow_redirects=True)
 
     def test_routes_html(self):
         # Test main HTML pages render successfully (status 200)
@@ -306,14 +339,14 @@ class TestWebApp(unittest.TestCase):
         resp = self.client.post("/api/papers/2401.00001/tags", json={"tag": "quantum"})
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json(), {"status": "ok", "tag": "quantum"})
-        self.engine.db.add_tag.assert_called_with("2401.00001", "quantum")
+        self.engine.db.add_tag.assert_called_with("2401.00001", "quantum", user_id=1)
 
         # 3. API: remove tag
         self.engine.db.remove_tag.return_value = True
         resp = self.client.delete("/api/papers/2401.00001/tags/quantum")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json(), {"status": "ok"})
-        self.engine.db.remove_tag.assert_called_with("2401.00001", "quantum")
+        self.engine.db.remove_tag.assert_called_with("2401.00001", "quantum", user_id=1)
 
         # 4. API: collections list
         self.engine.db.get_collections.return_value = [{"id": 1, "name": "A", "paper_count": 0}]
@@ -326,34 +359,34 @@ class TestWebApp(unittest.TestCase):
         resp = self.client.post("/api/collections", json={"name": "B", "description": "Desc"})
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json(), {"status": "ok", "id": 2, "name": "B"})
-        self.engine.db.create_collection.assert_called_with("B", "Desc")
+        self.engine.db.create_collection.assert_called_with("B", user_id=1, description="Desc")
 
         # 6. API: delete collection
         self.engine.db.delete_collection.return_value = True
         resp = self.client.delete("/api/collections/2")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json(), {"status": "ok"})
-        self.engine.db.delete_collection.assert_called_with(2)
+        self.engine.db.delete_collection.assert_called_with(2, user_id=1)
 
         # 7. API: add paper to collection
         self.engine.db.add_paper_to_collection.return_value = True
         resp = self.client.post("/api/collections/1/papers", json={"arxiv_id": "2401.00001"})
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json(), {"status": "ok"})
-        self.engine.db.add_paper_to_collection.assert_called_with(1, "2401.00001")
+        self.engine.db.add_paper_to_collection.assert_called_with(1, "2401.00001", user_id=1)
 
         # 8. API: remove paper from collection
         self.engine.db.remove_paper_from_collection.return_value = True
         resp = self.client.delete("/api/collections/1/papers/2401.00001")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json(), {"status": "ok"})
-        self.engine.db.remove_paper_from_collection.assert_called_with(1, "2401.00001")
+        self.engine.db.remove_paper_from_collection.assert_called_with(1, "2401.00001", user_id=1)
 
         # 9. UI: Browse by tag / collection
         self.engine.db.get_papers_by_tag.return_value = []
         resp = self.client.get("/papers?tag=ml")
         self.assertEqual(resp.status_code, 200)
-        self.engine.db.get_papers_by_tag.assert_called_with("ml", limit=200)
+        self.engine.db.get_papers_by_tag.assert_called_with("ml", user_id=1, limit=200)
 
         self.engine.db.get_collection_papers.return_value = []
         self.engine.db.get_collection.return_value = {"id": 1, "name": "A"}
@@ -373,21 +406,21 @@ class TestWebApp(unittest.TestCase):
         resp = self.client.post("/api/papers/2401.00001/notes", json={"content": "note 2"})
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json(), {"status": "ok", "id": 2})
-        self.engine.db.add_note.assert_called_with("2401.00001", "note 2")
+        self.engine.db.add_note.assert_called_with("2401.00001", "note 2", user_id=1)
 
         # 3. API: update note
         self.engine.db.update_note.return_value = True
         resp = self.client.put("/api/notes/1", json={"content": "updated"})
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json(), {"status": "ok"})
-        self.engine.db.update_note.assert_called_with(1, "updated")
+        self.engine.db.update_note.assert_called_with(1, "updated", user_id=1)
 
         # 4. API: delete note
         self.engine.db.delete_note.return_value = True
         resp = self.client.delete("/api/notes/1")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json(), {"status": "ok"})
-        self.engine.db.delete_note.assert_called_with(1)
+        self.engine.db.delete_note.assert_called_with(1, user_id=1)
 
         # 5. UI: Paper detail includes notes
         self.engine.db.get_paper.return_value = {
@@ -427,21 +460,55 @@ class TestWebApp(unittest.TestCase):
         resp = self.client.post("/api/reading-list", json={"arxiv_id": "2401.00001"})
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json(), {"status": "ok"})
-        self.engine.db.add_to_reading_list.assert_called_with("2401.00001")
+        self.engine.db.add_to_reading_list.assert_called_with("2401.00001", user_id=1)
 
         # 3. API: remove from reading list
         self.engine.db.remove_from_reading_list.return_value = True
         resp = self.client.delete("/api/reading-list/2401.00001")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json(), {"status": "ok"})
-        self.engine.db.remove_from_reading_list.assert_called_with("2401.00001")
+        self.engine.db.remove_from_reading_list.assert_called_with("2401.00001", user_id=1)
 
         # 4. API: mark as read
         self.engine.db.mark_as_read.return_value = True
         resp = self.client.put("/api/reading-list/2401.00001/read")
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json(), {"status": "ok"})
-        self.engine.db.mark_as_read.assert_called_with("2401.00001")
+        self.engine.db.mark_as_read.assert_called_with("2401.00001", user_id=1)
+
+    def test_admin_routes(self):
+        # 1. GET /admin panel
+        self.engine.db.get_all_users.return_value = [{"id": 1, "email": "test@example.com", "is_admin": 1, "is_active": 1, "created_at": "2026-01-01T00:00:00"}]
+        self.engine.db.get_fetch_log.return_value = []
+        resp = self.client.get("/admin")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b"Admin Panel", resp.data)
+
+        # 2. POST /api/admin/users/2/suspend
+        self.engine.db.update_user.return_value = True
+        resp = self.client.post("/api/admin/users/2/suspend")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json(), {"status": "ok"})
+        self.engine.db.update_user.assert_called_with(2, is_active=False)
+
+        # 3. POST /api/admin/users/2/activate
+        resp = self.client.post("/api/admin/users/2/activate")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json(), {"status": "ok"})
+        self.engine.db.update_user.assert_called_with(2, is_active=True)
+
+        # 4. DELETE /api/admin/users/2
+        self.engine.db.delete_user.return_value = True
+        resp = self.client.delete("/api/admin/users/2")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json(), {"status": "ok"})
+        self.engine.db.delete_user.assert_called_with(2)
+
+        # 5. POST /api/admin/users/2/reset-password
+        resp = self.client.post("/api/admin/users/2/reset-password", json={"password": "newpassword123"})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json(), {"status": "ok"})
+        self.assertTrue(self.engine.db.update_user.called)
 
 if __name__ == "__main__":
     unittest.main()

@@ -331,3 +331,122 @@ def send_top_recommendations_email(
         }
     finally:
         engine.close()
+
+
+def send_group_digest_email(
+    data_dir: str,
+    group_id: int,
+    categories: list[str],
+    embedding_model: str,
+    email_config_path: Optional[str] = None,
+    top_n: int = 5,
+) -> dict:
+    """Generate a digest of papers highly rated by group members and email it to all group members."""
+    email_config = load_email_config(email_config_path)
+    engine = RecommendationEngine(
+        data_dir=data_dir,
+        categories=categories,
+        embedding_model=embedding_model,
+    )
+    try:
+        group = engine.db.get_group(group_id)
+        if not group:
+            raise ValueError(f"Group with ID {group_id} not found")
+
+        members = engine.db.get_group_members(group_id)
+        recipient_emails = [m["email"] for m in members if m.get("email")]
+        if not recipient_emails:
+            return {
+                "status": "no_members",
+                "sent": False,
+                "message": f"No group members with emails in group {group['name']}",
+            }
+
+        # Get papers from the group paper feed
+        papers = engine.db.get_group_paper_feed(group_id, limit=top_n)
+        if not papers:
+            return {
+                "status": "no_papers",
+                "sent": False,
+                "message": f"No highly rated papers in feed for group {group['name']}",
+            }
+
+        # Ensure all papers have summaries
+        hydrated = []
+        for paper in papers:
+            summary = (paper.get("summary") or "").strip()
+            if not summary or summary == AI_FAIL_SUMMARY:
+                result = engine.generate_summary_for_paper(paper["arxiv_id"])
+                summary = (result.get("summary") or "").strip()
+            if not summary:
+                summary = AI_FAIL_SUMMARY
+            updated = dict(paper)
+            updated["summary"] = summary
+            hydrated.append(updated)
+
+        subject_prefix = email_config.get("subject_prefix", "AURA")
+        today = date.today().isoformat()
+        subject = f"{subject_prefix} Group Digest: {group['name']} ({today})"
+
+        text_lines = [f"{subject_prefix} - {group['name']} Group Feed Digest", ""]
+        html_items = [f"<h2>{group['name']} Group Feed Digest</h2>"]
+
+        for i, paper in enumerate(hydrated, 1):
+            authors = ", ".join(paper.get("authors", [])[:3])
+            summary = paper.get("summary", AI_FAIL_SUMMARY)
+            url = paper.get("url", "")
+            rating = paper.get("best_rating", 4)
+            text_lines.extend([
+                f"{i}. {paper.get('title', 'Untitled')} (Max rating: {rating})",
+                f"Authors: {authors}",
+                f"URL: {url}",
+                f"Summary: {summary}",
+                ""
+            ])
+            html_items.append(
+                """
+                <div style="margin-bottom:20px;padding:14px;border:1px solid #ddd;border-radius:8px;">
+                  <h3 style="margin:0 0 8px 0;">{idx}. {title} <span style="font-size:12px;color:#666;">(Rating: {rating}/5)</span></h3>
+                  <p style="margin:0 0 8px 0;color:#555;"><strong>Authors:</strong> {authors}</p>
+                  <p style="margin:0 0 8px 0;"><a href="{url}">{url}</a></p>
+                  <p style="margin:0;line-height:1.5;">{summary}</p>
+                </div>
+                """.format(
+                    idx=i,
+                    title=paper.get("title", "Untitled"),
+                    rating=rating,
+                    authors=authors,
+                    url=url,
+                    summary=summary,
+                )
+            )
+
+        html_body = (
+            "<html><body>"
+            f"<h2 style='font-family:Arial,sans-serif'>{group['name']} Lab/Group Digest</h2>"
+            f"<p style='font-family:Arial,sans-serif'>Here are the latest highly-rated papers shared by members of your group.</p>"
+            "<div style='font-family:Arial,sans-serif;font-size:14px'>"
+            + "".join(html_items)
+            + "</div></body></html>"
+        )
+
+        sent_count = 0
+        for email in recipient_emails:
+            cfg = dict(email_config)
+            cfg["to_email"] = email
+            if cfg.get("use_graph_api", False):
+                _send_graph_email(cfg, subject, "\n".join(text_lines), html_body)
+            else:
+                _send_smtp_email(cfg, subject, "\n".join(text_lines), html_body)
+            sent_count += 1
+
+        return {
+            "status": "sent",
+            "sent": True,
+            "count": len(papers),
+            "sent_to": recipient_emails,
+            "sent_count": sent_count,
+            "subject": subject,
+        }
+    finally:
+        engine.close()

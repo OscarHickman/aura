@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Groups — AURA{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center justify-content-between mb-4">
+  <h2 class="mb-0"><i class="bi bi-people me-2"></i>Groups</h2>
+  {% if current_user.is_admin %}
+  <button class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#createGroupModal">
+    <i class="bi bi-plus-circle me-1"></i>New Group
+  </button>
+  {% endif %}
+</div>
+
+{% if my_groups %}
+<h5 class="text-muted mb-3">Your Groups</h5>
+<div class="row mb-4">
+  {% for g in my_groups %}
+  <div class="col-md-4 mb-3">
+    <div class="card border-secondary h-100">
+      <div class="card-body">
+        <h6 class="card-title"><a href="/groups/{{ g.id }}" class="text-decoration-none">{{ g.name }}</a></h6>
+        {% if g.description %}<p class="text-muted small mb-2">{{ g.description }}</p>{% endif %}
+        <span class="badge bg-secondary">{{ g.role }}</span>
+      </div>
+      <div class="card-footer bg-transparent border-0 pt-0">
+        <a href="/groups/{{ g.id }}" class="btn btn-outline-secondary btn-sm">View Feed</a>
+        <button class="btn btn-outline-danger btn-sm" onclick="leaveGroup({{ g.id }})">Leave</button>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<h5 class="text-muted mb-3">All Groups</h5>
+{% if all_groups %}
+<div class="list-group">
+  {% for g in all_groups %}
+  <div class="list-group-item list-group-item-action d-flex justify-content-between align-items-center border-secondary">
+    <div>
+      <a href="/groups/{{ g.id }}" class="fw-semibold text-decoration-none">{{ g.name }}</a>
+      {% if g.description %}<div class="text-muted small">{{ g.description }}</div>{% endif %}
+    </div>
+    <button class="btn btn-outline-primary btn-sm" onclick="joinGroup({{ g.id }})">Join</button>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<p class="text-muted">No groups yet. {% if current_user.is_admin %}Create one above.{% else %}Ask an admin to create groups.{% endif %}</p>
+{% endif %}
+
+{% if current_user.is_admin %}
+<div class="modal fade" id="createGroupModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content bg-dark">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title">Create Group</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="mb-3">
+          <label class="form-label">Name</label>
+          <input type="text" class="form-control" id="newGroupName" placeholder="e.g. Cosmology Lab">
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Description (optional)</label>
+          <input type="text" class="form-control" id="newGroupDesc">
+        </div>
+      </div>
+      <div class="modal-footer border-secondary">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary" onclick="createGroup()">Create</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+{% block scripts %}
+<script>
+async function joinGroup(id) {
+  const r = await fetch('/api/groups/' + id + '/join', { method: 'POST', headers: {'Content-Type':'application/json'} });
+  const d = await r.json();
+  if (d.status === 'ok') location.reload();
+  else alert('Error: ' + JSON.stringify(d));
+}
+async function leaveGroup(id) {
+  if (!confirm('Leave this group?')) return;
+  const r = await fetch('/api/groups/' + id + '/leave', { method: 'POST', headers: {'Content-Type':'application/json'} });
+  const d = await r.json();
+  if (d.status === 'ok') location.reload();
+}
+async function createGroup() {
+  const name = document.getElementById('newGroupName').value.trim();
+  const desc = document.getElementById('newGroupDesc').value.trim();
+  if (!name) { alert('Name is required'); return; }
+  const r = await fetch('/api/groups', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ name, description: desc || null })
+  });
+  const d = await r.json();
+  if (d.status === 'ok') location.reload();
+  else alert('Error: ' + JSON.stringify(d));
+}
+</script>
+{% endblock %}

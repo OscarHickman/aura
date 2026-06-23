@@ -15,47 +15,7 @@
 
 ---
 
-## Phase 5 — Multi-User & Authentication
 
-*Turn a solo tool into a shared lab resource.*
-
-### 5.1 User Accounts
-**Why it matters:** AURA has a global singleton `engine` in `app.py`. All users share one preference model and one rating history. This is incompatible with shared deployments.
-
-- [ ] Add `users` table: `id`, `email`, `password_hash`, `created_at`
-- [ ] Implement session auth via `flask-login` with bcrypt password hashing
-- [ ] Scope all ratings, tags, collections, and reading lists to `user_id`
-- [ ] Each user gets their own preference model file (`data/models/{user_id}.pt`)
-- [ ] Add `/login`, `/logout`, `/register` routes
-
-### 5.2 API Tokens
-- [ ] Add `api_tokens` table for programmatic access
-- [ ] `POST /api/tokens` to create tokens (scoped: read, write, admin)
-- [ ] Support `Authorization: Bearer <token>` header on all API routes
-- [ ] Token revocation endpoint
-
-### 5.3 Admin Panel
-- [ ] `/admin` route showing all users, fetch history, system health
-- [ ] Admin can trigger global fetch, summarize, and retrain
-- [ ] User management: suspend, delete, reset password
-
----
-
-## Phase 6 — Collaboration & Sharing
-
-*Research is social.*
-
-### 6.2 Shared Collections
-- [ ] Collections can be made public or shared with specific users
-- [ ] Public collections get a shareable URL (`/collections/{slug}`)
-- [ ] Allow "forking" a public collection into your own library
-
-### 6.3 Lab/Team Groups
-- [ ] Add `groups` table: users can belong to multiple groups
-- [ ] Group paper feed: shows papers highly rated by any group member
-- [ ] Group digest email: aggregated recommendations for the whole lab
-
----
 
 ## Phase 7 — Notifications & Integrations
 

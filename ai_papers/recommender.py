@@ -50,11 +50,27 @@ class RecommendationEngine:
         # Initialize components
         self.db = PaperDatabase(self.data_dir / "papers.db")
 
-        embedding_dim = get_embedding_dim(embedding_model)
+        self._embedding_dim = get_embedding_dim(embedding_model)
+        # Legacy default model (user_id=1 / single-user deployments)
         self.preference_model = PreferenceModel(
             model_path=self.data_dir / "preference_model.pt",
-            embedding_dim=embedding_dim,
+            embedding_dim=self._embedding_dim,
         )
+        # Per-user model cache: {user_id: PreferenceModel}
+        self._user_models: dict[int, PreferenceModel] = {1: self.preference_model}
+
+    def get_user_preference_model(self, user_id: int) -> PreferenceModel:
+        """Return the preference model for a given user, creating it if needed."""
+        if user_id in self._user_models:
+            return self._user_models[user_id]
+        models_dir = self.data_dir / "models"
+        models_dir.mkdir(exist_ok=True)
+        model = PreferenceModel(
+            model_path=models_dir / f"{user_id}.pt",
+            embedding_dim=self._embedding_dim,
+        )
+        self._user_models[user_id] = model
+        return model
 
     def fetch_new_papers(
         self,
@@ -207,7 +223,7 @@ class RecommendationEngine:
         }
 
     def get_recommendations(
-        self, limit: int = 50, unrated_only: bool = True
+        self, limit: int = 50, unrated_only: bool = True, user_id: int = 1
     ) -> list[dict]:
         """Get papers ranked by predicted interest score with freshness boost.
 
@@ -247,8 +263,9 @@ class RecommendationEngine:
                 scorable_papers.append(paper)
 
         # Get preference model scores
+        pref_model = self.get_user_preference_model(user_id)
         if embeddings:
-            model_scores, uncertainties = self.preference_model.predict_batch(embeddings)
+            model_scores, uncertainties = pref_model.predict_batch(embeddings)
             for paper, score, unc in zip(scorable_papers, model_scores, uncertainties):
                 paper["model_score"] = float(score)
                 paper["model_uncertainty"] = float(unc)
@@ -345,7 +362,7 @@ class RecommendationEngine:
 
         _, current_emb = current_data[0]
 
-        rated_papers = self.db.get_rated_papers()
+        rated_papers = self.db.get_rated_papers(user_id=1)
         liked_papers = [(p, emb) for p, emb, rating in rated_papers if rating >= 4 or rating == 1]
 
         similarities = []
@@ -365,7 +382,7 @@ class RecommendationEngine:
         similarities.sort(key=lambda p: p["similarity"], reverse=True)
         return similarities[:limit]
 
-    def rate_paper(self, arxiv_id: str, rating: int) -> dict:
+    def rate_paper(self, arxiv_id: str, rating: int, user_id: int = 1) -> dict:
         """Rate a paper and immediately update the model (online learning).
 
         Args:
@@ -376,7 +393,7 @@ class RecommendationEngine:
             Dict with training result info.
         """
         # Save rating to database
-        self.db.rate_paper(arxiv_id, rating)
+        self.db.rate_paper(arxiv_id, rating, user_id=user_id)
 
         if rating == -1:
             return {"status": "rated", "trained": False, "reason": "skipped"}
@@ -386,10 +403,7 @@ class RecommendationEngine:
         if not papers_emb:
             return {"status": "rated", "trained": False, "reason": "no embedding"}
 
-        (
-            _,
-            embedding,
-        ) = papers_emb[0]
+        _, embedding = papers_emb[0]
 
         # Map legacy 0/1 to 0.0/1.0, and 1-5 stars to 0.0-1.0
         if rating == 0:
@@ -399,22 +413,19 @@ class RecommendationEngine:
         else:
             label = (rating - 1) / 4.0
 
-        # Online learning: train on this single example
-        loss = self.preference_model.train_single(embedding, label, arxiv_id=arxiv_id)
+        pref_model = self.get_user_preference_model(user_id)
+        loss = pref_model.train_single(embedding, label, arxiv_id=arxiv_id)
 
         return {
             "status": "rated",
             "trained": True,
             "loss": loss,
-            "total_trained": self.preference_model.total_trained,
+            "total_trained": pref_model.total_trained,
         }
 
-    def retrain_full(self, epochs: int = 20, progress_callback=None) -> dict:
-        """Retrain the model on all rated papers from scratch.
-
-        Useful after accumulating many ratings to get a better model.
-        """
-        embeddings, labels = self.db.get_training_data()
+    def retrain_full(self, epochs: int = 20, user_id: int = 1, progress_callback=None) -> dict:
+        """Retrain a user's model on all their rated papers from scratch."""
+        embeddings, labels = self.db.get_training_data(user_id=user_id)
 
         if not embeddings:
             return {
@@ -422,16 +433,16 @@ class RecommendationEngine:
                 "message": "No rated papers with embeddings found",
             }
 
-        # Reset model for full retrain
-        embedding_dim = self.preference_model.embedding_dim
-        self.preference_model = PreferenceModel(
-            model_path=self.data_dir / "preference_model.pt",
-            embedding_dim=embedding_dim,
+        pref_model = self.get_user_preference_model(user_id)
+        pref_model = PreferenceModel(
+            model_path=pref_model.model_path,
+            embedding_dim=self._embedding_dim,
         )
-        # Don't load existing weights - fresh start
-        self.preference_model.model_path = self.data_dir / "preference_model.pt"
+        self._user_models[user_id] = pref_model
+        if user_id == 1:
+            self.preference_model = pref_model
 
-        loss = self.preference_model.train_step(
+        loss = pref_model.train_step(
             embeddings, labels, epochs=epochs, progress_callback=progress_callback, use_scheduler=True
         )
 
@@ -443,10 +454,11 @@ class RecommendationEngine:
             "final_loss": loss,
         }
 
-    def get_stats(self) -> dict:
+    def get_stats(self, user_id: int = 1) -> dict:
         """Get comprehensive statistics about the system."""
-        db_stats = self.db.get_stats()
-        model_stats = self.preference_model.get_stats()
+        db_stats = self.db.get_stats(user_id=user_id)
+        pref_model = self.get_user_preference_model(user_id)
+        model_stats = pref_model.get_stats()
         return {
             "database": db_stats,
             "model": model_stats,

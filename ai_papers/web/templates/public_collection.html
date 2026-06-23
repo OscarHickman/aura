@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}{{ collection.name }} — AURA{% endblock %}
+{% block content %}
+<div class="mb-4">
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb">
+      <li class="breadcrumb-item"><a href="/collections">Public Collections</a></li>
+      <li class="breadcrumb-item active">{{ collection.name }}</li>
+    </ol>
+  </nav>
+  <h2>{{ collection.name }}</h2>
+  {% if collection.description %}<p class="text-muted">{{ collection.description }}</p>{% endif %}
+  <div class="d-flex gap-2 align-items-center">
+    <span class="text-muted small"><i class="bi bi-file-text me-1"></i>{{ papers | length }} papers</span>
+    {% if current_user.is_authenticated %}
+    <button class="btn btn-outline-primary btn-sm" onclick="forkCollection({{ collection.id }})">
+      <i class="bi bi-git me-1"></i>Fork to my library
+    </button>
+    {% endif %}
+  </div>
+</div>
+
+{% for paper in papers %}
+<div class="card border-secondary mb-2">
+  <div class="card-body py-2">
+    <h6 class="mb-1">
+      {% if current_user.is_authenticated %}
+        <a href="/papers/{{ paper.arxiv_id }}" class="text-decoration-none">{{ paper.title }}</a>
+      {% else %}
+        {{ paper.title }}
+      {% endif %}
+    </h6>
+    <div class="text-muted small">
+      {% if paper.authors %}{{ paper.authors[:2] | join(', ') }}{% if paper.authors | length > 2 %} et al.{% endif %}{% endif %}
+      &mdash; {{ paper.published[:10] }}
+    </div>
+  </div>
+</div>
+{% else %}
+<p class="text-muted">This collection is empty.</p>
+{% endfor %}
+{% endblock %}
+{% block scripts %}
+{% if current_user.is_authenticated %}
+<script>
+async function forkCollection(id) {
+  const r = await fetch('/api/collections/' + id + '/fork', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({})
+  });
+  const d = await r.json();
+  if (d.status === 'ok') alert('Forked! Check your collections in Settings.');
+  else alert('Error: ' + (d.error || JSON.stringify(d)));
+}
+</script>
+{% endif %}
+{% endblock %}
