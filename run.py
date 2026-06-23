@@ -15,6 +15,7 @@ Usage:
 import argparse
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 
@@ -212,6 +213,252 @@ def cmd_cleanup_topics(args, config):
     cleanup_topics(data_dir)
 
 
+def cmd_init(args, config):
+    """Interactively initialize AURA configuration."""
+    import subprocess
+    subprocess.run(["./setup.sh"], check=True)
+
+
+def cmd_doctor(args, config):
+    """Validate environment, configuration, and dependencies."""
+    print("Checking AURA health status...")
+    all_ok = True
+    
+    # 1. Check Python version
+    import sys
+    print(f"  [+] Python version: {sys.version.split()[0]}", end="")
+    if sys.version_info >= (3, 10):
+        print(" (OK)")
+    else:
+        print(" (WARNING: Python >= 3.10 is recommended)")
+        
+    # 2. Check config file
+    from pathlib import Path
+    config_path = Path(args.config)
+    print(f"  [+] Config file: {config_path}", end="")
+    if config_path.exists():
+        print(" (OK)")
+    else:
+        print(" (FAILED: config.yaml is missing!)")
+        all_ok = False
+        
+    # 3. Check LLM provider
+    provider = os.environ.get("LLM_PROVIDER") or config.get("llm_provider") or "groq"
+    print(f"  [+] LLM Provider: {provider}", end="")
+    key_name = f"{provider.upper()}_API_KEY"
+    if os.environ.get(key_name) or os.environ.get("GOOGLE_API_KEY") or os.environ.get("GEMINI_API_KEY"):
+        print(" (OK, API key is set)")
+    else:
+        print(f" (WARNING: {key_name} is not set in environment!)")
+        
+    # 4. Check data directory and database
+    data_dir = Path(config.get("data_dir", "data"))
+    print(f"  [+] Data directory: {data_dir}", end="")
+    if data_dir.exists():
+        print(" (OK)")
+    else:
+        print(" (OK - will be created on start)")
+        
+    db_path = data_dir / "papers.db"
+    print(f"  [+] SQLite database: {db_path}", end="")
+    if db_path.exists():
+        try:
+            import sqlite3
+            conn = sqlite3.connect(str(db_path))
+            conn.execute("SELECT count(*) FROM papers")
+            conn.close()
+            print(" (OK, database is readable/writable)")
+        except Exception as e:
+            print(f" (FAILED: database check failed: {e})")
+            all_ok = False
+    else:
+        print(" (Not created yet)")
+        
+    # 5. Check email configuration
+    email_cfg = Path("user_credentials/email_config.json")
+    print(f"  [+] Email configuration: {email_cfg}", end="")
+    if email_cfg.exists():
+        try:
+            with open(email_cfg) as f:
+                json.load(f)
+            print(" (OK, configuration is valid JSON)")
+        except Exception as e:
+            print(f" (FAILED: invalid email JSON: {e})")
+            all_ok = False
+    else:
+        print(" (Optional, not configured)")
+        
+    if all_ok:
+        print("\nAll checks passed! AURA is ready to run.")
+    else:
+        print("\nSome critical checks failed. Please fix them before starting AURA.")
+
+
+def cmd_import(args, config):
+    """Import papers from a BibTeX file into the database."""
+    from pathlib import Path
+    bib_path = Path(args.file)
+    if not bib_path.exists():
+        print(f"Error: file '{bib_path}' not found.")
+        sys.exit(1)
+        
+    with open(bib_path, encoding="utf-8") as f:
+        content = f.read()
+        
+    import re
+    entries = []
+    blocks = content.split("@")
+    for block in blocks:
+        if not block.strip():
+            continue
+        match = re.match(r"^(\w+)\s*\{\s*([\w\-\:\.]+)\s*,", block)
+        if not match:
+            continue
+        _entry_type = match.group(1).lower()
+        key = match.group(2)
+        
+        fields = {}
+        field_matches = re.finditer(r"(\w+)\s*=\s*[\"\{](.*?)[\"\}]\s*,?\s*$", block, re.MULTILINE | re.DOTALL)
+        for fm in field_matches:
+            field_name = fm.group(1).lower()
+            field_val = fm.group(2).strip()
+            field_val = re.sub(r"[\{\}]", "", field_val)
+            fields[field_name] = field_val
+            
+        if "title" in fields:
+            arxiv_id = fields.get("eprint")
+            if not arxiv_id:
+                url = fields.get("url", "")
+                arxiv_match = re.search(r"arxiv\.org/abs/([\w\-\.]+)", url, re.IGNORECASE)
+                if arxiv_match:
+                    arxiv_id = arxiv_match.group(1)
+            
+            authors = [a.strip() for a in fields.get("author", "Unknown").split(" and ")]
+            
+            entries.append({
+                "title": fields.get("title"),
+                "authors": authors,
+                "arxiv_id": arxiv_id or f"imported:{key}",
+                "abstract": fields.get("abstract", fields.get("note", "No abstract available.")),
+                "categories": fields.get("keywords", "imported"),
+                "published": f"{fields.get('year', '2026')}-01-01T00:00:00Z",
+                "url": fields.get("url", f"https://doi.org/{fields['doi']}" if "doi" in fields else ""),
+                "source": "imported",
+            })
+
+    if not entries:
+        print("No valid BibTeX entries found.")
+        return
+        
+    from aura.recommender import RecommendationEngine
+    engine = RecommendationEngine(
+        data_dir=config.get("data_dir", "data"),
+        categories=config.get("categories", ["astro-ph.CO"]),
+        embedding_model=config.get("embedding_model", "all-MiniLM-L6-v2"),
+    )
+    
+    print(f"Parsed {len(entries)} entries. Importing into AURA...")
+    imported_count = 0
+    for entry in entries:
+        if not entry["arxiv_id"].startswith("imported:"):
+            print(f"Fetching full metadata for arXiv:{entry['arxiv_id']}...")
+            try:
+                engine.fetch_and_add_paper(entry["arxiv_id"])
+                imported_count += 1
+                continue
+            except Exception:
+                pass
+                
+        try:
+            from aura.embedder import get_model
+            model = get_model(engine.embedding_model)
+            text_to_embed = f"{entry['title']} {entry['abstract']}"
+            embedding = model.encode(text_to_embed, normalize_embeddings=True)
+            
+            paper_dict = {
+                "arxiv_id": entry["arxiv_id"],
+                "title": entry["title"],
+                "abstract": entry["abstract"],
+                "authors": json.dumps(entry["authors"]),
+                "categories": entry["categories"],
+                "published": entry["published"],
+                "url": entry["url"],
+                "pdf_url": "",
+                "source": entry["source"],
+            }
+            engine.db.add_paper(paper_dict, embedding=embedding)
+            imported_count += 1
+        except Exception as e:
+            print(f"Failed to import '{entry['title']}': {e}")
+            
+    print(f"Successfully imported {imported_count} papers.")
+    engine.close()
+
+
+def cmd_export(args, config):
+    """Export papers from AURA database in a specified format."""
+    from aura.recommender import RecommendationEngine
+    import csv
+    
+    engine = RecommendationEngine(
+        data_dir=config.get("data_dir", "data"),
+        categories=config.get("categories", ["astro-ph.CO"]),
+        embedding_model=config.get("embedding_model", "all-MiniLM-L6-v2"),
+    )
+    
+    papers = engine.db.get_papers(limit=10000, unrated_only=False)
+    if not papers:
+        print("No papers found in database to export.")
+        engine.close()
+        return
+        
+    out_file = args.output
+    fmt = args.format.lower()
+    
+    if fmt == "json":
+        with open(out_file, "w", encoding="utf-8") as f:
+            json.dump(papers, f, indent=2)
+            
+    elif fmt == "csv":
+        with open(out_file, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=papers[0].keys())
+            writer.writeheader()
+            for p in papers:
+                writer.writerow(p)
+                
+    elif fmt == "bibtex":
+        with open(out_file, "w", encoding="utf-8") as f:
+            for p in papers:
+                try:
+                    authors_list = json.loads(p["authors"])
+                    if not isinstance(authors_list, list):
+                        authors_list = [authors_list]
+                except Exception:
+                    authors_list = [p["authors"]]
+                authors_str = " and ".join(authors_list)
+                
+                first_author = authors_list[0].split()[-1] if authors_list else "Unknown"
+                year = p["published"][:4]
+                key = f"{first_author.lower()}{year}{p['arxiv_id'].replace('.', '')}"
+                
+                f.write(f"@article{{{key},\n")
+                f.write(f"  title = {{{p['title']}}},\n")
+                f.write(f"  author = {{{authors_str}}},\n")
+                f.write(f"  journal = {{arXiv preprint arXiv:{p['arxiv_id']}}},\n")
+                f.write(f"  year = {{{year}}},\n")
+                f.write(f"  eprint = {{{p['arxiv_id']}}},\n")
+                f.write(f"  url = {{{p['url']}}},\n")
+                f.write(f"  abstract = {{{p['abstract']}}}\n")
+                f.write("}\n\n")
+    else:
+        print(f"Error: unsupported format '{fmt}'. Choose from json, csv, bibtex.")
+        engine.close()
+        sys.exit(1)
+        
+    print(f"Exported {len(papers)} papers to '{out_file}' in {fmt.upper()} format.")
+    engine.close()
+
+
 def cmd_stats(args, config):
     """Show system statistics."""
     from aura.recommender import RecommendationEngine
@@ -403,6 +650,21 @@ def main():
     # migrate
     subparsers.add_parser("migrate", help="Run database migrations")
 
+    # init
+    subparsers.add_parser("init", help="Interactively initialise AURA configuration")
+
+    # doctor
+    subparsers.add_parser("doctor", help="Validate environment, configuration, and dependencies")
+
+    # import
+    import_parser = subparsers.add_parser("import", help="Import papers from a BibTeX file into the database")
+    import_parser.add_argument("file", help="Path to BibTeX file to import")
+
+    # export
+    export_parser = subparsers.add_parser("export", help="Export papers from AURA database in a specified format")
+    export_parser.add_argument("format", choices=["json", "csv", "bibtex"], help="Export format (json, csv, bibtex)")
+    export_parser.add_argument("--output", "-o", required=True, help="Path to output file")
+
     args = parser.parse_args()
 
     # Setup logging
@@ -431,6 +693,10 @@ def main():
         "stats": cmd_stats,
         "migrate": cmd_migrate,
         "cleanup-topics": cmd_cleanup_topics,
+        "init": cmd_init,
+        "doctor": cmd_doctor,
+        "import": cmd_import,
+        "export": cmd_export,
     }
 
     commands[args.command](args, config)

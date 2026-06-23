@@ -94,10 +94,10 @@
 - [x] Publish Docker image to Docker Hub in addition to GHCR
 
 ### 10.4 CLI Improvements
-- [ ] Add `aura init` wizard that generates a valid `config.yaml` interactively
-- [ ] Add `aura doctor` command to validate environment and config
-- [ ] Add `aura import <bibtex_file>` to seed the database from an existing library
-- [ ] Add `aura export <format>` for bulk export
+- [x] Add `aura init` wizard that generates a valid `config.yaml` interactively
+- [x] Add `aura doctor` command to validate environment and config
+- [x] Add `aura import <bibtex_file>` to seed the database from an existing library
+- [x] Add `aura export <format>` for bulk export
 
 ---
 
