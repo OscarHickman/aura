@@ -83,9 +83,9 @@
 - [x] Document all endpoints, request/response schemas, error codes
 
 ### 10.2 Plugin / Source SDK
-- [ ] Define a formal `PaperSource` plugin interface (from Phase 4.1)
-- [ ] Document how to write a custom source as a Python package
-- [ ] Create a `PaperSource` registry: sources register via `entry_points` in `setup.cfg`
+- [x] Define a formal `PaperSource` plugin interface (from Phase 4.1)
+- [x] Document how to write a custom source as a Python package
+- [x] Create a `PaperSource` registry: sources register via `entry_points` in `setup.cfg`
 
 ### 10.3 One-Click Deploy
 - [ ] Add `docker-compose.yml` that bundles AURA + Redis + optional Qdrant
