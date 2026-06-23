@@ -88,10 +88,10 @@
 - [x] Create a `PaperSource` registry: sources register via `entry_points` in `setup.cfg`
 
 ### 10.3 One-Click Deploy
-- [ ] Add `docker-compose.yml` that bundles AURA + Redis + optional Qdrant
-- [ ] Add a `setup.sh` that walks through config interactively
-- [ ] Add a Coolify / Railway / Render deploy button to README
-- [ ] Publish Docker image to Docker Hub in addition to GHCR
+- [x] Add `docker-compose.yml` that bundles AURA + Redis + optional Qdrant
+- [x] Add a `setup.sh` that walks through config interactively
+- [x] Add a Coolify / Railway / Render deploy button to README
+- [x] Publish Docker image to Docker Hub in addition to GHCR
 
 ### 10.4 CLI Improvements
 - [ ] Add `aura init` wizard that generates a valid `config.yaml` interactively
