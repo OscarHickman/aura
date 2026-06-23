@@ -176,5 +176,39 @@ class TestADSSource(unittest.TestCase):
         self.assertEqual(updated[0]["refereed"], 1)
 
 
+class TestPaperSourceRegistry(unittest.TestCase):
+    def test_core_sources_registered(self):
+        sources = fetcher.PaperSourceRegistry.get_sources()
+        self.assertIn("arxiv", sources)
+        self.assertIn("semantic_scholar", sources)
+        self.assertIn("biorxiv", sources)
+        self.assertIn("rss", sources)
+        self.assertIn("ads", sources)
+        
+        self.assertTrue(issubclass(sources["arxiv"], fetcher.PaperSource))
+        self.assertTrue(issubclass(sources["ads"], fetcher.PaperSource))
+
+    @patch("importlib.metadata.entry_points")
+    def test_plugin_discovery(self, mock_entry_points):
+        mock_ep = Mock()
+        mock_ep.name = "custom_test_source"
+        mock_ep.value = "my_module:MySource"
+        
+        class MyMockSource(fetcher.PaperSource):
+            def fetch(self, categories, max_results=200, days_back=1):
+                return []
+            def fetch_simple(self, categories, max_results=200):
+                return []
+            
+        mock_ep.load.return_value = MyMockSource
+        
+        with patch("sys.version_info", (3, 10, 0)):
+            mock_entry_points.return_value = [mock_ep]
+            sources = fetcher.PaperSourceRegistry.get_sources()
+            
+        self.assertIn("custom_test_source", sources)
+        self.assertEqual(sources["custom_test_source"], MyMockSource)
+
+
 if __name__ == "__main__":
     unittest.main()

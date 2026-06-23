@@ -7,7 +7,7 @@ from typing import cast, Optional
 
 from .database import PaperDatabase
 from .embedder import embed_papers_batch, get_embedding_dim
-from .fetcher import PaperSource, ArxivSource, SemanticScholarSource, RSSSource, BiorxivSource, ADSSource
+from .fetcher import PaperSource, ArxivSource, PaperSourceRegistry
 from .llm import generate_summary, get_default_provider, _load_providers_order
 from .model import PreferenceModel
 
@@ -38,16 +38,18 @@ class RecommendationEngine:
             self.sources = []
             sc = sources_config or {"arxiv": True, "semantic_scholar": True, "biorxiv": True, "rss": True}
             
-            if sc.get("arxiv", True):
-                self.sources.append(ArxivSource())
-            if sc.get("semantic_scholar", True):
-                self.sources.append(SemanticScholarSource())
-            if sc.get("biorxiv", True):
-                self.sources.append(BiorxivSource())
-            if sc.get("rss", True):
-                self.sources.append(RSSSource(feed_urls=rss_urls))
-            if sc.get("ads", False):
-                self.sources.append(ADSSource())
+            # Discover and load registered sources (including plugins)
+            registered = PaperSourceRegistry.get_sources()
+            for name, source_class in registered.items():
+                default_enable = name in ("arxiv", "semantic_scholar", "biorxiv", "rss")
+                if sc.get(name, default_enable):
+                    try:
+                        if name == "rss":
+                            self.sources.append(source_class(feed_urls=rss_urls))
+                        else:
+                            self.sources.append(source_class())
+                    except Exception as e:
+                        logger.error(f"Failed to instantiate paper source '{name}': {e}")
 
         # Initialize components
         self.db = PaperDatabase(self.data_dir / "papers.db")
@@ -240,7 +242,6 @@ class RecommendationEngine:
         if existing:
             return existing
 
-        from .fetcher import ArxivSource
         source = ArxivSource()
         paper = source.fetch_by_id(arxiv_id)
         if not paper:

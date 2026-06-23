@@ -4,8 +4,9 @@ import logging
 import os
 import time
 from datetime import datetime, timedelta
-from typing import Optional, Any, Protocol
+from typing import Optional, Any
 from xml.etree import ElementTree
+from abc import ABC, abstractmethod
 
 import requests
 
@@ -27,7 +28,7 @@ def detect_code_and_data(text: str) -> tuple[int, int]:
     
     data_patterns = [
         r"zenodo\.org/record/\d+",
-        r"doi\.org/10\.5281/zenodo\.\d+",
+        r"doi\.org/10.5281/zenodo\.\d+",
         r"figshare\.com/articles?/[\w\-\.]+/\d+",
         r"cds\.cern\.ch/record/\d+",
         r"datadryad\.org/stash/dataset/doi:\d+\.\d+/[\w\-\.]+",
@@ -40,19 +41,67 @@ def detect_code_and_data(text: str) -> tuple[int, int]:
     return has_code, has_data
 
 
-class PaperSource(Protocol):
-    """Protocol defining the interface for paper sources."""
+class PaperSource(ABC):
+    """Abstract Base Class defining the interface for paper sources."""
     
+    @abstractmethod
     def fetch(self, categories: list[str], max_results: int = 200, days_back: int = 1) -> list[dict]:
         """Fetch recent papers."""
-        ...
+        pass
         
+    @abstractmethod
     def fetch_simple(self, categories: list[str], max_results: int = 200) -> list[dict]:
         """Fetch papers without strict date filtering."""
-        ...
+        pass
+
+    def fetch_by_id(self, paper_id: str) -> Optional[dict]:
+        """Fetch a single paper by its ID (optional, returns None by default)."""
+        return None
 
 
-class ArxivSource:
+class PaperSourceRegistry:
+    """Registry for discovering and loading PaperSource plugins."""
+    
+    _registered_sources: dict[str, type[PaperSource]] = {}
+
+    @classmethod
+    def register(cls, name: str, source_class: type[PaperSource]) -> None:
+        """Manually register a paper source class."""
+        cls._registered_sources[name] = source_class
+        logger.info(f"Registered paper source: {name}")
+
+    @classmethod
+    def get_sources(cls) -> dict[str, type[PaperSource]]:
+        """Get all registered paper sources, including discovered plugins."""
+        sources = dict(cls._registered_sources)
+        
+        try:
+            import sys
+            if sys.version_info >= (3, 10):
+                from importlib.metadata import entry_points
+                discovered = entry_points(group="aura.sources")
+            else:
+                from importlib_metadata import entry_points
+                discovered = entry_points().get("aura.sources", [])
+                
+            for ep in discovered:
+                if ep.name not in sources:
+                    try:
+                        source_class = ep.load()
+                        if issubclass(source_class, PaperSource):
+                            sources[ep.name] = source_class
+                            logger.info(f"Discovered plugin source: {ep.name}")
+                        else:
+                            logger.warning(f"Plugin '{ep.name}' is not a subclass of PaperSource")
+                    except Exception as e:
+                        logger.error(f"Failed to load entry point {ep.name}: {e}")
+        except Exception as e:
+            logger.error(f"Error discovering plugins: {e}")
+            
+        return sources
+
+
+class ArxivSource(PaperSource):
     """Fetches papers from the arXiv API."""
     
     ARXIV_API_URL = "http://export.arxiv.org/api/query"
@@ -257,7 +306,7 @@ class ArxivSource:
             return None
 
 
-class SemanticScholarSource:
+class SemanticScholarSource(PaperSource):
     """Fetches papers from the Semantic Scholar API."""
 
     S2_SEARCH_URL = "https://api.semanticscholar.org/graph/v1/paper/search"
@@ -368,7 +417,7 @@ class SemanticScholarSource:
             return None
 
 
-class BiorxivSource:
+class BiorxivSource(PaperSource):
     """Fetches papers from the bioRxiv API."""
 
     BIORXIV_API_URL = "https://api.biorxiv.org/details/biorxiv"
@@ -477,7 +526,7 @@ class BiorxivSource:
             return None
 
 
-class RSSSource:
+class RSSSource(PaperSource):
     """Fetches papers from generic journal RSS feeds."""
 
     def __init__(self, feed_urls: list[str] | None = None):
@@ -577,7 +626,7 @@ class RSSSource:
             return None
 
 
-class ADSSource:
+class ADSSource(PaperSource):
     """Fetches papers and metadata from the NASA ADS API."""
 
     ADS_API_URL = "https://api.adsabs.harvard.edu/v1/search/query"
@@ -762,4 +811,12 @@ class ADSSource:
             logger.error(f"NASA ADS API request for metadata failed: {e}")
 
         return updated_papers
+
+
+# Register core sources statically
+PaperSourceRegistry.register("arxiv", ArxivSource)
+PaperSourceRegistry.register("semantic_scholar", SemanticScholarSource)
+PaperSourceRegistry.register("biorxiv", BiorxivSource)
+PaperSourceRegistry.register("rss", RSSSource)
+PaperSourceRegistry.register("ads", ADSSource)
 
