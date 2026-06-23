@@ -25,6 +25,9 @@
     "debug": {
       "type": "boolean"
     },
+    "ads_api_key": {
+      "type": "string"
+    },
     "fetch": {
       "type": "object",
       "properties": {
@@ -64,6 +67,16 @@
           "maximum": 23
         },
         "fetch_minute": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 59
+        },
+        "ads_refresh_hour": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 23
+        },
+        "ads_refresh_minute": {
           "type": "integer",
           "minimum": 0,
           "maximum": 59
@@ -164,7 +177,19 @@
         "arxiv": { "type": "boolean" },
         "semantic_scholar": { "type": "boolean" },
         "biorxiv": { "type": "boolean" },
-        "rss": { "type": "boolean" }
+        "rss": { "type": "boolean" },
+        "ads": {
+          "anyOf": [
+            { "type": "boolean" },
+            {
+              "type": "object",
+              "properties": {
+                "api_key": { "type": "string" }
+              },
+              "additionalProperties": false
+            }
+          ]
+        }
       },
       "additionalProperties": false
     }

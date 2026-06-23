@@ -35,10 +35,26 @@
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
                     <div>
-                        <h1 class="h2 text-light">{{ paper.title | safe }}</h1>
+                        <h1 class="h2 text-light">
+                            {{ paper.title | safe }}
+                            {% if paper.refereed %}
+                            <span class="badge border border-success text-success bg-transparent ms-2" style="border-color: #2ec4b6 !important; color: #2ec4b6 !important; font-size: 0.9rem;" title="Refereed publication (peer-reviewed)">
+                                <i class="bi bi-patch-check-fill"></i> REFEREED
+                            </span>
+                            {% endif %}
+                        </h1>
                         <p class="text-muted mb-2">
                             <strong>Published:</strong> {{ paper.published[:10] }} &bull; 
                             <strong>ArXiv ID:</strong> <a href="{{ paper.url }}" target="_blank" class="text-decoration-none">{{ paper.arxiv_id }} <i class="bi bi-box-arrow-up-right small"></i></a>
+                            {% if paper.bibcode %}
+                            &bull; <strong>ADS Bibcode:</strong> <a href="https://ui.adsabs.harvard.edu/abs/{{ paper.bibcode }}" target="_blank" class="text-decoration-none">{{ paper.bibcode }} <i class="bi bi-box-arrow-up-right small"></i></a>
+                            {% endif %}
+                            {% if paper.citation_count is defined and paper.citation_count > 0 %}
+                            &bull; <span class="badge bg-secondary ms-1" title="Citations"><i class="bi bi-chat-quote"></i> {{ paper.citation_count }}</span>
+                            {% endif %}
+                            {% if paper.read_count is defined and paper.read_count > 0 %}
+                            &bull; <span class="badge bg-secondary ms-1" style="background-color: #4a5568 !important;" title="Reads on NASA ADS"><i class="bi bi-eye"></i> {{ paper.read_count }}</span>
+                            {% endif %}
                         </p>
                     </div>
                     

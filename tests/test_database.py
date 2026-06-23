@@ -4,7 +4,7 @@ from pathlib import Path
 
 import numpy as np
 
-from ai_papers.database import PaperDatabase
+from aura.database import PaperDatabase
 
 
 def make_paper(arxiv_id: str = "2401.00001"):
@@ -305,6 +305,32 @@ class TestPaperDatabase(unittest.TestCase):
         self.assertTrue(self.db.remove_from_reading_list(arxiv_id))
         self.assertFalse(self.db.is_in_reading_list(arxiv_id))
         self.assertEqual(len(self.db.get_reading_list()), 0)
+
+    def test_ads_metadata_operations(self):
+        arxiv_id = "2401.99999"
+        self.db.add_paper(make_paper(arxiv_id))
+
+        # Check paper in refresh list
+        papers = self.db.get_all_papers_for_metadata_refresh()
+        self.assertTrue(any(p["arxiv_id"] == arxiv_id for p in papers))
+
+        # Update metadata
+        success = self.db.update_paper_ads_metadata(
+            arxiv_id=arxiv_id,
+            bibcode="2026Test...999X",
+            citation_count=42,
+            read_count=137,
+            refereed=1
+        )
+        self.assertTrue(success)
+
+        # Retrieve paper to verify fields are set
+        updated_paper = self.db.get_paper(arxiv_id)
+        self.assertEqual(updated_paper["bibcode"], "2026Test...999X")
+        self.assertEqual(updated_paper["citation_count"], 42)
+        self.assertEqual(updated_paper["read_count"], 137)
+        self.assertEqual(updated_paper["refereed"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

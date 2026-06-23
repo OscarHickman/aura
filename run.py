@@ -22,7 +22,7 @@ from pathlib import Path
 
 def load_config(config_path: str = "config.yaml") -> dict:
     """Load and validate configuration."""
-    from ai_papers.config import get_validated_config
+    from aura.config import get_validated_config
     path = Path(config_path)
     if not path.exists():
         print(f"Warning: Config file '{config_path}' not found, using defaults.")
@@ -48,7 +48,7 @@ def cmd_migrate(args, config):
 
 def cmd_serve(args, config):
     """Start the Flask web server."""
-    from ai_papers.web.app import create_app
+    from aura.web.app import create_app
 
     if args.migrate:
         cmd_migrate(args, config)
@@ -70,7 +70,7 @@ def cmd_serve(args, config):
 
 def cmd_fetch(args, config):
     """Fetch new papers from arXiv."""
-    from ai_papers.recommender import RecommendationEngine
+    from aura.recommender import RecommendationEngine
 
     engine = RecommendationEngine(
         data_dir=config.get("data_dir", "data"),
@@ -95,7 +95,7 @@ def cmd_fetch(args, config):
 
 def cmd_summarize(args, config):
     """Launch summary API requests separately for stored papers."""
-    from ai_papers.recommender import RecommendationEngine
+    from aura.recommender import RecommendationEngine
 
     engine = RecommendationEngine(
         data_dir=config.get("data_dir", "data"),
@@ -114,7 +114,7 @@ def cmd_summarize(args, config):
 
 def cmd_recommend(args, config):
     """Print top recommendations."""
-    from ai_papers.recommender import RecommendationEngine
+    from aura.recommender import RecommendationEngine
 
     engine = RecommendationEngine(
         data_dir=config.get("data_dir", "data"),
@@ -146,7 +146,7 @@ def cmd_recommend(args, config):
 
 def cmd_retrain(args, config):
     """Full retrain of the preference model."""
-    from ai_papers.recommender import RecommendationEngine
+    from aura.recommender import RecommendationEngine
 
     engine = RecommendationEngine(
         data_dir=config.get("data_dir", "data"),
@@ -162,7 +162,7 @@ def cmd_retrain(args, config):
 
 def cmd_email_digest(args, config):
     """Send a formatted email digest for top recommended papers."""
-    from ai_papers.email_digest import send_top_recommendations_email
+    from aura.email_digest import send_top_recommendations_email
 
     result = send_top_recommendations_email(
         data_dir=config.get("data_dir", "data"),
@@ -176,7 +176,7 @@ def cmd_email_digest(args, config):
 
 def cmd_group_digest(args, config):
     """Send a group digest email to all members of a group."""
-    from ai_papers.email_digest import send_group_digest_email
+    from aura.email_digest import send_group_digest_email
 
     result = send_group_digest_email(
         data_dir=config.get("data_dir", "data"),
@@ -191,14 +191,14 @@ def cmd_group_digest(args, config):
 
 def cmd_cleanup_topics(args, config):
     """Cleanup junk entries from research_topics.json."""
-    from ai_papers.trends import cleanup_topics
+    from aura.trends import cleanup_topics
     data_dir = config.get("data_dir", "data")
     cleanup_topics(data_dir)
 
 
 def cmd_stats(args, config):
     """Show system statistics."""
-    from ai_papers.recommender import RecommendationEngine
+    from aura.recommender import RecommendationEngine
 
     engine = RecommendationEngine(
         data_dir=config.get("data_dir", "data"),
@@ -232,7 +232,7 @@ def _setup_scheduler(app, config):
 
     def daily_fetch():
         with app.app_context():
-            from ai_papers.web.app import engine
+            from aura.web.app import engine
 
             if engine:
                 fetch_config = config.get("fetch", {})
@@ -243,8 +243,28 @@ def _setup_scheduler(app, config):
                 logging.getLogger(__name__).info(f"Scheduled fetch: {count} new papers")
 
     scheduler.add_job(daily_fetch, "cron", hour=hour, minute=minute)
+
+    ads_hour = sched_config.get("ads_refresh_hour")
+    ads_minute = sched_config.get("ads_refresh_minute")
+    if ads_hour is None:
+        ads_hour = (hour + 1) % 24
+    if ads_minute is None:
+        ads_minute = minute
+
+    def daily_ads_refresh():
+        with app.app_context():
+            logging.getLogger(__name__).info("Scheduled daily ADS metadata refresh: starting...")
+            try:
+                from aura.tasks import refresh_ads_metadata_task
+                refresh_ads_metadata_task.delay()
+                logging.getLogger(__name__).info("Scheduled daily ADS metadata refresh: Celery task queued.")
+            except Exception as e:
+                logging.getLogger(__name__).error(f"Failed to queue scheduled ADS metadata refresh: {e}")
+
+    scheduler.add_job(daily_ads_refresh, "cron", hour=ads_hour, minute=ads_minute)
     scheduler.start()
     print(f"  Scheduler enabled: daily fetch at {hour:02d}:{minute:02d} UTC")
+    print(f"  Scheduler enabled: daily ADS metadata refresh at {ads_hour:02d}:{ads_minute:02d} UTC")
 
 
 def main():

@@ -7,7 +7,7 @@ import yaml
 from celery import Celery
 
 from .recommender import RecommendationEngine
-from .fetcher import ArxivSource
+from .fetcher import ArxivSource, ADSSource
 from .embedder import embed_papers_batch
 
 logger = logging.getLogger(__name__)
@@ -237,6 +237,92 @@ def retrain_full_task(self, epochs=20, user_id=1):
         return result
     except Exception as e:
         logger.exception(f"Error in retrain_full_task: {e}")
+        engine.db.complete_task(task_id, status="FAILURE", error=str(e))
+        raise
+    finally:
+        engine.close()
+
+
+@celery_app.task(bind=True)
+def refresh_ads_metadata_task(self):
+    """Refreshes NASA ADS metadata (citation count, read count, refereed) for all papers in the database."""
+    engine = RecommendationEngine(
+        data_dir=config.get("data_dir", "data"),
+        categories=config.get("categories", ["astro-ph.CO", "astro-ph.GA"]),
+        embedding_model=config.get("embedding_model", "all-MiniLM-L6-v2"),
+        sources_config=config.get("sources", {}),
+    )
+    
+    task_id = self.request.id
+    engine.db.create_task_entry(task_id, "refresh_ads_metadata", status="RUNNING")
+    
+    try:
+        # Get all papers
+        papers = engine.db.get_all_papers_for_metadata_refresh()
+        total_papers = len(papers)
+        engine.db.update_task_progress(task_id, progress=0, total=total_papers, status="RUNNING")
+        
+        if not papers:
+            engine.db.complete_task(task_id, status="SUCCESS", result={"updated_papers": 0})
+            return {"updated_papers": 0}
+            
+        # Get ADS source
+        ads_source = ADSSource()
+        
+        if not ads_source.api_key:
+            logger.warning("NASA ADS API key not configured. Skipping daily metadata refresh task.")
+            engine.db.complete_task(task_id, status="SUCCESS", result={"updated_papers": 0, "status": "skipped_no_api_key"})
+            return {"updated_papers": 0, "status": "skipped_no_api_key"}
+            
+        batch_size = 50
+        updated_count = 0
+        
+        # Batch papers for query
+        for i in range(0, total_papers, batch_size):
+            batch = papers[i:i + batch_size]
+            logger.info(f"Task {task_id}: Fetching ADS metadata batch {i // batch_size + 1} for {len(batch)} papers.")
+            
+            # Fetch updated metadata from ADS
+            updated_batch = ads_source.fetch_metadata_for_papers(batch)
+            
+            # Update database
+            for p in updated_batch:
+                arxiv_id = p.get("arxiv_id")
+                matching_paper = None
+                p_arxiv = p.get("arxiv_id")
+                p_bibcode = p.get("bibcode")
+                
+                for bp in batch:
+                    bp_arxiv = bp.get("arxiv_id")
+                    bp_bibcode = bp.get("bibcode")
+                    if bp_arxiv == p_arxiv:
+                        matching_paper = bp
+                        break
+                    if bp_bibcode and bp_bibcode == p_bibcode:
+                        matching_paper = bp
+                        break
+                    if p_arxiv and p_arxiv.startswith("ads:") and bp_bibcode == p_arxiv.split(":", 1)[1]:
+                        matching_paper = bp
+                        break
+                
+                if matching_paper:
+                    success = engine.db.update_paper_ads_metadata(
+                        arxiv_id=matching_paper["arxiv_id"],
+                        bibcode=p_bibcode,
+                        citation_count=p.get("citation_count", 0),
+                        read_count=p.get("read_count", 0),
+                        refereed=p.get("refereed", 0)
+                    )
+                    if success:
+                        updated_count += 1
+            
+            engine.db.update_task_progress(task_id, progress=min(i + batch_size, total_papers), total=total_papers)
+            
+        engine.db.complete_task(task_id, status="SUCCESS", result={"updated_papers": updated_count})
+        return {"updated_papers": updated_count}
+        
+    except Exception as e:
+        logger.exception(f"Error in refresh_ads_metadata_task: {e}")
         engine.db.complete_task(task_id, status="FAILURE", error=str(e))
         raise
     finally:

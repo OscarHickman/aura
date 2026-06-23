@@ -2,7 +2,7 @@ import unittest
 from unittest.mock import patch, Mock, PropertyMock
 import numpy as np
 
-from ai_papers.tasks import (
+from aura.tasks import (
     fetch_papers_task,
     fetch_papers_page_task,
     generate_missing_summaries_task,
@@ -11,8 +11,8 @@ from ai_papers.tasks import (
 
 class TestCeleryTasks(unittest.TestCase):
 
-    @patch("ai_papers.tasks.fetch_papers_page_task.delay")
-    @patch("ai_papers.tasks.RecommendationEngine")
+    @patch("aura.tasks.fetch_papers_page_task.delay")
+    @patch("aura.tasks.RecommendationEngine")
     def test_fetch_papers_task(self, mock_engine_cls, mock_page_delay):
         mock_engine = Mock()
         mock_engine_cls.return_value = mock_engine
@@ -36,10 +36,10 @@ class TestCeleryTasks(unittest.TestCase):
         self.assertEqual(kwargs["max_results"], 50)
         self.assertEqual(kwargs["start"], 0)
 
-    @patch("ai_papers.tasks.fetch_papers_page_task.apply_async")
-    @patch("ai_papers.tasks.requests.get")
-    @patch("ai_papers.tasks.embed_papers_batch")
-    @patch("ai_papers.tasks.RecommendationEngine")
+    @patch("aura.tasks.fetch_papers_page_task.apply_async")
+    @patch("aura.tasks.requests.get")
+    @patch("aura.tasks.embed_papers_batch")
+    @patch("aura.tasks.RecommendationEngine")
     def test_fetch_papers_page_task_complete(self, mock_engine_cls, mock_embed, mock_get, mock_apply_async):
         mock_engine = Mock()
         mock_engine_cls.return_value = mock_engine
@@ -89,7 +89,7 @@ class TestCeleryTasks(unittest.TestCase):
         mock_engine.db.complete_task.assert_called_with("task-123", status="SUCCESS", result={"new_papers": 2})
         mock_apply_async.assert_not_called()
 
-    @patch("ai_papers.tasks.RecommendationEngine")
+    @patch("aura.tasks.RecommendationEngine")
     def test_generate_missing_summaries_task(self, mock_engine_cls):
         mock_engine = Mock()
         mock_engine_cls.return_value = mock_engine
@@ -107,7 +107,7 @@ class TestCeleryTasks(unittest.TestCase):
         mock_engine.db.complete_task.assert_called_with("summarize-123", status="SUCCESS", result={"processed": 5, "updated": 4})
         self.assertEqual(res["processed"], 5)
 
-    @patch("ai_papers.tasks.RecommendationEngine")
+    @patch("aura.tasks.RecommendationEngine")
     def test_retrain_full_task(self, mock_engine_cls):
         mock_engine = Mock()
         mock_engine_cls.return_value = mock_engine
@@ -125,7 +125,7 @@ class TestCeleryTasks(unittest.TestCase):
         mock_engine.db.complete_task.assert_called_with("retrain-123", status="SUCCESS", result={"status": "retrained"})
         self.assertEqual(res["status"], "retrained")
 
-    @patch("ai_papers.tasks.RecommendationEngine")
+    @patch("aura.tasks.RecommendationEngine")
     def test_generate_missing_summaries_task_failure(self, mock_engine_cls):
         mock_engine = Mock()
         mock_engine_cls.return_value = mock_engine
@@ -140,7 +140,7 @@ class TestCeleryTasks(unittest.TestCase):
                 
         mock_engine.db.complete_task.assert_called_with("summarize-fail", status="FAILURE", error="error summarizing")
 
-    @patch("ai_papers.tasks.RecommendationEngine")
+    @patch("aura.tasks.RecommendationEngine")
     def test_retrain_full_task_failure(self, mock_engine_cls):
         mock_engine = Mock()
         mock_engine_cls.return_value = mock_engine
@@ -154,6 +154,54 @@ class TestCeleryTasks(unittest.TestCase):
                 retrain_full_task.run(epochs=10)
                 
         mock_engine.db.complete_task.assert_called_with("retrain-fail", status="FAILURE", error="error retraining")
+
+
+    @patch("aura.tasks.RecommendationEngine")
+    def test_refresh_ads_metadata_task_success(self, mock_engine_cls):
+        mock_engine = Mock()
+        mock_engine_cls.return_value = mock_engine
+        
+        # Setup mock db queries and updates
+        mock_engine.db.get_all_papers_for_metadata_refresh.return_value = [
+            {"arxiv_id": "2401.12345", "bibcode": "2026Test...123P"}
+        ]
+        mock_engine.db.update_paper_ads_metadata.return_value = True
+        
+        # Mock ADSSource
+        mock_ads_source = Mock()
+        mock_ads_source.api_key = "mock_key"
+        mock_ads_source.fetch_metadata_for_papers.return_value = [
+            {
+                "arxiv_id": "2401.12345",
+                "bibcode": "2026Test...123P",
+                "citation_count": 10,
+                "read_count": 20,
+                "refereed": 1
+            }
+        ]
+        
+        # Use patch to inject ADSSource and PropertyMock for request
+        mock_request = Mock()
+        mock_request.id = "ads-task-123"
+        
+        from aura.tasks import refresh_ads_metadata_task
+        with patch("aura.tasks.ADSSource", return_value=mock_ads_source):
+            with patch.object(refresh_ads_metadata_task.__class__, 'request', new_callable=PropertyMock) as mock_req_prop:
+                mock_req_prop.return_value = mock_request
+                
+                res = refresh_ads_metadata_task.run()
+                
+        mock_engine.db.create_task_entry.assert_called_with("ads-task-123", "refresh_ads_metadata", status="RUNNING")
+        mock_ads_source.fetch_metadata_for_papers.assert_called_once()
+        mock_engine.db.update_paper_ads_metadata.assert_called_with(
+            arxiv_id="2401.12345",
+            bibcode="2026Test...123P",
+            citation_count=10,
+            read_count=20,
+            refereed=1
+        )
+        mock_engine.db.complete_task.assert_called_with("ads-task-123", status="SUCCESS", result={"updated_papers": 1})
+        self.assertEqual(res["updated_papers"], 1)
 
 
 if __name__ == "__main__":

@@ -149,12 +149,12 @@
 *Purpose-built for the workflows of astronomers and cosmologists.*
 
 ### 11.1 NASA ADS Integration
-- [ ] Implement `ADSSource` using the ADS API (`ui.adsabs.harvard.edu/api`)
-- [ ] Map ADS fields to the `Paper` schema: `bibcode`, `citation_count`, `read_count`, `refereed` flag
-- [ ] Add `refereed` boolean column to `papers` table
-- [ ] Daily background job to refresh ADS citation counts for stored papers
-- [ ] Surface citation count and refereed badge on paper cards
-- [ ] Use ADS `read_count` as an optional secondary ranking signal
+- [x] Implement `ADSSource` using the ADS API (`ui.adsabs.harvard.edu/api`)
+- [x] Map ADS fields to the `Paper` schema: `bibcode`, `citation_count`, `read_count`, `refereed` flag
+- [x] Add `refereed` boolean column to `papers` table
+- [x] Daily background job to refresh ADS citation counts for stored papers
+- [x] Surface citation count and refereed badge on paper cards
+- [x] Use ADS `read_count` as an optional secondary ranking signal
 
 ### 11.2 Survey & Mission Paper Tracking
 - [ ] Add `surveys` table: `id`, `name`, `keywords` (JSON list of trigger terms)

@@ -5,7 +5,7 @@ from unittest.mock import Mock, patch
 
 import numpy as np
 
-from ai_papers.recommender import RecommendationEngine
+from aura.recommender import RecommendationEngine
 
 
 def _paper(arxiv_id="2401.00001"):
@@ -22,13 +22,13 @@ def _paper(arxiv_id="2401.00001"):
 
 
 class TestRecommendationEngine(unittest.TestCase):
-    @patch("ai_papers.recommender.PreferenceModel")
-    @patch("ai_papers.recommender.PaperDatabase")
-    @patch("ai_papers.recommender.get_embedding_dim", return_value=3)
-    @patch("ai_papers.recommender.embed_papers_batch")
-    @patch("ai_papers.fetcher.SemanticScholarSource.fetch", return_value=[])
-    @patch("ai_papers.fetcher.ArxivSource.fetch_simple")
-    @patch("ai_papers.fetcher.ArxivSource.fetch")
+    @patch("aura.recommender.PreferenceModel")
+    @patch("aura.recommender.PaperDatabase")
+    @patch("aura.recommender.get_embedding_dim", return_value=3)
+    @patch("aura.recommender.embed_papers_batch")
+    @patch("aura.fetcher.SemanticScholarSource.fetch", return_value=[])
+    @patch("aura.fetcher.ArxivSource.fetch_simple")
+    @patch("aura.fetcher.ArxivSource.fetch")
     def test_fetch_new_papers_fallback_path(
         self,
         mock_fetch,
@@ -55,12 +55,12 @@ class TestRecommendationEngine(unittest.TestCase):
         self.assertEqual(added, 1)
         db.log_fetch.assert_called_once_with(1, ["astro-ph.CO"])
 
-    @patch("ai_papers.recommender.PreferenceModel")
-    @patch("ai_papers.recommender.PaperDatabase")
-    @patch("ai_papers.recommender.get_embedding_dim", return_value=3)
-    @patch("ai_papers.recommender.embed_papers_batch")
-    @patch("ai_papers.fetcher.SemanticScholarSource.fetch", return_value=[])
-    @patch("ai_papers.fetcher.ArxivSource.fetch")
+    @patch("aura.recommender.PreferenceModel")
+    @patch("aura.recommender.PaperDatabase")
+    @patch("aura.recommender.get_embedding_dim", return_value=3)
+    @patch("aura.recommender.embed_papers_batch")
+    @patch("aura.fetcher.SemanticScholarSource.fetch", return_value=[])
+    @patch("aura.fetcher.ArxivSource.fetch")
     def test_fetch_new_papers_generate_summaries(
         self,
         mock_fetch,
@@ -87,9 +87,9 @@ class TestRecommendationEngine(unittest.TestCase):
                     mock_gen.assert_called_once()
                     mock_missing.assert_called_once_with(limit=1, include_failed=False)
 
-    @patch("ai_papers.recommender.PreferenceModel")
-    @patch("ai_papers.recommender.PaperDatabase")
-    @patch("ai_papers.recommender.get_embedding_dim", return_value=3)
+    @patch("aura.recommender.PreferenceModel")
+    @patch("aura.recommender.PaperDatabase")
+    @patch("aura.recommender.get_embedding_dim", return_value=3)
     def test_get_recommendations_defaults_when_no_embeddings(
         self, _mock_dim, mock_db_cls, _mock_model_cls
     ):
@@ -105,9 +105,9 @@ class TestRecommendationEngine(unittest.TestCase):
         self.assertEqual(len(papers), 2)
         self.assertTrue(all(p["score"] == 0.5 for p in papers))
 
-    @patch("ai_papers.recommender.PreferenceModel")
-    @patch("ai_papers.recommender.PaperDatabase")
-    @patch("ai_papers.recommender.get_embedding_dim", return_value=3)
+    @patch("aura.recommender.PreferenceModel")
+    @patch("aura.recommender.PaperDatabase")
+    @patch("aura.recommender.get_embedding_dim", return_value=3)
     def test_generate_summary_for_paper_not_found(
         self, _mock_dim, mock_db_cls, _mock_model_cls
     ):
@@ -121,9 +121,9 @@ class TestRecommendationEngine(unittest.TestCase):
 
         self.assertEqual(result["status"], "not_found")
 
-    @patch("ai_papers.recommender.PreferenceModel")
-    @patch("ai_papers.recommender.PaperDatabase")
-    @patch("ai_papers.recommender.get_embedding_dim", return_value=3)
+    @patch("aura.recommender.PreferenceModel")
+    @patch("aura.recommender.PaperDatabase")
+    @patch("aura.recommender.get_embedding_dim", return_value=3)
     def test_rate_paper_trains_when_embedding_exists(
         self, _mock_dim, mock_db_cls, mock_model_cls
     ):
@@ -146,9 +146,9 @@ class TestRecommendationEngine(unittest.TestCase):
         self.assertTrue(result["trained"])
         model.train_single.assert_called_once()
 
-    @patch("ai_papers.recommender.PreferenceModel")
-    @patch("ai_papers.recommender.PaperDatabase")
-    @patch("ai_papers.recommender.get_embedding_dim", return_value=3)
+    @patch("aura.recommender.PreferenceModel")
+    @patch("aura.recommender.PaperDatabase")
+    @patch("aura.recommender.get_embedding_dim", return_value=3)
     def test_rate_paper_no_embedding(self, _mock_dim, mock_db_cls, _mock_model_cls):
         db = Mock()
         db.get_papers_with_embeddings.return_value = []
@@ -162,9 +162,9 @@ class TestRecommendationEngine(unittest.TestCase):
         self.assertFalse(result["trained"])
         self.assertEqual(result["reason"], "no embedding")
 
-    @patch("ai_papers.recommender.PreferenceModel")
-    @patch("ai_papers.recommender.PaperDatabase")
-    @patch("ai_papers.recommender.get_embedding_dim", return_value=3)
+    @patch("aura.recommender.PreferenceModel")
+    @patch("aura.recommender.PaperDatabase")
+    @patch("aura.recommender.get_embedding_dim", return_value=3)
     def test_retrain_full_no_data(self, _mock_dim, mock_db_cls, _mock_model_cls):
         db = Mock()
         db.get_training_data.return_value = ([], [])
@@ -176,9 +176,9 @@ class TestRecommendationEngine(unittest.TestCase):
 
         self.assertEqual(result["status"], "no_data")
 
-    @patch("ai_papers.recommender.PreferenceModel")
-    @patch("ai_papers.recommender.PaperDatabase")
-    @patch("ai_papers.recommender.get_embedding_dim", return_value=3)
+    @patch("aura.recommender.PreferenceModel")
+    @patch("aura.recommender.PaperDatabase")
+    @patch("aura.recommender.get_embedding_dim", return_value=3)
     def test_generate_missing_summaries_no_work(self, _mock_dim, mock_db_cls, _mock_model_cls):
         db = Mock()
         db.get_papers_needing_summary.return_value = []
@@ -190,9 +190,9 @@ class TestRecommendationEngine(unittest.TestCase):
 
         self.assertEqual(result["status"], "no_work")
 
-    @patch("ai_papers.recommender.PreferenceModel")
-    @patch("ai_papers.recommender.PaperDatabase")
-    @patch("ai_papers.recommender.get_embedding_dim", return_value=3)
+    @patch("aura.recommender.PreferenceModel")
+    @patch("aura.recommender.PaperDatabase")
+    @patch("aura.recommender.get_embedding_dim", return_value=3)
     def test_get_similar_papers(self, _mock_dim, mock_db_cls, _mock_model_cls):
         db = Mock()
         p1 = {"arxiv_id": "2401.00001", "title": "Paper 1"}
@@ -216,9 +216,9 @@ class TestRecommendationEngine(unittest.TestCase):
         # cosine similarity between [1, 0, 0] and [1, 1, 0] is 1 / sqrt(2) = 0.7071
         self.assertAlmostEqual(similar[0]["similarity"], 0.7071, places=3)
 
-    @patch("ai_papers.recommender.PreferenceModel")
-    @patch("ai_papers.recommender.PaperDatabase")
-    @patch("ai_papers.recommender.get_embedding_dim", return_value=3)
+    @patch("aura.recommender.PreferenceModel")
+    @patch("aura.recommender.PaperDatabase")
+    @patch("aura.recommender.get_embedding_dim", return_value=3)
     def test_get_diverse_papers(self, _mock_dim, mock_db_cls, _mock_model_cls):
         db = Mock()
         p1 = {"arxiv_id": "2401.00001", "title": "Paper 1"}

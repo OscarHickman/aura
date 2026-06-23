@@ -3,11 +3,11 @@ from unittest.mock import Mock, patch
 
 import numpy as np
 
-from ai_papers import embedder
+from aura import embedder
 
 
 class TestEmbedder(unittest.TestCase):
-    @patch("ai_papers.embedder.get_model")
+    @patch("aura.embedder.get_model")
     def test_embed_paper_returns_float32(self, mock_get_model):
         model = Mock()
         model.encode.return_value = [1.0, 2.0, 3.0]
@@ -21,7 +21,7 @@ class TestEmbedder(unittest.TestCase):
             "Title. Abstract", normalize_embeddings=True
         )
 
-    @patch("ai_papers.embedder.get_model")
+    @patch("aura.embedder.get_model")
     def test_embed_papers_batch_uses_batch_size(self, mock_get_model):
         model = Mock()
         model.encode.return_value = [[0.1, 0.2], [0.3, 0.4]]
@@ -42,7 +42,7 @@ class TestEmbedder(unittest.TestCase):
             show_progress_bar=True,
         )
 
-    @patch("ai_papers.embedder.get_model")
+    @patch("aura.embedder.get_model")
     def test_get_embedding_dim(self, mock_get_model):
         model = Mock()
         model.get_sentence_embedding_dimension.return_value = 384

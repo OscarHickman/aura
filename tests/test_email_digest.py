@@ -3,7 +3,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from ai_papers import email_digest
+from aura import email_digest
 
 
 class TestEmailDigest(unittest.TestCase):
@@ -29,8 +29,8 @@ class TestEmailDigest(unittest.TestCase):
         self.assertIn("AI models are improving", text)
         self.assertIn("Paper A", html)
 
-    @patch("ai_papers.email_digest._send_smtp_email")
-    @patch("ai_papers.email_digest.RecommendationEngine")
+    @patch("aura.email_digest._send_smtp_email")
+    @patch("aura.email_digest.RecommendationEngine")
     def test_send_top_recommendations_email(self, mock_engine_cls, mock_send):
         engine = Mock()
         engine.get_recommendations.return_value = [
@@ -75,8 +75,8 @@ class TestEmailDigest(unittest.TestCase):
         mock_send.assert_called_once()
         engine.close.assert_called_once()
 
-    @patch("ai_papers.email_digest._send_graph_email")
-    @patch("ai_papers.email_digest.RecommendationEngine")
+    @patch("aura.email_digest._send_graph_email")
+    @patch("aura.email_digest.RecommendationEngine")
     def test_send_top_recommendations_email_graph_path(
         self, mock_engine_cls, mock_graph_send
     ):
@@ -164,7 +164,7 @@ class TestEmailDigest(unittest.TestCase):
         mock_smtp.send_message.assert_called_once()
 
     @patch("requests.post")
-    @patch("ai_papers.email_digest._acquire_graph_token", return_value="token123")
+    @patch("aura.email_digest._acquire_graph_token", return_value="token123")
     def test_send_graph_email_failure(self, mock_token, mock_post):
         mock_resp = Mock()
         mock_resp.status_code = 500
@@ -195,8 +195,8 @@ class TestEmailDigest(unittest.TestCase):
         self.assertEqual(res[0]["summary"], "Gen summary 1")
         self.assertEqual(res[1]["summary"], "AI FAIL")
 
-    @patch("ai_papers.email_digest._send_smtp_email")
-    @patch("ai_papers.email_digest.RecommendationEngine")
+    @patch("aura.email_digest._send_smtp_email")
+    @patch("aura.email_digest.RecommendationEngine")
     def test_send_group_digest_email(self, mock_engine_cls, mock_send):
         engine = Mock()
         engine.db.get_group.return_value = {"id": 1, "name": "Lab Group"}

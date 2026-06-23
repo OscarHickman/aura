@@ -4,8 +4,8 @@ import os
 import unittest
 from unittest.mock import patch
 
-from ai_papers.logging_config import setup_logging, memory_log_handler, request_id_var, CustomJsonFormatter
-from ai_papers.web.app import create_app
+from aura.logging_config import setup_logging, memory_log_handler, request_id_var, CustomJsonFormatter
+from aura.web.app import create_app
 
 class TestLoggingAndObservability(unittest.TestCase):
     def setUp(self):
@@ -41,7 +41,7 @@ class TestLoggingAndObservability(unittest.TestCase):
 
     def test_memory_log_handler_capacity(self):
         # Use a fresh, isolated handler to avoid side-effects from root logger
-        from ai_papers.logging_config import MemoryLogHandler
+        from aura.logging_config import MemoryLogHandler
         handler = MemoryLogHandler(capacity=500)
         handler.setFormatter(CustomJsonFormatter("%(timestamp)s %(level)s %(logger)s %(message)s"))
         
@@ -71,8 +71,8 @@ class TestLoggingAndObservability(unittest.TestCase):
             "id": 1, "email": "log@test.com", "password_hash": "hashed",
             "is_admin": 1, "is_active": 1, "created_at": "2024-01-01T00:00:00",
         }
-        with patch("ai_papers.web.app.get_validated_config") as mock_cfg, \
-             patch("ai_papers.web.app.RecommendationEngine") as mock_engine_cls:
+        with patch("aura.web.app.get_validated_config") as mock_cfg, \
+             patch("aura.web.app.RecommendationEngine") as mock_engine_cls:
             mock_cfg.return_value = {
                 "data_dir": "/tmp/dummy_aura_log_test",
                 "categories": ["astro-ph.CO"],
@@ -97,8 +97,8 @@ class TestLoggingAndObservability(unittest.TestCase):
         client = app.test_client()
 
         # Log in so /api/logs route is accessible
-        with patch("ai_papers.web.app.generate_password_hash", return_value="hashed"), \
-             patch("ai_papers.web.app.check_password_hash", return_value=True):
+        with patch("aura.web.app.generate_password_hash", return_value="hashed"), \
+             patch("aura.web.app.check_password_hash", return_value=True):
             client.post("/register", data={"email": "log@test.com", "password": "pass123",
                                            "confirm_password": "pass123"}, follow_redirects=True)
             client.post("/login", data={"email": "log@test.com", "password": "pass123"},

@@ -2,8 +2,8 @@ import pytest
 import tempfile
 from pathlib import Path
 import numpy as np
-from ai_papers.database import PaperDatabase
-from ai_papers.web.app import create_app
+from aura.database import PaperDatabase
+from aura.web.app import create_app
 
 @pytest.fixture
 def temp_dir():

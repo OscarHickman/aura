@@ -1,6 +1,6 @@
 import unittest
 from unittest.mock import Mock, patch
-from ai_papers.web.app import create_app
+from aura.web.app import create_app
 
 
 class TestWebApp(unittest.TestCase):
@@ -111,15 +111,15 @@ class TestWebApp(unittest.TestCase):
         self.engine.db.get_all_users.return_value = [_test_user]
         self.engine.db.get_fetch_log.return_value = []
 
-        with patch("ai_papers.web.app.RecommendationEngine", return_value=self.engine):
+        with patch("aura.web.app.RecommendationEngine", return_value=self.engine):
             app = create_app()
 
         app.testing = True
         self.client = app.test_client()
 
         # Register and log in so Flask-Login doesn't redirect all routes
-        with patch("ai_papers.web.app.generate_password_hash", return_value="hashed"), \
-             patch("ai_papers.web.app.check_password_hash", return_value=True):
+        with patch("aura.web.app.generate_password_hash", return_value="hashed"), \
+             patch("aura.web.app.check_password_hash", return_value=True):
             self.client.post("/register", data={
                 "email": "test@example.com",
                 "password": "password123",
@@ -209,7 +209,7 @@ class TestWebApp(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json()["status"], "rated")
 
-    @patch("ai_papers.tasks.fetch_papers_task.delay")
+    @patch("aura.tasks.fetch_papers_task.delay")
     def test_api_fetch_and_stats(self, mock_delay):
         mock_task = Mock()
         mock_task.id = "mock-task-123"
@@ -226,7 +226,7 @@ class TestWebApp(unittest.TestCase):
         resp = self.client.get("/api/stats")
         self.assertEqual(resp.status_code, 200)
 
-    @patch("ai_papers.tasks.generate_missing_summaries_task.delay")
+    @patch("aura.tasks.generate_missing_summaries_task.delay")
     def test_api_summarize_async(self, mock_delay):
         mock_task = Mock()
         mock_task.id = "mock-task-summarize"
@@ -246,7 +246,7 @@ class TestWebApp(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.get_json()["summary"], "good")
 
-    @patch("ai_papers.tasks.retrain_full_task.delay")
+    @patch("aura.tasks.retrain_full_task.delay")
     def test_api_retrain_async(self, mock_delay):
         mock_task = Mock()
         mock_task.id = "mock-task-retrain"

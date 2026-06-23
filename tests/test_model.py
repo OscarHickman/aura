@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from ai_papers.model import PreferenceModel
+from aura.model import PreferenceModel
 
 
 class TestPreferenceModel(unittest.TestCase):

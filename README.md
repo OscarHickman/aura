@@ -1,7 +1,7 @@
 # CI
 
-[![CI](https://github.com/OscarHickman/ai_papers/actions/workflows/ci.yml/badge.svg)](https://github.com/OscarHickman/ai_papers/actions/workflows/ci.yml)
-[![Deploy](https://github.com/OscarHickman/ai_papers/actions/workflows/deploy.yml/badge.svg)](https://github.com/OscarHickman/ai_papers/actions/workflows/deploy.yml)
+[![CI](https://github.com/OscarHickman/aura/actions/workflows/ci.yml/badge.svg)](https://github.com/OscarHickman/aura/actions/workflows/ci.yml)
+[![Deploy](https://github.com/OscarHickman/aura/actions/workflows/deploy.yml/badge.svg)](https://github.com/OscarHickman/aura/actions/workflows/deploy.yml)
 
 # AURA (Automated Understanding of Research Articles)
 
@@ -96,9 +96,9 @@ docker push ghcr.io/OWNER/REPO:latest
 ```bash
 ssh deploy-user@your-server
 docker pull ghcr.io/OWNER/REPO:latest
-docker stop ai_papers_app || true
-docker rm ai_papers_app || true
-docker run -d --restart unless-stopped -p 80:5000 --name ai_papers_app ghcr.io/OWNER/REPO:latest
+docker stop aura_app || true
+docker rm aura_app || true
+docker run -d --restart unless-stopped -p 80:5000 --name aura_app ghcr.io/OWNER/REPO:latest
 ```
 
 GitHub Actions deployment
@@ -144,7 +144,7 @@ pip install gunicorn
 gunicorn "deploy.wsgi:app" -w 4 -b 0.0.0.0:5000
 ```
 
-5. (Optional) Create a `systemd` service to run the app on boot. Example service `/etc/systemd/system/ai_papers.service`:
+5. (Optional) Create a `systemd` service to run the app on boot. Example service `/etc/systemd/system/aura.service`:
 
 ```
 [Unit]
@@ -155,7 +155,7 @@ After=network.target
 User=youruser
 WorkingDirectory=/path/to/REPO
 Environment="PATH=/path/to/REPO/.venv/bin"
-ExecStart=/path/to/REPO/.venv/bin/gunicorn "ai_papers.web.app:create_app()" -w 4 -b 0.0.0.0:5000
+ExecStart=/path/to/REPO/.venv/bin/gunicorn "aura.web.app:create_app()" -w 4 -b 0.0.0.0:5000
 Restart=on-failure
 
 [Install]

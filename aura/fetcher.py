@@ -558,3 +558,191 @@ class RSSSource:
         except Exception as e:
             logger.warning(f"Failed to parse RSS entry: {e}")
             return None
+
+
+class ADSSource:
+    """Fetches papers and metadata from the NASA ADS API."""
+
+    ADS_API_URL = "https://api.adsabs.harvard.edu/v1/search/query"
+
+    def __init__(self, api_key: Optional[str] = None):
+        self.api_key = api_key or os.environ.get("ADS_API_KEY") or os.environ.get("NASA_ADS_API_KEY")
+        if not self.api_key:
+            try:
+                from .config import load_config_file
+                config = load_config_file()
+                self.api_key = config.get("ads_api_key") or config.get("sources", {}).get("ads", {}).get("api_key")
+            except Exception:
+                pass
+
+    def fetch(
+        self,
+        categories: list[str],
+        max_results: int = 100,
+        days_back: int = 2,
+    ) -> list[dict]:
+        """Fetch papers from NASA ADS for the specified categories."""
+        if not self.api_key:
+            logger.warning("NASA ADS API key not configured. Skipping ADS fetch.")
+            return []
+
+        papers = []
+        seen_ids = set()
+
+        cat_query = " OR ".join(f'"{cat}"' for cat in categories)
+        start_date = datetime.utcnow() - timedelta(days=days_back)
+        date_str = start_date.strftime("%Y-%m")
+
+        query = f'arxiv_class:({cat_query}) AND pubdate:[{date_str} TO *]'
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}"
+        }
+        params = {
+            "q": query,
+            "fl": "identifier,bibcode,title,abstract,author,pubdate,citation_count,read_count,property,arxiv_class",
+            "rows": min(max_results, 100),
+            "sort": "date desc"
+        }
+
+        logger.info(f"Fetching NASA ADS papers: query='{query}'")
+
+        try:
+            resp = requests.get(self.ADS_API_URL, params=params, headers=headers, timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
+
+            docs = data.get("response", {}).get("docs", [])
+            for doc in docs:
+                paper = self._parse_entry(doc)
+                if paper and paper["arxiv_id"] not in seen_ids:
+                    seen_ids.add(paper["arxiv_id"])
+                    papers.append(paper)
+
+        except requests.RequestException as e:
+            logger.error(f"NASA ADS API request failed: {e}")
+
+        logger.info(f"Fetched {len(papers)} papers total from NASA ADS")
+        return papers
+
+    def fetch_simple(self, categories: list[str], max_results: int = 100) -> list[dict]:
+        """Simple fetch without date constraint."""
+        return self.fetch(categories, max_results=max_results, days_back=365)
+
+    def _parse_entry(self, doc: dict) -> Optional[dict]:
+        """Parse an ADS API document into a paper dict."""
+        try:
+            arxiv_id = None
+            for ident in doc.get("identifier", []):
+                if ident.lower().startswith("arxiv:"):
+                    arxiv_id = ident.split(":", 1)[1].strip()
+                    break
+
+            if not arxiv_id:
+                bibcode = doc.get("bibcode")
+                if bibcode:
+                    arxiv_id = f"ads:{bibcode}"
+                else:
+                    return None
+
+            authors = doc.get("author", [])
+            
+            pub_date = doc.get("pubdate")
+            if pub_date:
+                pub_date = pub_date.replace("-00", "-01")
+            else:
+                pub_date = datetime.utcnow().isoformat()[:10]
+
+            properties = doc.get("property", [])
+            is_refereed = 1 if any(p.lower() == "refereed" for p in properties) else 0
+
+            title_val = doc.get("title", ["No Title"])
+            title = title_val[0] if isinstance(title_val, list) and title_val else title_val
+            if not isinstance(title, str):
+                title = "No Title"
+
+            abstract = doc.get("abstract", "No Abstract")
+            has_code, has_data = detect_code_and_data(abstract)
+
+            categories = doc.get("arxiv_class", [])
+            if not categories:
+                categories = ["Unknown"]
+
+            return {
+                "arxiv_id": arxiv_id,
+                "title": title,
+                "abstract": abstract,
+                "authors": authors,
+                "categories": categories,
+                "published": pub_date,
+                "url": f"https://ui.adsabs.harvard.edu/abs/{doc.get('bibcode')}" if doc.get("bibcode") else "",
+                "pdf_url": "",
+                "source": "ads",
+                "bibcode": doc.get("bibcode"),
+                "citation_count": doc.get("citation_count", 0),
+                "read_count": doc.get("read_count", 0),
+                "refereed": is_refereed,
+                "has_code": has_code,
+                "has_data": has_data,
+            }
+        except Exception as e:
+            logger.warning(f"Failed to parse NASA ADS document: {e}")
+            return None
+
+    def fetch_metadata_for_papers(self, papers: list[dict]) -> list[dict]:
+        """Fetch updated metadata for a list of papers from ADS."""
+        if not self.api_key:
+            logger.warning("NASA ADS API key not configured. Skipping metadata fetch.")
+            return []
+
+        # Construct query terms
+        terms = []
+        for paper in papers:
+            bibcode = paper.get("bibcode")
+            arxiv_id = paper.get("arxiv_id")
+            if bibcode:
+                terms.append(f'bibcode:"{bibcode}"')
+            elif arxiv_id:
+                if arxiv_id.startswith("ads:"):
+                    b = arxiv_id.split(":", 1)[1]
+                    terms.append(f'bibcode:"{b}"')
+                elif arxiv_id.startswith("arXiv:") or arxiv_id.startswith("arxiv:"):
+                    terms.append(f'identifier:"{arxiv_id}"')
+                elif ":" not in arxiv_id and not arxiv_id.startswith("biorxiv-"):
+                    # Regular arXiv ID, e.g. 2401.00001
+                    terms.append(f'identifier:"arXiv:{arxiv_id}"')
+
+        if not terms:
+            return []
+
+        # Combine terms into a single OR query
+        query = " OR ".join(terms)
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}"
+        }
+        params = {
+            "q": query,
+            "fl": "identifier,bibcode,title,abstract,author,pubdate,citation_count,read_count,property,arxiv_class",
+            "rows": len(terms),
+        }
+
+        logger.info(f"Fetching metadata for {len(terms)} papers from NASA ADS")
+        
+        updated_papers = []
+        try:
+            resp = requests.get(self.ADS_API_URL, params=params, headers=headers, timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
+
+            docs = data.get("response", {}).get("docs", [])
+            for doc in docs:
+                paper_data = self._parse_entry(doc)
+                if paper_data:
+                    updated_papers.append(paper_data)
+
+        except requests.RequestException as e:
+            logger.error(f"NASA ADS API request for metadata failed: {e}")
+
+        return updated_papers
+

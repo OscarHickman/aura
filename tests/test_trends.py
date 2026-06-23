@@ -11,8 +11,8 @@ sys.modules['anthropic'] = MagicMock()
 
 import numpy as np  # noqa: E402
 
-from ai_papers import trends  # noqa: E402
-from ai_papers.database import PaperDatabase  # noqa: E402
+from aura import trends  # noqa: E402
+from aura.database import PaperDatabase  # noqa: E402
 
 
 class TestTrends(unittest.TestCase):
@@ -42,8 +42,8 @@ class TestTrends(unittest.TestCase):
             loaded_dict = trends.load_topics(td)
             self.assertEqual(loaded_dict, custom_topics_dict)
 
-    @patch("ai_papers.trends._load_providers_order", return_value=["groq", "openai", "anthropic"])
-    @patch("ai_papers.trends._resolve_api_key", return_value="some-api-key")
+    @patch("aura.trends._load_providers_order", return_value=["groq", "openai", "anthropic"])
+    @patch("aura.trends._resolve_api_key", return_value="some-api-key")
     def test_generate_generic_text_providers(self, mock_resolve_key, mock_order):
         # 1. Test Groq success
         with patch("groq.Groq") as mock_groq_cls:
@@ -80,8 +80,8 @@ class TestTrends(unittest.TestCase):
             res = trends._generate_generic_text("test prompt")
             self.assertEqual(res, "anthropic result")
 
-    @patch("ai_papers.trends._generate_generic_text")
-    @patch("ai_papers.trends.get_model")
+    @patch("aura.trends._generate_generic_text")
+    @patch("aura.trends.get_model")
     def test_verbose_discovery_response_not_saved(self, mock_get_model, mock_gen_text):
         """LLM returning a verbose paragraph instead of keywords must not corrupt saved topics."""
         verbose_response = (
@@ -123,8 +123,8 @@ class TestTrends(unittest.TestCase):
                 self.assertNotIn(":", t, f"Topic contains colon: {t!r}")
                 self.assertNotIn(".", t, f"Topic contains period: {t!r}")
 
-    @patch("ai_papers.trends._generate_generic_text")
-    @patch("ai_papers.trends.get_model")
+    @patch("aura.trends._generate_generic_text")
+    @patch("aura.trends.get_model")
     def test_no_provider_response_not_saved(self, mock_get_model, mock_gen_text):
         """'No AI provider available' fallback must never be saved as a topic."""
         mock_gen_text.return_value = "No AI provider available to generate trends."
@@ -158,8 +158,8 @@ class TestTrends(unittest.TestCase):
             for t in flat_saved:
                 self.assertNotIn("no ai provider", t.lower())
 
-    @patch("ai_papers.trends._generate_generic_text")
-    @patch("ai_papers.trends.get_model")
+    @patch("aura.trends._generate_generic_text")
+    @patch("aura.trends.get_model")
     def test_generate_monthly_trends(self, mock_get_model, mock_gen_text):
         def mock_gen_response(prompt):
             if "emerging" in prompt:

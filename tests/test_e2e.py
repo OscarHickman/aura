@@ -4,13 +4,13 @@ import tempfile
 from unittest.mock import patch
 import numpy as np
 
-from ai_papers.recommender import RecommendationEngine
+from aura.recommender import RecommendationEngine
 
 class TestE2EFlow(unittest.TestCase):
-    @patch("ai_papers.recommender.get_embedding_dim", return_value=4)
-    @patch("ai_papers.recommender.embed_papers_batch")
-    @patch("ai_papers.fetcher.ArxivSource.fetch")
-    @patch("ai_papers.fetcher.SemanticScholarSource.fetch")
+    @patch("aura.recommender.get_embedding_dim", return_value=4)
+    @patch("aura.recommender.embed_papers_batch")
+    @patch("aura.fetcher.ArxivSource.fetch")
+    @patch("aura.fetcher.SemanticScholarSource.fetch")
     def test_fetch_rate_retrain_flow(self, mock_s2, mock_arxiv, mock_embed, mock_get_dim):
         # 1. Mock fetcher response
         mock_arxiv.return_value = [

@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from ai_papers import llm
+from aura import llm
 
 
 class TestLLM(unittest.TestCase):
@@ -16,7 +16,7 @@ class TestLLM(unittest.TestCase):
 
         # Safety rail: fail tests immediately if any code path tries real HTTP LLM calls.
         self._http_patcher = patch(
-            "ai_papers.llm.requests.post",
+            "aura.llm.requests.post",
             side_effect=AssertionError("External LLM HTTP call attempted during tests"),
         )
         self._http_patcher.start()
@@ -34,7 +34,7 @@ class TestLLM(unittest.TestCase):
         cleaned = llm._clean_summary_text(text)
         self.assertEqual(cleaned, "Strong lensing constraints are improved.")
 
-    @patch("ai_papers.llm._load_provider_config", return_value={"api_key": "cfg-key"})
+    @patch("aura.llm._load_provider_config", return_value={"api_key": "cfg-key"})
     def test_resolve_api_key_priority(self, _mock_cfg):
         with patch.dict(
             os.environ,
@@ -61,7 +61,7 @@ class TestLLM(unittest.TestCase):
     def test_load_providers_order_from_file_and_default(self):
         with tempfile.TemporaryDirectory() as td:
             cred = Path(td)
-            with patch("ai_papers.llm._credentials_dir", return_value=cred):
+            with patch("aura.llm._credentials_dir", return_value=cred):
                 llm._providers_order_cache = None
                 self.assertEqual(llm._load_providers_order(), ["groq", "google"])
 
@@ -71,7 +71,7 @@ class TestLLM(unittest.TestCase):
                 llm._providers_order_cache = None
                 self.assertEqual(llm._load_providers_order(), ["openai", "groq"])
 
-    @patch("ai_papers.llm._load_providers_order", return_value=["groq", "openai"])
+    @patch("aura.llm._load_providers_order", return_value=["groq", "openai"])
     def test_generate_summary_fallback(self, _mock_order):
         with patch.dict(
             llm._PROVIDER_FUNCS,
@@ -84,7 +84,7 @@ class TestLLM(unittest.TestCase):
             summary = llm.generate_summary("t", "a")
             self.assertEqual(summary, "ok-summary")
 
-    @patch("ai_papers.llm._load_providers_order", return_value=["groq"])
+    @patch("aura.llm._load_providers_order", return_value=["groq"])
     def test_generate_summary_always_cleans_provider_output(self, _mock_order):
         with patch.dict(
             llm._PROVIDER_FUNCS,
@@ -99,8 +99,8 @@ class TestLLM(unittest.TestCase):
             summary = llm.generate_summary("t", "a")
             self.assertEqual(summary, "Final clean summary.")
 
-    @patch("ai_papers.llm._resolve_api_key", return_value="test-key")
-    @patch("ai_papers.llm._get_provider_setting", return_value="llama-3.1-8b-instant")
+    @patch("aura.llm._resolve_api_key", return_value="test-key")
+    @patch("aura.llm._get_provider_setting", return_value="llama-3.1-8b-instant")
     def test_summarize_groq_success(self, mock_setting, mock_key):
         mock_client = Mock()
         mock_message = Mock()
@@ -112,7 +112,7 @@ class TestLLM(unittest.TestCase):
             summary = llm._summarize_groq("Title", "Abstract")
             self.assertEqual(summary, "Groq summary response")
 
-    @patch("ai_papers.llm._resolve_api_key", return_value="test-key")
+    @patch("aura.llm._resolve_api_key", return_value="test-key")
     def test_summarize_google_success(self, mock_key):
         self._http_patcher.stop() # stop the safety rail mock temporarily
         
@@ -130,14 +130,14 @@ class TestLLM(unittest.TestCase):
             ]
         }
         
-        with patch("ai_papers.llm.requests.post", return_value=mock_resp) as mock_post:
+        with patch("aura.llm.requests.post", return_value=mock_resp) as mock_post:
             summary = llm._summarize_google("Title", "Abstract", retry=False)
             self.assertEqual(summary, "Google Gemini summary response")
             mock_post.assert_called_once()
             
         self._http_patcher.start() # restart safety rail mock
 
-    @patch("ai_papers.llm._resolve_api_key", return_value="test-key")
+    @patch("aura.llm._resolve_api_key", return_value="test-key")
     def test_summarize_openai_success(self, mock_key):
         mock_client = Mock()
         mock_response = Mock()
@@ -149,7 +149,7 @@ class TestLLM(unittest.TestCase):
             summary = llm._summarize_openai("Title", "Abstract")
             self.assertEqual(summary, "OpenAI summary response")
 
-    @patch("ai_papers.llm._resolve_api_key", return_value="test-key")
+    @patch("aura.llm._resolve_api_key", return_value="test-key")
     def test_summarize_anthropic_success(self, mock_key):
         mock_client = Mock()
         mock_message = Mock()

@@ -44,7 +44,7 @@ python run.py serve --scheduler
 
 ## Architecture
 
-### Core Modules (`ai_papers/`)
+### Core Modules (`aura/`)
 
 - **`recommender.py`** — Main `RecommendationEngine` orchestrating the entire pipeline. Coordinates fetching, embedding, preference prediction, and summary generation.
 
@@ -60,7 +60,7 @@ python run.py serve --scheduler
 
 - **`email_digest.py`** — Sends email digests with top-ranked papers and summaries. Reads SMTP config from `user_credentials/email_config.json`.
 
-### Web UI (`ai_papers/web/app.py`)
+### Web UI (`aura/web/app.py`)
 Flask REST API with routes for:
 - `GET /papers` — List papers with filters and pagination
 - `POST /papers/{id}/rate` — Save user feedback (thumbs up/down)
@@ -118,7 +118,7 @@ GROQ_API_KEY=...              # Groq API key (free tier available)
   
 ## Testing
 
-Unit tests use Python's `unittest` framework. Test files mirror module names (e.g., `test_model.py` tests `ai_papers/model.py`).
+Unit tests use Python's `unittest` framework. Test files mirror module names (e.g., `test_model.py` tests `aura/model.py`).
 
 Test patterns:
 - Mock external APIs (arXiv, LLM providers) to avoid rate limits and dependencies

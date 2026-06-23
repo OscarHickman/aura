@@ -7,7 +7,7 @@ from typing import cast
 
 from .database import PaperDatabase
 from .embedder import embed_papers_batch, get_embedding_dim
-from .fetcher import PaperSource, ArxivSource, SemanticScholarSource, RSSSource, BiorxivSource
+from .fetcher import PaperSource, ArxivSource, SemanticScholarSource, RSSSource, BiorxivSource, ADSSource
 from .llm import generate_summary, get_default_provider, _load_providers_order
 from .model import PreferenceModel
 
@@ -46,6 +46,8 @@ class RecommendationEngine:
                 self.sources.append(BiorxivSource())
             if sc.get("rss", True):
                 self.sources.append(RSSSource(feed_urls=rss_urls))
+            if sc.get("ads", False):
+                self.sources.append(ADSSource())
 
         # Initialize components
         self.db = PaperDatabase(self.data_dir / "papers.db")
@@ -307,13 +309,22 @@ class RecommendationEngine:
             citation_count = paper.get("citation_count") or 0
             citation_bonus = min(0.1, math.log10(citation_count + 1) * 0.02)
 
+            # Read count bonus: log-scaled boost based on ADS read count
+            read_count = paper.get("read_count") or 0
+            read_bonus = min(0.05, math.log10(read_count + 1) * 0.01)
+
+            # Refereed status bonus: small boost for peer-reviewed publications
+            refereed_bonus = 0.03 if paper.get("refereed") else 0
+
             # Combine scores
             paper["score"] = round(
-                min(1.0, base_score + freshness_bonus + summary_bonus + citation_bonus), 4
+                min(1.0, base_score + freshness_bonus + summary_bonus + citation_bonus + read_bonus + refereed_bonus), 4
             )
             paper["freshness_bonus"] = round(freshness_bonus, 4)
             paper["summary_bonus"] = round(summary_bonus, 4)
             paper["citation_bonus"] = round(citation_bonus, 4)
+            paper["read_bonus"] = round(read_bonus, 4)
+            paper["refereed_bonus"] = round(refereed_bonus, 4)
 
         # Explainability: attach the most similar liked paper to each recommendation
         rated_papers = self.db.get_rated_papers()

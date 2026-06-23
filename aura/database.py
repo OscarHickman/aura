@@ -79,7 +79,10 @@ class PaperDatabase:
                 source TEXT DEFAULT 'arxiv',
                 citation_count INTEGER DEFAULT 0,
                 has_code INTEGER DEFAULT 0,
-                has_data INTEGER DEFAULT 0
+                has_data INTEGER DEFAULT 0,
+                bibcode TEXT,
+                read_count INTEGER DEFAULT 0,
+                refereed INTEGER DEFAULT 0
             );
 
             CREATE TABLE IF NOT EXISTS ratings (
@@ -229,6 +232,9 @@ class PaperDatabase:
         self._add_column_if_missing("collections", "user_id", "INTEGER DEFAULT 1")
         self._add_column_if_missing("collections", "is_public", "INTEGER DEFAULT 0")
         self._add_column_if_missing("collections", "slug", "TEXT")
+        self._add_column_if_missing("papers", "bibcode", "TEXT")
+        self._add_column_if_missing("papers", "read_count", "INTEGER DEFAULT 0")
+        self._add_column_if_missing("papers", "refereed", "INTEGER DEFAULT 0")
 
         # Tables that need structural migration (UNIQUE constraint changes)
         self._migrate_reading_list()
@@ -1481,6 +1487,35 @@ class PaperDatabase:
             (arxiv_id, user_id),
         ).fetchall()
         return [dict(row) for row in rows]
+
+    def get_all_papers_for_metadata_refresh(self) -> list[dict]:
+        """Get all papers stored in the database for metadata refresh."""
+        rows = self.conn.execute("SELECT arxiv_id, bibcode FROM papers").fetchall()
+        return [dict(row) for row in rows]
+
+    def update_paper_ads_metadata(
+        self,
+        arxiv_id: str,
+        bibcode: Optional[str],
+        citation_count: int,
+        read_count: int,
+        refereed: int,
+    ) -> bool:
+        """Update a paper's ADS metadata fields. Returns True if updated."""
+        try:
+            self.conn.execute(
+                """
+                UPDATE papers
+                SET bibcode = ?, citation_count = ?, read_count = ?, refereed = ?
+                WHERE arxiv_id = ?
+                """,
+                (bibcode, citation_count, read_count, refereed, arxiv_id),
+            )
+            self.conn.commit()
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Failed to update ADS metadata for {arxiv_id}: {e}")
+            return False
 
     def close(self) -> None:
         """Close the database connection."""

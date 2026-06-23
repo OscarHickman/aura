@@ -202,9 +202,19 @@
                                 {% if paper.freshness_bonus is defined and paper.freshness_bonus > 0.05 %}
                                 <span class="badge bg-danger ms-2"><i class="bi bi-fire"></i> NEW</span>
                                 {% endif %}
+                                {% if paper.refereed %}
+                                <span class="badge border border-success text-success bg-transparent ms-1" style="border-color: #2ec4b6 !important; color: #2ec4b6 !important;" title="Refereed publication (peer-reviewed)">
+                                    <i class="bi bi-patch-check-fill"></i> REFEREED
+                                </span>
+                                {% endif %}
                                 {% if paper.citation_count is defined and paper.citation_count > 0 %}
-                                <span class="badge bg-secondary ms-1" title="Citations from Semantic Scholar">
+                                <span class="badge bg-secondary ms-1" title="Citations">
                                     <i class="bi bi-chat-quote"></i> {{ paper.citation_count }}
+                                </span>
+                                {% endif %}
+                                {% if paper.read_count is defined and paper.read_count > 0 %}
+                                <span class="badge bg-secondary ms-1" style="background-color: #4a5568 !important;" title="Reads on NASA ADS">
+                                    <i class="bi bi-eye"></i> {{ paper.read_count }}
                                 </span>
                                 {% endif %}
                                 {% if paper.has_code %}
@@ -222,7 +232,7 @@
                                     {% if paper.score >= 0.8 %}bg-success
                                     {% elif paper.score >= 0.5 %}bg-warning text-dark
                                     {% else %}bg-secondary
-                                    {% endif %}" title="Base: {{ '%.2f' | format(paper.model_score) }}, Freshness: +{{ '%.2f' | format(paper.freshness_bonus) }}, Summary: +{{ '%.2f' | format(paper.summary_bonus) }}{% if paper.citation_bonus %}, Citations: +{{ '%.2f' | format(paper.citation_bonus) }}{% endif %}">
+                                    {% endif %}" title="Base: {{ '%.2f' | format(paper.model_score) }}, Freshness: +{{ '%.2f' | format(paper.freshness_bonus) }}, Summary: +{{ '%.2f' | format(paper.summary_bonus) }}{% if paper.citation_bonus %}, Citations: +{{ '%.2f' | format(paper.citation_bonus) }}{% endif %}{% if paper.read_bonus %}, Reads: +{{ '%.2f' | format(paper.read_bonus) }}{% endif %}{% if paper.refereed_bonus %}, Refereed: +{{ '%.2f' | format(paper.refereed_bonus) }}{% endif %}">
                                     {{ "%.0f" | format(paper.score * 100) }}% Match
                                 </span>
                                 {% endif %}

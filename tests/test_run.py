@@ -23,7 +23,7 @@ class TestRunModule(unittest.TestCase):
             data = run.load_config(str(path))
             self.assertEqual(data["port"], 9999)
 
-    @patch("ai_papers.recommender.RecommendationEngine")
+    @patch("aura.recommender.RecommendationEngine")
     def test_cmd_fetch_uses_cli_overrides(self, mock_engine_cls):
         engine = Mock()
         engine.fetch_new_papers.return_value = 7
@@ -43,7 +43,7 @@ class TestRunModule(unittest.TestCase):
         )
         engine.close.assert_called_once()
 
-    @patch("ai_papers.recommender.RecommendationEngine")
+    @patch("aura.recommender.RecommendationEngine")
     def test_cmd_summarize_passes_flags(self, mock_engine_cls):
         engine = Mock()
         engine.generate_missing_summaries.return_value = {"status": "ok"}
@@ -62,7 +62,7 @@ class TestRunModule(unittest.TestCase):
             limit=20, include_failed=False
         )
 
-    @patch("ai_papers.email_digest.send_top_recommendations_email")
+    @patch("aura.email_digest.send_top_recommendations_email")
     def test_cmd_email_digest(self, mock_send):
         mock_send.return_value = {"status": "sent", "sent": True}
 

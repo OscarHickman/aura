@@ -61,8 +61,8 @@ jobs:
           script: |
             REPO=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
             docker pull ghcr.io/$REPO:latest
-            if [ "$(docker ps -q -f name=ai_papers_app)" != "" ]; then
-              docker stop ai_papers_app || true
-              docker rm ai_papers_app || true
+            if [ "$(docker ps -q -f name=aura_app)" != "" ]; then
+              docker stop aura_app || true
+              docker rm aura_app || true
             fi
-            docker run -d --restart unless-stopped -p 80:5000 --name ai_papers_app ghcr.io/$REPO:latest
+            docker run -d --restart unless-stopped -p 80:5000 --name aura_app ghcr.io/$REPO:latest

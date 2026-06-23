@@ -1,10 +1,10 @@
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 from xml.etree import ElementTree
 
 import requests
 
-from ai_papers import fetcher
+from aura import fetcher
 
 
 SAMPLE_XML = """<?xml version='1.0' encoding='UTF-8'?>
@@ -47,8 +47,8 @@ class TestFetcher(unittest.TestCase):
         self.assertIn("astro-ph.CO", parsed["categories"])
         self.assertEqual(parsed["authors"], ["Alice", "Bob"])
 
-    @patch("ai_papers.fetcher.time.sleep")
-    @patch("ai_papers.fetcher.requests.get")
+    @patch("aura.fetcher.time.sleep")
+    @patch("aura.fetcher.requests.get")
     def test_fetch_papers_success(self, mock_get, _mock_sleep):
         mock_get.return_value = _Resp(SAMPLE_XML)
         papers = self.source.fetch(["astro-ph.CO"], max_results=1, days_back=1)
@@ -57,14 +57,14 @@ class TestFetcher(unittest.TestCase):
         self.assertEqual(papers[0]["arxiv_id"], "2401.12345")
 
     @patch(
-        "ai_papers.fetcher.requests.get", side_effect=requests.RequestException("boom")
+        "aura.fetcher.requests.get", side_effect=requests.RequestException("boom")
     )
     def test_fetch_papers_handles_request_exception(self, _mock_get):
         papers = self.source.fetch(["astro-ph.CO"], max_results=1, days_back=1)
         self.assertEqual(papers, [])
 
-    @patch("ai_papers.fetcher.time.sleep")
-    @patch("ai_papers.fetcher.requests.get")
+    @patch("aura.fetcher.time.sleep")
+    @patch("aura.fetcher.requests.get")
     def test_fetch_papers_simple_builds_category_query(self, mock_get, _mock_sleep):
         mock_get.return_value = _Resp(SAMPLE_XML)
 
@@ -74,6 +74,106 @@ class TestFetcher(unittest.TestCase):
         query = kwargs["params"]["search_query"]
         self.assertIn("cat:astro-ph.CO", query)
         self.assertIn("cat:astro-ph.GA", query)
+
+
+class TestADSSource(unittest.TestCase):
+    def setUp(self):
+        self.source = fetcher.ADSSource(api_key="test_key")
+
+    def test_parse_entry_arxiv(self):
+        doc = {
+            "identifier": ["arXiv:2401.12345", "ads:123"],
+            "bibcode": "2026Test...123P",
+            "author": ["Alice", "Bob"],
+            "pubdate": "2026-01-00",
+            "title": ["Test Paper"],
+            "abstract": "An abstract about a code repository here.",
+            "arxiv_class": ["astro-ph.CO"],
+            "citation_count": 5,
+            "read_count": 10,
+            "property": ["refereed", "other"]
+        }
+        parsed = self.source._parse_entry(doc)
+        self.assertEqual(parsed["arxiv_id"], "2401.12345")
+        self.assertEqual(parsed["title"], "Test Paper")
+        self.assertEqual(parsed["bibcode"], "2026Test...123P")
+        self.assertEqual(parsed["citation_count"], 5)
+        self.assertEqual(parsed["read_count"], 10)
+        self.assertEqual(parsed["refereed"], 1)
+        self.assertEqual(parsed["has_code"], True)
+
+    def test_parse_entry_non_arxiv(self):
+        doc = {
+            "bibcode": "2026Test...123P",
+            "author": ["Alice"],
+            "pubdate": "2026-01-01",
+            "title": "Test Title",
+            "abstract": "No keywords.",
+            "property": ["not-refereed"]
+        }
+        parsed = self.source._parse_entry(doc)
+        self.assertEqual(parsed["arxiv_id"], "ads:2026Test...123P")
+        self.assertEqual(parsed["refereed"], 0)
+
+    @patch("aura.fetcher.requests.get")
+    def test_fetch_papers_success(self, mock_get):
+        mock_resp = Mock()
+        mock_resp.json.return_value = {
+            "response": {
+                "docs": [
+                    {
+                        "identifier": ["arXiv:2401.12345"],
+                        "bibcode": "2026Test...123P",
+                        "author": ["Alice"],
+                        "pubdate": "2026-01-01",
+                        "title": ["Test Paper"],
+                        "abstract": "Abstract",
+                        "arxiv_class": ["astro-ph.CO"],
+                        "citation_count": 2,
+                        "read_count": 4,
+                        "property": []
+                    }
+                ]
+            }
+        }
+        mock_get.return_value = mock_resp
+        
+        papers = self.source.fetch(["astro-ph.CO"], max_results=1, days_back=10)
+        self.assertEqual(len(papers), 1)
+        self.assertEqual(papers[0]["arxiv_id"], "2401.12345")
+        self.assertEqual(papers[0]["read_count"], 4)
+
+    @patch("aura.fetcher.requests.get")
+    def test_fetch_metadata_for_papers(self, mock_get):
+        mock_resp = Mock()
+        mock_resp.json.return_value = {
+            "response": {
+                "docs": [
+                    {
+                        "identifier": ["arXiv:2401.12345"],
+                        "bibcode": "2026Test...123P",
+                        "author": ["Alice"],
+                        "pubdate": "2026-01-01",
+                        "title": ["Test Paper"],
+                        "abstract": "Abstract",
+                        "arxiv_class": ["astro-ph.CO"],
+                        "citation_count": 25,
+                        "read_count": 100,
+                        "property": ["refereed"]
+                    }
+                ]
+            }
+        }
+        mock_get.return_value = mock_resp
+        
+        papers_input = [{"arxiv_id": "2401.12345", "bibcode": None}]
+        updated = self.source.fetch_metadata_for_papers(papers_input)
+        
+        self.assertEqual(len(updated), 1)
+        self.assertEqual(updated[0]["arxiv_id"], "2401.12345")
+        self.assertEqual(updated[0]["citation_count"], 25)
+        self.assertEqual(updated[0]["read_count"], 100)
+        self.assertEqual(updated[0]["refereed"], 1)
 
 
 if __name__ == "__main__":
