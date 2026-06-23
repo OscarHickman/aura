@@ -28,18 +28,32 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Login to Docker Hub
+        if: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: Downcase REPO
         run: |
           echo "REPO=${GITHUB_REPOSITORY,,}" >>${GITHUB_ENV}
+
+      - name: Generate image tags
+        id: image-tags
+        run: |
+          TAGS="ghcr.io/${{ env.REPO }}:latest,ghcr.io/${{ env.REPO }}:${{ github.sha }}"
+          if [ "${{ secrets.DOCKERHUB_USERNAME }}" != "" ]; then
+            TAGS="${TAGS},${{ secrets.DOCKERHUB_USERNAME }}/aura:latest,${{ secrets.DOCKERHUB_USERNAME }}/aura:${{ github.sha }}"
+          fi
+          echo "tags=${TAGS}" >> $GITHUB_OUTPUT
 
       - name: Build and push image
         uses: docker/build-push-action@v4
         with:
           context: .
           push: true
-          tags: |
-            ghcr.io/${{ env.REPO }}:latest
-            ghcr.io/${{ env.REPO }}:${{ github.sha }}
+          tags: ${{ steps.image-tags.outputs.tags }}
 
   deploy:
     needs: build-and-push

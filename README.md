@@ -82,11 +82,29 @@ python run.py email-digest --top-n 3
 - Do not store real passwords in README or commit them to git.
 - Python 3.10+ required.
 
-## Deployment (Ubuntu server)
+## Deployment
 
-Recommended: run in Docker. Alternative steps for a manual server install are also provided.
+### One-Click Cloud Deploy
 
-Docker (recommended)
+[![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/new/template?template=https%3A%2F%2Fgithub.com%2FOscarHickman%2Faura)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/OscarHickman/aura)
+
+### Docker Compose (Recommended)
+
+Bundle AURA with Redis and Qdrant services in a multi-container stack:
+
+1. Run the interactive setup wizard:
+   ```bash
+   ./setup.sh
+   ```
+2. Launch the services:
+   ```bash
+   docker-compose up -d
+   ```
+
+AURA is then served at `http://localhost:5000`.
+
+### Manual Docker (no Compose)
 
 - Build and push an image (or let GitHub Actions build & push to GitHub Container Registry):
 
