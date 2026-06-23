@@ -205,6 +205,11 @@ class TestRecommendationEngine(unittest.TestCase):
             [(p1, emb1)] if ids == ["2401.00001"] else [(p1, emb1), (p2, emb2)]
         )
         db.get_latest_rating.return_value = None
+        
+        # Mock get_paper to return copy of the mock paper dictionary
+        papers_map = {"2401.00001": p1, "2401.00002": p2}
+        db.get_paper.side_effect = lambda aid: dict(papers_map[aid]) if aid in papers_map else None
+        
         mock_db_cls.return_value = db
 
         with tempfile.TemporaryDirectory() as td:

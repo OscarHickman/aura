@@ -68,6 +68,58 @@ class RecommendationEngine:
         self._user_models: dict[int, PreferenceModel] = {1: self.preference_model}
         self._user_shadow_models: dict[int, PreferenceModel] = {1: self.shadow_model}
 
+        # Initialize Vector Store
+        try:
+            from .config import get_validated_config
+            from .vector_store import NumpyVectorStore, QdrantVectorStore
+            cfg = get_validated_config()
+            vs_conf = cfg.get("vector_store", {})
+            if vs_conf.get("provider") == "qdrant" and vs_conf.get("url"):
+                self.vector_store = QdrantVectorStore(
+                    url=vs_conf["url"],
+                    api_key=vs_conf.get("api_key"),
+                    collection_name=vs_conf.get("collection_name", "aura_papers"),
+                    embedding_dim=self._embedding_dim
+                )
+                self._migrate_to_vector_store()
+            else:
+                self.vector_store = NumpyVectorStore(self.db)
+        except Exception as e:
+            logger.error(f"Failed to initialize vector store: {e}")
+            from .vector_store import NumpyVectorStore
+            self.vector_store = NumpyVectorStore(self.db)
+
+    def _migrate_to_vector_store(self) -> None:
+        """Migrate existing paper embeddings to Qdrant vector database on startup if empty."""
+        from .vector_store import QdrantVectorStore
+        if not hasattr(self, "vector_store") or not isinstance(self.vector_store, QdrantVectorStore) or not self.vector_store.client:
+            return
+            
+        try:
+            collection_info = self.vector_store.client.get_collection(self.vector_store.collection_name)
+            if collection_info.points_count > 0:
+                logger.info("Vector database collection already populated. Skipping migration.")
+                return
+                
+            logger.info("Migrating existing SQLite paper embeddings to Qdrant...")
+            all_papers = self.db.get_papers_with_embeddings()
+            if not all_papers:
+                logger.info("No papers in SQLite database to migrate.")
+                return
+                
+            arxiv_ids = [p["arxiv_id"] for p, _ in all_papers]
+            embeddings = [emb for _, emb in all_papers]
+            
+            batch_size = 100
+            for i in range(0, len(arxiv_ids), batch_size):
+                batch_ids = arxiv_ids[i:i+batch_size]
+                batch_embs = embeddings[i:i+batch_size]
+                self.vector_store.add_papers_batch(batch_ids, batch_embs)
+                
+            logger.info(f"Successfully migrated {len(arxiv_ids)} paper embeddings to Qdrant vector database.")
+        except Exception as e:
+            logger.error(f"Failed to migrate paper embeddings to Qdrant: {e}")
+
     def get_user_preference_model(self, user_id: int) -> PreferenceModel:
         """Return the preference model for a given user, creating it if needed."""
         if user_id in self._user_models:
@@ -160,6 +212,13 @@ class RecommendationEngine:
 
         if count > 0:
             try:
+                arxiv_ids = [p["arxiv_id"] for p in new_papers]
+                self.vector_store.add_papers_batch(arxiv_ids, embeddings)
+            except Exception as e:
+                logger.error(f"Failed to index papers in vector store: {e}")
+
+        if count > 0:
+            try:
                 from .config import get_validated_config
                 from .notifications import notify_high_scoring_papers
                 cfg = get_validated_config()
@@ -194,6 +253,11 @@ class RecommendationEngine:
         summary = summaries[0] if summaries else None
 
         self.db.add_papers_batch([paper], embeddings, [summary] if summary else None)
+        if len(embeddings) > 0:
+            try:
+                self.vector_store.add_paper(arxiv_id, embeddings[0])
+            except Exception as e:
+                logger.error(f"Failed to index single paper in vector store: {e}")
         return self.db.get_paper(arxiv_id)
 
     def _generate_summaries_for_papers(
@@ -567,29 +631,19 @@ class RecommendationEngine:
 
         _, current_emb = current_data[0]
 
-        # Fetch all other papers with embeddings
-        all_papers = self.db.get_papers_with_embeddings()
+        # Use vector store to query
+        similar_ids = self.vector_store.search_similar(current_emb, limit + 1)
 
         similarities = []
-        for paper, emb in all_papers:
-            if paper["arxiv_id"] == arxiv_id:
+        for other_id, sim in similar_ids:
+            if other_id == arxiv_id:
                 continue
+            paper = self.db.get_paper(other_id)
+            if paper:
+                paper["similarity"] = round(sim, 4)
+                paper["rating"] = self.db.get_latest_rating(other_id)
+                similarities.append(paper)
 
-            # Compute cosine similarity
-            dot = np.dot(current_emb, emb)
-            norm_curr = np.linalg.norm(current_emb)
-            norm_other = np.linalg.norm(emb)
-
-            sim = float(dot / (norm_curr * norm_other)) if norm_curr > 0 and norm_other > 0 else 0.0
-
-            # Format similarity as a float
-            paper["similarity"] = round(sim, 4)
-            # Add rating info
-            paper["rating"] = self.db.get_latest_rating(paper["arxiv_id"])
-            similarities.append(paper)
-
-        # Sort by similarity descending
-        similarities.sort(key=lambda p: p["similarity"], reverse=True)
         return similarities[:limit]
 
     def semantic_search(self, query: str, limit: int = 20) -> list[dict]:
@@ -598,23 +652,17 @@ class RecommendationEngine:
         
         query_emb = embed_text(query, model_name=self.embedding_model)
         
-        all_papers = self.db.get_papers_with_embeddings()
-        if not all_papers:
-            return []
-            
+        # Use vector store to query
+        similar_ids = self.vector_store.search_similar(query_emb, limit)
+        
         similarities = []
-        for paper, emb in all_papers:
-            dot = np.dot(query_emb, emb)
-            norm_curr = np.linalg.norm(query_emb)
-            norm_other = np.linalg.norm(emb)
-            
-            sim = float(dot / (norm_curr * norm_other)) if norm_curr > 0 and norm_other > 0 else 0.0
-            
-            paper["similarity"] = round(sim, 4)
-            paper["rating"] = self.db.get_latest_rating(paper["arxiv_id"])
-            similarities.append(paper)
-            
-        similarities.sort(key=lambda p: p["similarity"], reverse=True)
+        for other_id, sim in similar_ids:
+            paper = self.db.get_paper(other_id)
+            if paper:
+                paper["similarity"] = round(sim, 4)
+                paper["rating"] = self.db.get_latest_rating(other_id)
+                similarities.append(paper)
+                
         return similarities[:limit]
 
     def get_diverse_papers(self, limit: int = 20) -> list[dict]:

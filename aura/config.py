@@ -69,6 +69,10 @@ def get_validated_config(config_path: str = "config.yaml") -> dict:
     discord.setdefault("enabled", False)
     discord.setdefault("score_threshold", 0.8)
 
+    # Vector store defaults
+    vs = config.setdefault("vector_store", {})
+    vs.setdefault("provider", "numpy")
+
     # 2. Merge Legacy and Env configurations
     email = config.setdefault("email", {})
     old_email_path = Path("user_credentials/email_config.json")

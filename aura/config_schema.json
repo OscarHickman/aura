@@ -217,6 +217,16 @@
         }
       },
       "additionalProperties": false
+    },
+    "vector_store": {
+      "type": "object",
+      "properties": {
+        "provider": { "type": "string", "enum": ["numpy", "qdrant"] },
+        "url": { "type": "string" },
+        "api_key": { "type": "string" },
+        "collection_name": { "type": "string" }
+      },
+      "additionalProperties": false
     }
   },
   "required": [

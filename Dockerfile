@@ -21,5 +21,8 @@ RUN pip install gunicorn
 
 EXPOSE 5000
 
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')" || exit 1
+
 # Use Gunicorn in production by default. Keep `run.py` for CLI/dev usage.
 CMD ["gunicorn", "deploy.wsgi:app", "-w", "4", "-b", "0.0.0.0:5000"]

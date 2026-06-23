@@ -6,7 +6,9 @@ This model IS the user's preference config - saved and loaded as a .pt file.
 """
 
 import logging
+import os
 from pathlib import Path
+import tempfile
 import random
 from typing import Any
 
@@ -219,8 +221,9 @@ class PreferenceModel:
         return self.train_step(batch_embeddings, batch_labels, epochs=epochs, use_scheduler=False)
 
     def save(self):
-        """Save model weights and training state to disk."""
-        self.model_path.parent.mkdir(parents=True, exist_ok=True)
+        """Save model weights and training state to disk atomically."""
+        temp_dir = self.model_path.parent
+        temp_dir.mkdir(parents=True, exist_ok=True)
         checkpoint = {
             "model_state_dict": self.model.state_dict(),
             "optimizer_state_dict": self.optimizer.state_dict(),
@@ -232,18 +235,38 @@ class PreferenceModel:
             "train_history": self.train_history,
             "replay_buffer": self.replay_buffer,
         }
-        torch.save(checkpoint, self.model_path)
-        logger.info(f"Model saved to {self.model_path}")
+        
+        # Save to a temporary file in the same directory, then atomically rename/replace
+        fd, tmp_path = tempfile.mkstemp(dir=temp_dir, suffix=".pt.tmp")
+        try:
+            os.close(fd)
+            torch.save(checkpoint, tmp_path)
+            os.replace(tmp_path, self.model_path)
+            logger.info(f"Model saved atomically to {self.model_path}")
+        except Exception as e:
+            if os.path.exists(tmp_path):
+                try:
+                    os.unlink(tmp_path)
+                except Exception:
+                    pass
+            logger.error(f"Failed to save model atomically to {self.model_path}: {e}")
+            # Fall back to standard save as a last resort
+            torch.save(checkpoint, self.model_path)
+            logger.info(f"Fallback model saved directly to {self.model_path}")
 
     def load(self):
-        """Load model weights and training state from disk."""
+        """Load model weights and training state from disk, resilient to corruption."""
         if not self.model_path.exists():
             logger.warning(f"No model found at {self.model_path}, using fresh model")
             return
 
-        checkpoint = torch.load(
-            self.model_path, map_location=self.device, weights_only=False
-        )
+        try:
+            checkpoint = torch.load(
+                self.model_path, map_location=self.device, weights_only=False
+            )
+        except Exception as e:
+            logger.error(f"Failed to load model from {self.model_path}: {e}. Starting fresh model.")
+            return
 
         # Rebuild model if embedding dim changed
         saved_dim = checkpoint.get("embedding_dim", self.embedding_dim)

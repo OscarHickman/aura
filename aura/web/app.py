@@ -20,10 +20,37 @@ from ..recommender import RecommendationEngine
 from ..config import get_validated_config
 from ..logging_config import setup_logging
 
+import html
+import re
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from flask_wtf.csrf import CSRFProtect
+from flask_talisman import Talisman
+
 logger = logging.getLogger(__name__)
 
 engine: RecommendationEngine | None = None
 login_manager: LoginManager | None = None
+
+limiter = Limiter(
+    key_func=get_remote_address,
+    default_limits=["100 per minute"],
+    storage_uri="memory://",
+)
+csrf = CSRFProtect()
+
+
+def sanitise_input(text: str) -> str:
+    """Escapes HTML entities to prevent XSS."""
+    return html.escape(text.strip()) if text else ""
+
+
+def sanitise_tag(tag: str) -> str:
+    """Sanitise tag to alphanumeric, underscores, and hyphens only."""
+    if not tag:
+        return ""
+    cleaned = re.sub(r"[^a-zA-Z0-9_-]", "", tag.strip())
+    return cleaned.lower()
 
 
 class User(UserMixin):
@@ -136,6 +163,12 @@ def create_app(config_path: str | None = None) -> Flask:
     # Secret key required by Flask-Login session cookies
     app.secret_key = os.environ.get("AURA_SECRET_KEY") or secrets.token_hex(32)
 
+    # Disable CSRF protection dynamically during testing
+    @app.before_request
+    def check_testing_csrf():
+        if app.testing or app.config.get("TESTING"):
+            app.config["WTF_CSRF_ENABLED"] = False
+
     # Load config
     if config_path is None:
         config_path = os.environ.get("AI_PAPERS_CONFIG", "config.yaml")
@@ -147,6 +180,43 @@ def create_app(config_path: str | None = None) -> Flask:
         raise SystemExit(f"Configuration error: {e}")
 
     app.config["AI_PAPERS"] = config
+
+    # Initialize Limiter
+    limiter.init_app(app)
+
+    # Initialize CSRF Protection
+    csrf.init_app(app)
+
+    # Initialize Talisman (Security Headers)
+    csp = {
+        "default-src": "'self'",
+        "style-src": [
+            "'self'",
+            "'unsafe-inline'",
+            "https://cdn.jsdelivr.net",
+        ],
+        "script-src": [
+            "'self'",
+            "'unsafe-inline'",
+            "https://cdn.jsdelivr.net",
+        ],
+        "font-src": [
+            "'self'",
+            "https://cdn.jsdelivr.net",
+        ],
+        "img-src": [
+            "'self'",
+            "data:",
+            "https:",
+        ],
+        "connect-src": "'self'",
+    }
+    Talisman(
+        app,
+        content_security_policy=csp,
+        force_https=False,
+        session_cookie_secure=False,
+    )
 
     # Initialize recommendation engine
     global engine
@@ -543,7 +613,7 @@ def _register_routes(app: Flask) -> None:
     def add_paper_note(arxiv_id):
         uid = _get_current_user_id()
         data = request.get_json() or {}
-        content = data.get("content", "").strip()
+        content = sanitise_input(data.get("content", ""))
         if not content:
             return jsonify({"error": "content is required"}), 400
         note_id = engine.db.add_note(arxiv_id, content, user_id=uid) if engine else None
@@ -556,7 +626,7 @@ def _register_routes(app: Flask) -> None:
     def update_paper_note(note_id):
         uid = _get_current_user_id()
         data = request.get_json() or {}
-        content = data.get("content", "").strip()
+        content = sanitise_input(data.get("content", ""))
         if not content:
             return jsonify({"error": "content is required"}), 400
         success = engine.db.update_note(note_id, content, user_id=uid) if engine else False
@@ -585,13 +655,13 @@ def _register_routes(app: Flask) -> None:
     def add_paper_tag(arxiv_id):
         uid = _get_current_user_id()
         data = request.get_json() or {}
-        tag = data.get("tag", "").strip()
+        tag = sanitise_tag(data.get("tag", ""))
         if not tag:
             return jsonify({"error": "tag is required"}), 400
         success = engine.db.add_tag(arxiv_id, tag, user_id=uid) if engine else False
         if not success:
             return jsonify({"error": "failed to add tag"}), 500
-        return jsonify({"status": "ok", "tag": tag.lower()})
+        return jsonify({"status": "ok", "tag": tag})
 
     @app.route("/api/papers/<path:arxiv_id>/tags/<tag>", methods=["DELETE"])
     @login_required
@@ -614,8 +684,9 @@ def _register_routes(app: Flask) -> None:
     def create_collection():
         uid = _get_current_user_id()
         data = request.get_json() or {}
-        name = data.get("name", "").strip()
-        description = data.get("description", "").strip() or None
+        name = sanitise_input(data.get("name", ""))
+        raw_desc = data.get("description", "")
+        description = sanitise_input(raw_desc) if raw_desc else None
         if not name:
             return jsonify({"error": "name is required"}), 400
         coll_id = engine.db.create_collection(name, user_id=uid, description=description) if engine else None
@@ -967,8 +1038,9 @@ def _register_routes(app: Flask) -> None:
         if not current_user.is_admin:
             return jsonify({"error": "Only admins can create groups"}), 403
         data = request.get_json() or {}
-        name = data.get("name", "").strip()
-        description = data.get("description", "").strip() or None
+        name = sanitise_input(data.get("name", ""))
+        raw_desc = data.get("description", "")
+        description = sanitise_input(raw_desc) if raw_desc else None
         if not name:
             return jsonify({"error": "name is required"}), 400
         gid = engine.db.create_group(name, description) if engine else None
@@ -1205,6 +1277,7 @@ def _register_routes(app: Flask) -> None:
         return render_template_string(html)
 
     @app.route("/api/integrations/slack/command", methods=["POST"])
+    @csrf.exempt
     def slack_command():
         if not engine:
             return jsonify({"text": "AURA engine is not initialized."}), 500
@@ -1334,6 +1407,7 @@ def _register_routes(app: Flask) -> None:
             })
 
     @app.route("/api/extension/add", methods=["POST"])
+    @csrf.exempt
     def extension_add():
         if not engine:
             return jsonify({"error": "Engine not initialized"}), 500

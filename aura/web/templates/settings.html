@@ -99,6 +99,7 @@
             </div>
             <div class="card-body">
                 <form method="post" action="/settings">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="mb-3">
                         <label for="digest_frequency" class="form-label small">Digest Frequency</label>
                         <select class="form-select form-select-sm" id="digest_frequency" name="digest_frequency">

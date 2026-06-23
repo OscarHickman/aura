@@ -13,25 +13,25 @@
 ### 8.1 Vector Database Migration (Optional)
 **Why it matters:** SQLite BLOB storage for embeddings works up to ~50k papers but becomes slow for similarity queries at scale.
 
-- [ ] Add optional ChromaDB or Qdrant backend (feature-flagged)
-- [ ] Migrate existing embeddings on startup if vector DB is configured
-- [ ] Fall back to numpy cosine similarity if no vector DB is configured
+- [x] Add optional ChromaDB or Qdrant backend (feature-flagged)
+- [x] Migrate existing embeddings on startup if vector DB is configured
+- [x] Fall back to numpy cosine similarity if no vector DB is configured
 
 ### 8.2 Rate Limiting & Security
-- [ ] Add `flask-limiter` to all API endpoints (100 req/min per IP default)
-- [ ] Add CSRF protection to all form-based routes via `flask-wtf`
-- [ ] Add `Content-Security-Policy` and other security headers via `flask-talisman`
-- [ ] Sanitize all user input before storing (tags, collection names, notes)
-- [ ] Add SQL injection audit (parameterized queries are used, but verify fully)
+- [x] Add `flask-limiter` to all API endpoints (100 req/min per IP default)
+- [x] Add CSRF protection to all form-based routes via `flask-wtf`
+- [x] Add `Content-Security-Policy` and other security headers via `flask-talisman`
+- [x] Sanitize all user input before storing (tags, collection names, notes)
+- [x] Add SQL injection audit (parameterized queries are used, but verify fully)
 
 ### 8.4 Monitoring & Health
-- [ ] Add Grafana dashboard JSON to `deploy/`
-- [ ] Add container health check in `Dockerfile`
+- [x] Add Grafana dashboard JSON to `deploy/`
+- [x] Add container health check in `Dockerfile`
 
 ### 8.5 Horizontal Scaling
-- [ ] Move preference model save/load to atomic file replace (prevent race conditions with multiple workers)
-- [ ] Add `user_id` partitioning so model files don't contend
-- [ ] Validate Gunicorn multi-worker correctness (SQLite `check_same_thread=False` is already set, but test under load)
+- [x] Move preference model save/load to atomic file replace (prevent race conditions with multiple workers)
+- [x] Add `user_id` partitioning so model files don't contend
+- [x] Validate Gunicorn multi-worker correctness (SQLite `check_same_thread=False` is already set, but test under load)
 
 ---
 
