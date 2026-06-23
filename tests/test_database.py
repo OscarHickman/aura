@@ -331,6 +331,38 @@ class TestPaperDatabase(unittest.TestCase):
         self.assertEqual(updated_paper["read_count"], 137)
         self.assertEqual(updated_paper["refereed"], 1)
 
+    def test_surveys_operations_and_autotag(self):
+        # 1. Verification of default seeded surveys on initialization
+        surveys = self.db.get_surveys()
+        self.assertGreater(len(surveys), 0)
+        self.assertTrue(any(s["name"] == "DESI" for s in surveys))
+
+        # 2. Add paper that triggers auto-tagging
+        p_desi = make_paper("2401.desi1")
+        p_desi["title"] = "First results from the DESI survey"
+        p_desi["abstract"] = "This paper presents measurements from the Dark Energy Spectroscopic Instrument."
+        
+        self.db.add_paper(p_desi)
+        tags = self.db.get_paper_tags("2401.desi1")
+        self.assertIn("desi", tags)
+
+        # 3. Add a custom survey and check backfill
+        p_jwst = make_paper("2401.jwst1")
+        p_jwst["title"] = "Discoveries from the James Webb Space Telescope"
+        p_jwst["abstract"] = "We discuss JWST observations of galaxies."
+        self.db.add_paper(p_jwst)
+        
+        self.assertNotIn("jwst", self.db.get_paper_tags("2401.jwst1"))
+        
+        self.assertTrue(self.db.add_survey("JWST", ["JWST", "James Webb"]))
+        
+        # After adding the survey, the existing paper should be backfilled and tagged
+        self.assertIn("jwst", self.db.get_paper_tags("2401.jwst1"))
+
+        # 4. Delete survey removes tags
+        self.assertTrue(self.db.delete_survey("JWST"))
+        self.assertNotIn("jwst", self.db.get_paper_tags("2401.jwst1"))
+
 
 if __name__ == "__main__":
     unittest.main()

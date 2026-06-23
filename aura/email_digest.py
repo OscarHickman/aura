@@ -184,7 +184,7 @@ def _collect_top_papers_with_summaries(
 def _build_email_content(
     papers: list[dict], trends: dict[str, str], app_name: str = "AURA",
     secret_key: str = None, base_url: str = "http://127.0.0.1:5000", user_id: int = 1,
-    unsubscribe_token: str = None
+    unsubscribe_token: str = None, survey_papers: list[dict] = None
 ) -> tuple[str, str]:
     """Create plain-text and HTML digest bodies."""
     text_lines = [f"{app_name} - Monthly Research Trends", ""]
@@ -202,6 +202,30 @@ def _build_email_content(
             f"</div>"
         )
     html_items.append("</div><hr>")
+
+    if survey_papers:
+        text_lines.extend([f"{app_name} - From the surveys", ""])
+        html_items.append("<h2>From the surveys</h2><div style='margin-bottom:30px;'>")
+        for i, sp in enumerate(survey_papers, 1):
+            authors = ", ".join(sp.get("authors", [])[:3])
+            summary = sp.get("summary", sp.get("abstract", ""))
+            sp_tags = [t.upper() for t in sp.get("tags", [])]
+            tag_label = f" [{', '.join(sp_tags)}]" if sp_tags else ""
+            text_lines.extend([
+                f"{i}. {sp.get('title')}{tag_label}",
+                f"URL: {sp.get('url')}",
+                f"Summary: {summary[:300]}...",
+                ""
+            ])
+            html_items.append(
+                f"<div style='margin-bottom:15px;padding:12px;border-left:4px solid #00bcd4;background:#f9f9f9;border-radius:0 8px 8px 0;'>"
+                f"<h4 style='margin:0 0 4px 0;color:#333;'>{sp.get('title')} <span style='font-size:11px;color:#00bcd4;text-transform:uppercase;'>{tag_label}</span></h4>"
+                f"<p style='margin:0 0 4px 0;color:#666;font-size:12px;'><strong>Authors:</strong> {authors}</p>"
+                f"<p style='margin:0 0 4px 0;font-size:12px;'><a href='{sp.get('url')}'>{sp.get('url')}</a></p>"
+                f"<p style='margin:0;font-size:13px;line-height:1.4;'>{summary}</p>"
+                f"</div>"
+            )
+        html_items.append("</div><hr>")
 
     text_lines.extend([f"{app_name} - Top {len(papers)} Recommendations", ""])
     html_items.append(f"<h2>Top {len(papers)} Recommendations</h2>")
@@ -383,6 +407,11 @@ def send_top_recommendations_email(
             user_id = recipient_user.get("id", 1)
             unsubscribe_token = recipient_user.get("unsubscribe_token")
 
+        # Collect survey papers
+        survey_papers = _collect_survey_papers(engine, user_id=user_id, limit=5)
+        for sp in survey_papers:
+            sp["tags"] = engine.db.get_paper_tags(sp["arxiv_id"], user_id=user_id)
+
         text_body, html_body = _build_email_content(
             papers,
             trends=trends,
@@ -391,6 +420,7 @@ def send_top_recommendations_email(
             base_url=base_url_val,
             user_id=user_id,
             unsubscribe_token=unsubscribe_token,
+            survey_papers=survey_papers,
         )
 
         if email_config.get("use_graph_api", False):
@@ -526,3 +556,43 @@ def send_group_digest_email(
         }
     finally:
         engine.close()
+
+
+def _collect_survey_papers(engine, user_id: int = 1, limit: int = 5) -> list[dict]:
+    """Collect recent papers matching tracked surveys."""
+    from unittest.mock import Mock
+    if isinstance(engine.db, Mock):
+        return []
+    try:
+        surveys = engine.db.get_surveys()
+    except Exception:
+        return []
+    if isinstance(surveys, Mock) or not surveys:
+        return []
+        
+    survey_tags = [s["name"].lower() for s in surveys]
+    if not survey_tags:
+        return []
+        
+    placeholders = ",".join("?" for _ in survey_tags)
+    query = f"""
+        SELECT p.* FROM papers p
+        JOIN tags t ON p.arxiv_id = t.arxiv_id
+        WHERE t.user_id = ? AND t.tag IN ({placeholders})
+        ORDER BY p.published DESC
+        LIMIT ?
+    """
+    try:
+        rows = engine.db.conn.execute(query, [user_id] + survey_tags + [limit]).fetchall()
+        papers = [engine.db._row_to_dict(row) for row in rows]
+        # De-duplicate papers
+        seen = set()
+        deduped = []
+        for p in papers:
+            if p["arxiv_id"] not in seen:
+                seen.add(p["arxiv_id"])
+                deduped.append(p)
+        return deduped
+    except Exception as e:
+        logger.error(f"Failed to collect survey papers for email: {e}")
+        return []

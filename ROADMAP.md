@@ -114,11 +114,11 @@
 - [x] Use ADS `read_count` as an optional secondary ranking signal
 
 ### 11.2 Survey & Mission Paper Tracking
-- [ ] Add `surveys` table: `id`, `name`, `keywords` (JSON list of trigger terms)
-- [ ] Auto-tag papers that mention a tracked survey in title or abstract
-- [ ] Default survey list: DESI, Euclid, Rubin LSST, SKA, Simons Observatory, CMB-S4, HSC, DES, Planck
-- [ ] UI: filter papers view by survey/instrument tag
-- [ ] Digest: include a "From the surveys" sub-section in the email
+- [x] Add `surveys` table: `id`, `name`, `keywords` (JSON list of trigger terms)
+- [x] Auto-tag papers that mention a tracked survey in title or abstract
+- [x] Default survey list: DESI, Euclid, Rubin LSST, SKA, Simons Observatory, CMB-S4, HSC, DES, Planck
+- [x] UI: filter papers view by survey/instrument tag
+- [x] Digest: include a "From the surveys" sub-section in the email
 
 ### 11.3 Cosmological Statistics & Method Extraction
 - [ ] LLM-powered metadata extraction pass running after fetch (before embedding):

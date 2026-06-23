@@ -155,6 +155,26 @@
             </div>
         </div>
 
+        <!-- Surveys & Instruments Sidebar -->
+        <div class="card mb-3">
+            <div class="card-header bg-dark border-secondary py-2">
+                <h6 class="mb-0 text-light small"><i class="bi bi-compass"></i> Surveys & Instruments</h6>
+            </div>
+            <div class="card-body p-2">
+                {% if surveys %}
+                <div class="d-flex flex-wrap gap-2">
+                    {% for s in surveys %}
+                    <a href="/papers?tag={{ s.name | lower }}" class="badge {% if selected_tag == s.name | lower %}bg-info text-dark{% else %}bg-dark border border-secondary text-info-emphasis{% endif %} text-decoration-none" title="Filter by {{ s.name }}">
+                        {{ s.name }}
+                    </a>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-muted small mb-0">No surveys tracked yet.</p>
+                {% endif %}
+            </div>
+        </div>
+
         <!-- Tags Sidebar -->
         <div class="card">
             <div class="card-header bg-dark border-secondary py-2">

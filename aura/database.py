@@ -191,6 +191,12 @@ class PaperDatabase:
                 content TEXT NOT NULL,
                 created_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS surveys (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                keywords TEXT NOT NULL
+            );
         """)
         self.conn.commit()
 
@@ -221,6 +227,7 @@ class PaperDatabase:
             CREATE INDEX IF NOT EXISTS idx_full_summaries_arxiv_id ON full_summaries(arxiv_id);
             CREATE INDEX IF NOT EXISTS idx_citations_citing ON citations(citing_arxiv_id);
             CREATE INDEX IF NOT EXISTS idx_citations_cited ON citations(cited_arxiv_id);
+            CREATE INDEX IF NOT EXISTS idx_surveys_name ON surveys(name);
 
             CREATE VIRTUAL TABLE IF NOT EXISTS papers_fts USING fts5(
                 arxiv_id UNINDEXED,
@@ -258,6 +265,17 @@ class PaperDatabase:
 
     def _run_migrations(self) -> None:
         """Apply incremental schema migrations for existing databases."""
+        # Create surveys table if missing
+        self.conn.executescript("""
+            CREATE TABLE IF NOT EXISTS surveys (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                keywords TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_surveys_name ON surveys(name);
+        """)
+        self.conn.commit()
+
         self._add_column_if_missing("papers", "source", "TEXT DEFAULT 'arxiv'")
         self._add_column_if_missing("papers", "citation_count", "INTEGER DEFAULT 0")
         self._add_column_if_missing("ratings", "user_id", "INTEGER DEFAULT 1")
@@ -288,6 +306,9 @@ class PaperDatabase:
         # Tables that need structural migration (UNIQUE constraint changes)
         self._migrate_reading_list()
         self._migrate_tags()
+
+        # Seed default surveys
+        self._seed_surveys()
 
     def _add_column_if_missing(self, table: str, column: str, definition: str) -> None:
         """Add a column to a table if it does not already exist."""
@@ -377,7 +398,10 @@ class PaperDatabase:
                 ),
             )
             self.conn.commit()
-            return cursor.rowcount > 0
+            is_new = cursor.rowcount > 0
+            if is_new:
+                self.auto_tag_paper_surveys(paper["arxiv_id"], paper["title"], paper["abstract"])
+            return is_new
         except sqlite3.Error as e:
             logger.error(f"Failed to add paper {paper.get('arxiv_id')}: {e}")
             return False
@@ -424,6 +448,7 @@ class PaperDatabase:
                     ),
                 )
                 if cursor.rowcount > 0:
+                    self.auto_tag_paper_surveys(paper["arxiv_id"], paper["title"], paper["abstract"])
                     count += 1
             except sqlite3.Error as e:
                 logger.error(f"Failed to add paper {paper.get('arxiv_id')}: {e}")
@@ -1753,6 +1778,106 @@ class PaperDatabase:
         except sqlite3.Error as e:
             logger.error(f"Failed to fetch all briefs: {e}")
             return []
+
+    def _seed_surveys(self) -> None:
+        """Seed the default survey list if the table is empty."""
+        cursor = self.conn.execute("SELECT count(*) FROM surveys")
+        count = cursor.fetchone()[0]
+        if count == 0:
+            default_surveys = [
+                ("DESI", ["DESI", "Dark Energy Spectroscopic Instrument"]),
+                ("Euclid", ["Euclid", "Euclid satellite", "Euclid space telescope"]),
+                ("Rubin LSST", ["Rubin", "LSST", "Legacy Survey of Space and Time"]),
+                ("SKA", ["SKA", "Square Kilometre Array"]),
+                ("Simons Observatory", ["Simons Observatory", "SO CMB"]),
+                ("CMB-S4", ["CMB-S4"]),
+                ("HSC", ["HSC", "Hyper Suprime-Cam"]),
+                ("DES", ["DES", "Dark Energy Survey"]),
+                ("Planck", ["Planck", "Planck satellite", "Planck collaboration"]),
+            ]
+            for name, keywords in default_surveys:
+                self.conn.execute(
+                    "INSERT INTO surveys (name, keywords) VALUES (?, ?)",
+                    (name, json.dumps(keywords)),
+                )
+            self.conn.commit()
+            self.auto_tag_all_existing_papers()
+
+    def auto_tag_all_existing_papers(self) -> None:
+        """Find any paper that matches a survey keyword and tag it."""
+        papers = self.conn.execute("SELECT arxiv_id, title, abstract FROM papers").fetchall()
+        for paper in papers:
+            self.auto_tag_paper_surveys(paper["arxiv_id"], paper["title"], paper["abstract"])
+
+    def get_surveys(self) -> list[dict]:
+        """Get all tracked surveys."""
+        try:
+            rows = self.conn.execute("SELECT id, name, keywords FROM surveys ORDER BY name ASC").fetchall()
+            return [dict(row) for row in rows]
+        except sqlite3.Error as e:
+            logger.error(f"Failed to get surveys: {e}")
+            return []
+
+    def add_survey(self, name: str, keywords: list[str]) -> bool:
+        """Add a new survey tracker."""
+        try:
+            self.conn.execute(
+                "INSERT INTO surveys (name, keywords) VALUES (?, ?)",
+                (name, json.dumps(keywords)),
+            )
+            self.conn.commit()
+            
+            # Tag existing papers matching this new survey
+            papers = self.conn.execute("SELECT arxiv_id, title, abstract FROM papers").fetchall()
+            for paper in papers:
+                title_lower = paper["title"].lower()
+                abstract_lower = paper["abstract"].lower()
+                matched = False
+                for kw in keywords:
+                    import re
+                    pattern = r"\b" + re.escape(kw.lower()) + r"\b"
+                    if re.search(pattern, title_lower) or re.search(pattern, abstract_lower):
+                        matched = True
+                        break
+                if matched:
+                    self.add_tag(paper["arxiv_id"], name)
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Failed to add survey {name}: {e}")
+            return False
+
+    def delete_survey(self, name: str) -> bool:
+        """Delete a survey tracker and its auto-applied tags."""
+        try:
+            self.conn.execute("DELETE FROM surveys WHERE name = ?", (name,))
+            clean_tag = name.strip().lower()
+            self.conn.execute("DELETE FROM tags WHERE tag = ?", (clean_tag,))
+            self.conn.commit()
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Failed to delete survey {name}: {e}")
+            return False
+
+    def auto_tag_paper_surveys(self, arxiv_id: str, title: str, abstract: str) -> None:
+        """Auto-tag a paper if it mentions any tracked survey keywords."""
+        surveys = self.get_surveys()
+        title_lower = title.lower()
+        abstract_lower = abstract.lower()
+        import re
+        for survey in surveys:
+            name = survey["name"]
+            try:
+                keywords = json.loads(survey["keywords"])
+            except Exception:
+                continue
+            matched = False
+            for kw in keywords:
+                pattern = r"\b" + re.escape(kw.lower()) + r"\b"
+                if re.search(pattern, title_lower) or re.search(pattern, abstract_lower):
+                    matched = True
+                    break
+            if matched:
+                self.add_tag(arxiv_id, name)
 
     def close(self) -> None:
         """Close the database connection."""

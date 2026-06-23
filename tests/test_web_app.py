@@ -763,5 +763,24 @@ class TestWebApp(unittest.TestCase):
         self.assertIn(b"AURA API Documentation", resp.data)
         self.assertIn(b"/static/openapi.json", resp.data)
 
+    def test_surveys_ui_filtering(self):
+        # Configure mock surveys on self.engine.db
+        self.engine.db.get_surveys.return_value = [
+            {"id": 1, "name": "DESI", "keywords": '["DESI"]'},
+            {"id": 2, "name": "Planck", "keywords": '["Planck"]'},
+        ]
+        self.engine.db.get_papers_by_tag.return_value = []
+        
+        # Access /papers route and check if mocked survey names are rendered
+        resp = self.client.get("/papers")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b"DESI", resp.data)
+        self.assertIn(b"Planck", resp.data)
+        
+        # Access /papers?tag=desi to test filtering by a survey tag
+        resp_filter = self.client.get("/papers?tag=desi")
+        self.assertEqual(resp_filter.status_code, 200)
+
+
 if __name__ == "__main__":
     unittest.main()

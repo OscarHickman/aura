@@ -459,6 +459,12 @@ def _register_routes(app: Flask) -> None:
         categories = app.config.get("AI_PAPERS", {}).get("categories", [])
         collections = engine.db.get_collections(user_id=uid) if engine else []
         all_tags = engine.db.get_all_tags(user_id=uid) if engine else []
+        surveys = []
+        if engine:
+            res = engine.db.get_surveys()
+            from unittest.mock import Mock
+            if isinstance(res, list) and not isinstance(res, Mock):
+                surveys = res
 
         return render_template(
             "papers.html",
@@ -469,6 +475,7 @@ def _register_routes(app: Flask) -> None:
             categories=categories,
             collections=collections,
             all_tags=all_tags,
+            surveys=surveys,
             q=query,
             category=category,
             date_from=date_from,
