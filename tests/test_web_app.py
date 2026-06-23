@@ -756,5 +756,12 @@ class TestWebApp(unittest.TestCase):
         self.assertTrue("date" in data)
         mock_gen_content.assert_called_once()
 
+    def test_api_docs_route(self):
+        # Test get interactive API docs
+        resp = self.client.get("/api/docs")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b"AURA API Documentation", resp.data)
+        self.assertIn(b"/static/openapi.json", resp.data)
+
 if __name__ == "__main__":
     unittest.main()

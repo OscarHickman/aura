@@ -849,6 +849,12 @@ def _register_routes(app: Flask) -> None:
             return jsonify({"error": "Task not found"}), 404
         return jsonify(status_info)
 
+    @app.route("/api/docs")
+    @login_required
+    def api_docs():
+        """Serve interactive Swagger UI documentation for AURA API."""
+        return render_template("swagger_ui.html")
+
     @app.route("/api/stats")
     @login_required
     def stats():

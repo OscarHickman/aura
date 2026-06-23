@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>AURA API Documentation</title>
+    <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css">
+    <style>
+        html {
+            box-sizing: border-box;
+            overflow-y: scroll;
+        }
+        *, *:before, *:after {
+            box-sizing: inherit;
+        }
+        body {
+            margin: 0;
+            background: #121212;
+        }
+        /* Dark mode wrapper for Swagger UI using CSS filter */
+        .swagger-ui {
+            filter: invert(88%) hue-rotate(180deg);
+            background-color: #fafafa;
+            padding: 20px;
+            border-radius: 8px;
+            max-width: 1200px;
+            margin: 20px auto;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+        }
+        .swagger-ui img, .swagger-ui .model-box {
+            filter: invert(0%) hue-rotate(0deg);
+        }
+        .back-btn-container {
+            max-width: 1200px;
+            margin: 20px auto 0 auto;
+            padding: 0 20px;
+        }
+        .back-btn {
+            background-color: #212529;
+            color: #ffc107;
+            border: 1px solid #ffc107;
+            padding: 8px 16px;
+            border-radius: 4px;
+            text-decoration: none;
+            font-family: sans-serif;
+            font-size: 14px;
+            display: inline-block;
+            transition: all 0.2s ease;
+        }
+        .back-btn:hover {
+            background-color: #ffc107;
+            color: #212529;
+        }
+    </style>
+</head>
+<body>
+    <div class="back-btn-container">
+        <a href="/" class="back-btn">&larr; Back to Dashboard</a>
+    </div>
+    <div id="swagger-ui"></div>
+    <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+    <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-standalone-preset.js"></script>
+    <script>
+        window.onload = function() {
+            window.ui = SwaggerUIBundle({
+                url: "/static/openapi.json",
+                dom_id: '#swagger-ui',
+                deepLinking: true,
+                presets: [
+                    SwaggerUIBundle.presets.apis,
+                    SwaggerUIStandalonePreset
+                ],
+                plugins: [
+                    SwaggerUIBundle.plugins.DownloadUrl
+                ],
+                layout: "BaseLayout"
+            });
+        };
+    </script>
+</body>
+</html>

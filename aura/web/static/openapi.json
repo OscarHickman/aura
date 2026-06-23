@@ -1,0 +1,916 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "AURA API",
+    "description": "REST API for AURA (Automated Understanding of Research Articles), a self-hostable research paper discovery, recommendation, and organization engine.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Local server"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "CookieAuth": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "session",
+        "description": "Flask session cookie authenticated via registration/login."
+      },
+      "TokenAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "Authorization",
+        "description": "API token bearer authentication (format: Bearer <token>)."
+      }
+    },
+    "schemas": {
+      "Paper": {
+        "type": "object",
+        "properties": {
+          "arxiv_id": {
+            "type": "string",
+            "example": "2401.00001"
+          },
+          "title": {
+            "type": "string",
+            "example": "Deep Learning for Computational Cosmology"
+          },
+          "abstract": {
+            "type": "string",
+            "example": "We present a comprehensive review of deep learning techniques in cosmology..."
+          },
+          "authors": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "example": ["Ada Lovelace", "Linus Torvalds"]
+          },
+          "categories": {
+            "type": "string",
+            "example": "astro-ph.CO, cs.LG"
+          },
+          "published": {
+            "type": "string",
+            "format": "date-time",
+            "example": "2026-06-23T15:27:29Z"
+          },
+          "url": {
+            "type": "string",
+            "example": "http://arxiv.org/abs/2401.00001"
+          },
+          "pdf_url": {
+            "type": "string",
+            "example": "http://arxiv.org/pdf/2401.00001.pdf"
+          },
+          "summary": {
+            "type": "string",
+            "example": "An overview of neural networks in cosmological datasets."
+          },
+          "score": {
+            "type": "number",
+            "format": "float",
+            "example": 0.8542
+          }
+        }
+      },
+      "Collection": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "example": 1
+          },
+          "name": {
+            "type": "string",
+            "example": "Cosmology Papers"
+          },
+          "description": {
+            "type": "string",
+            "example": "Curated collection of cosmological studies."
+          },
+          "is_public": {
+            "type": "integer",
+            "enum": [0, 1],
+            "example": 0
+          },
+          "slug": {
+            "type": "string",
+            "example": "cosmology-papers"
+          }
+        }
+      },
+      "Task": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "example": "task-uuid-string"
+          },
+          "task_type": {
+            "type": "string",
+            "example": "fetch"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["PENDING", "PROCESSING", "SUCCESS", "FAILURE"],
+            "example": "SUCCESS"
+          },
+          "progress": {
+            "type": "integer",
+            "example": 100
+          },
+          "total": {
+            "type": "integer",
+            "example": 100
+          },
+          "result": {
+            "type": "string",
+            "example": "Fetched 12 papers successfully"
+          },
+          "error": {
+            "type": "string",
+            "nullable": true,
+            "example": null
+          }
+        }
+      }
+    }
+  },
+  "security": [
+    {
+      "CookieAuth": []
+    },
+    {
+      "TokenAuth": []
+    }
+  ],
+  "paths": {
+    "/api/rate": {
+      "post": {
+        "summary": "Rate a paper",
+        "description": "Saves user rating feedback for a specific paper to retrain the personalised preference model.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["arxiv_id", "rating"],
+                "properties": {
+                  "arxiv_id": {
+                    "type": "string",
+                    "example": "2401.00001"
+                  },
+                  "rating": {
+                    "type": "integer",
+                    "description": "Rating score. -1 (skip), 0 (unrate), or 1-5 (stars/thumbs preference).",
+                    "example": 5
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Rating saved successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "ok"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid parameters or rating value"
+          },
+          "401": {
+            "description": "Unauthenticated"
+          }
+        }
+      }
+    },
+    "/api/reading-list": {
+      "get": {
+        "summary": "Get reading list",
+        "description": "Fetch papers saved to the reading list, filtered by read or unread status.",
+        "parameters": [
+          {
+            "name": "filter",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["read", "unread"],
+              "default": "unread"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of papers in the reading list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Paper"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Add paper to reading list",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["arxiv_id"],
+                "properties": {
+                  "arxiv_id": {
+                    "type": "string",
+                    "example": "2401.00001"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Paper added to reading list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "ok"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reading-list/{arxiv_id}": {
+      "delete": {
+        "summary": "Remove paper from reading list",
+        "parameters": [
+          {
+            "name": "arxiv_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paper removed from reading list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "ok"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/reading-list/{arxiv_id}/read": {
+      "put": {
+        "summary": "Mark reading list paper status",
+        "parameters": [
+          {
+            "name": "arxiv_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["read"],
+                "properties": {
+                  "read": {
+                    "type": "boolean",
+                    "example": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Read status updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "example": "ok"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/explain/{arxiv_id}": {
+      "get": {
+        "summary": "Explain recommendation score",
+        "description": "Provides a breakdown of the recommendation score, detailing freshness, citation count, and rating history boosts.",
+        "parameters": [
+          {
+            "name": "arxiv_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Score breakdown explanation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "arxiv_id": { "type": "string" },
+                    "score": { "type": "number" },
+                    "model_score": { "type": "number" },
+                    "freshness_bonus": { "type": "number" },
+                    "summary_bonus": { "type": "number" },
+                    "citation_bonus": { "type": "number" },
+                    "read_bonus": { "type": "number" },
+                    "refereed_bonus": { "type": "number" },
+                    "citation_graph_bonus": { "type": "number" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/papers/{arxiv_id}/deep-summary": {
+      "get": {
+        "summary": "Get full paper deep summary",
+        "description": "Retrieves or generates a structured deep dive summary (Background, Methods, Results, Significance) from full paper PDF content.",
+        "parameters": [
+          {
+            "name": "arxiv_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["expert", "grad"],
+              "default": "expert"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deep summary content",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string" },
+                    "arxiv_id": { "type": "string" },
+                    "summary": { "type": "string" },
+                    "provider": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/papers/{arxiv_id}/ask": {
+      "post": {
+        "summary": "Ask questions about a paper",
+        "description": "Submit a question to perform retrieval-augmented generation (RAG) over the extracted full text of the paper.",
+        "parameters": [
+          {
+            "name": "arxiv_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["question"],
+                "properties": {
+                  "question": {
+                    "type": "string",
+                    "example": "What cosmological dataset did they train on?"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Streaming Server-Sent Events response containing the LLM's answer"
+          }
+        }
+      }
+    },
+    "/api/papers/{arxiv_id}/notes": {
+      "get": {
+        "summary": "Fetch notes for a paper",
+        "parameters": [
+          {
+            "name": "arxiv_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of notes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": { "type": "integer" },
+                      "content": { "type": "string" },
+                      "created_at": { "type": "string" },
+                      "updated_at": { "type": "string" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Add notes to a paper",
+        "parameters": [
+          {
+            "name": "arxiv_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["content"],
+                "properties": {
+                  "content": {
+                    "type": "string",
+                    "example": "Key methodology references SBI pipelines."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Note added successfully"
+          }
+        }
+      }
+    },
+    "/api/tags": {
+      "get": {
+        "summary": "List all active tags",
+        "responses": {
+          "200": {
+            "description": "List of distinct user tags",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "example": ["cosmology", "sbi", "machine-learning"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/papers/{arxiv_id}/tags": {
+      "post": {
+        "summary": "Add tag to paper",
+        "parameters": [
+          {
+            "name": "arxiv_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["tag"],
+                "properties": {
+                  "tag": {
+                    "type": "string",
+                    "example": "cosmology"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tag added"
+          }
+        }
+      }
+    },
+    "/api/papers/{arxiv_id}/tags/{tag}": {
+      "delete": {
+        "summary": "Remove tag from paper",
+        "parameters": [
+          {
+            "name": "arxiv_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "tag",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Tag deleted"
+          }
+        }
+      }
+    },
+    "/api/collections": {
+      "get": {
+        "summary": "Get all collections",
+        "responses": {
+          "200": {
+            "description": "List of collections",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Collection"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create new collection",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "Galaxy Clusters"
+                  },
+                  "description": {
+                    "type": "string",
+                    "example": "Papers on galaxy cluster properties."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Collection created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Collection"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/collections/{collection_id}/papers": {
+      "post": {
+        "summary": "Add paper to collection",
+        "parameters": [
+          {
+            "name": "collection_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["arxiv_id"],
+                "properties": {
+                  "arxiv_id": {
+                    "type": "string",
+                    "example": "2401.00001"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Paper added to collection"
+          }
+        }
+      }
+    },
+    "/api/collections/{collection_id}/papers/{arxiv_id}": {
+      "delete": {
+        "summary": "Remove paper from collection",
+        "parameters": [
+          {
+            "name": "collection_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "arxiv_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paper removed from collection"
+          }
+        }
+      }
+    },
+    "/api/collections/{collection_id}/share": {
+      "post": {
+        "summary": "Toggle sharing status of a collection",
+        "parameters": [
+          {
+            "name": "collection_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["is_public"],
+                "properties": {
+                  "is_public": {
+                    "type": "boolean",
+                    "example": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Sharing status updated"
+          }
+        }
+      }
+    },
+    "/api/search": {
+      "get": {
+        "summary": "Search papers",
+        "description": "Performs keyword search (FTS) or semantic vector similarity search over abstracts and titles.",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "example": "cosmological parameters"
+          },
+          {
+            "name": "mode",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["fts", "semantic"],
+              "default": "fts"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching papers list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Paper"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/fetch": {
+      "post": {
+        "summary": "Trigger fetching background task",
+        "description": "Launches an asynchronous task to fetch new papers from arXiv and other configured sources.",
+        "responses": {
+          "200": {
+            "description": "Task scheduled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "ok" },
+                    "task_id": { "type": "string", "example": "task-uuid-string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/tasks/{task_id}": {
+      "get": {
+        "summary": "Get task status",
+        "description": "Check the processing state, logs, and completion result of a scheduled background task.",
+        "parameters": [
+          {
+            "name": "task_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Task status payload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/stats": {
+      "get": {
+        "summary": "Get system statistics",
+        "responses": {
+          "200": {
+            "description": "Database and preference model statistics"
+          }
+        }
+      }
+    },
+    "/api/briefs/generate": {
+      "post": {
+        "summary": "Generate weekly research brief",
+        "description": "Dynamically generates today's weekly brief using current recommendations and emerging trend topics.",
+        "responses": {
+          "200": {
+            "description": "Brief generated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "success" },
+                    "date": { "type": "string", "example": "2026-06-23" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
