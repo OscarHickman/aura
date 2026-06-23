@@ -499,6 +499,11 @@ def _register_routes(app: Flask) -> None:
             paper["authors"], exclude_arxiv_id=arxiv_id, limit=5
         ) if engine else []
         collections = engine.db.get_collections(user_id=uid) if engine else []
+        citing_papers, cited_papers = ([], [])
+        if engine:
+            res = engine.get_or_fetch_citations(arxiv_id)
+            if isinstance(res, tuple) and len(res) == 2:
+                citing_papers, cited_papers = res
 
         ads_url = None
         if not arxiv_id.startswith("s2:") and not arxiv_id.startswith("biorxiv-"):
@@ -519,6 +524,8 @@ def _register_routes(app: Flask) -> None:
                 collections=collections,
                 ar5iv_url=ar5iv_url,
                 ads_url=ads_url,
+                citing_papers=citing_papers,
+                cited_papers=cited_papers,
             )
         )
         bibtex_url = url_for("export_paper_bibtex", arxiv_id=arxiv_id)

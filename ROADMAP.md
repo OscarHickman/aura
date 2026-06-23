@@ -61,10 +61,10 @@
 - [x] Compare trend velocity against a configurable baseline period
 
 ### 9.4 Citation Graph Integration
-- [ ] Pull citation and reference data from Semantic Scholar for stored papers
-- [ ] Store in a `citations` table (`citing_arxiv_id`, `cited_arxiv_id`)
-- [ ] Add "papers that cite this" and "papers cited by this" to the detail page
-- [ ] Use citation graph for recommendation boosting (a paper cited by many liked papers is likely good)
+- [x] Pull citation and reference data from Semantic Scholar for stored papers
+- [x] Store in a `citations` table (`citing_arxiv_id`, `cited_arxiv_id`)
+- [x] Add "papers that cite this" and "papers cited by this" to the detail page
+- [x] Use citation graph for recommendation boosting (a paper cited by many liked papers is likely good)
 
 ### 9.5 Research Brief Generation
 - [ ] Weekly auto-generated brief: "Here's what happened in your fields this week"

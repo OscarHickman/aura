@@ -335,6 +335,11 @@
                         <i class="bi bi-file-html"></i> View HTML Version (ar5iv)
                     </a>
                     {% endif %}
+                    {% if paper.arxiv_id %}
+                    <a href="https://www.semanticscholar.org/paper/{{ paper.arxiv_id.split(':', 1)[1] if paper.arxiv_id.startswith('s2:') else 'arXiv:' + paper.arxiv_id }}" target="_blank" class="btn btn-outline-warning">
+                        <i class="bi bi-box-arrow-up-right"></i> View on Semantic Scholar
+                    </a>
+                    {% endif %}
                 </div>
             </div>
         </div>
@@ -420,6 +425,56 @@
                 {% else %}
                 <div class="p-3">
                     <p class="text-muted small mb-0">No other papers by same authors found in database.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Papers Citing This -->
+        <div class="card mb-4">
+            <div class="card-header bg-dark border-secondary">
+                <h5 class="mb-0"><i class="bi bi-arrow-up-right"></i> Citing papers in AURA</h5>
+            </div>
+            <div class="card-body p-0">
+                {% if citing_papers %}
+                <div class="list-group list-group-flush">
+                    {% for cp in citing_papers %}
+                    <a href="/papers/{{ cp.arxiv_id }}" class="list-group-item list-group-item-action bg-transparent text-light border-secondary py-3">
+                        <h6 class="mb-1 text-truncate-2">{{ cp.title | safe }}</h6>
+                        <small class="text-muted">
+                            {{ cp.authors[:2] | join(', ') }}{% if cp.authors | length > 2 %} + others{% endif %}
+                        </small>
+                    </a>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="p-3">
+                    <p class="text-muted small mb-0">No citing papers found in your library.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Papers Cited By This -->
+        <div class="card mb-4">
+            <div class="card-header bg-dark border-secondary">
+                <h5 class="mb-0"><i class="bi bi-arrow-down-left"></i> References in AURA</h5>
+            </div>
+            <div class="card-body p-0">
+                {% if cited_papers %}
+                <div class="list-group list-group-flush">
+                    {% for cp in cited_papers %}
+                    <a href="/papers/{{ cp.arxiv_id }}" class="list-group-item list-group-item-action bg-transparent text-light border-secondary py-3">
+                        <h6 class="mb-1 text-truncate-2">{{ cp.title | safe }}</h6>
+                        <small class="text-muted">
+                            {{ cp.authors[:2] | join(', ') }}{% if cp.authors | length > 2 %} + others{% endif %}
+                        </small>
+                    </a>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="p-3">
+                    <p class="text-muted small mb-0">No references found in your library.</p>
                 </div>
                 {% endif %}
             </div>

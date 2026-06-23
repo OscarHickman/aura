@@ -84,7 +84,14 @@ class PaperDatabase:
                 has_data INTEGER DEFAULT 0,
                 bibcode TEXT,
                 read_count INTEGER DEFAULT 0,
-                refereed INTEGER DEFAULT 0
+                refereed INTEGER DEFAULT 0,
+                citations_fetched INTEGER DEFAULT 0
+            );
+
+            CREATE TABLE IF NOT EXISTS citations (
+                citing_arxiv_id TEXT NOT NULL,
+                cited_arxiv_id TEXT NOT NULL,
+                PRIMARY KEY (citing_arxiv_id, cited_arxiv_id)
             );
 
             CREATE TABLE IF NOT EXISTS ratings (
@@ -206,6 +213,8 @@ class PaperDatabase:
             CREATE INDEX IF NOT EXISTS idx_reading_list_user_id ON reading_list(user_id);
             CREATE INDEX IF NOT EXISTS idx_reading_list_added_at ON reading_list(added_at);
             CREATE INDEX IF NOT EXISTS idx_full_summaries_arxiv_id ON full_summaries(arxiv_id);
+            CREATE INDEX IF NOT EXISTS idx_citations_citing ON citations(citing_arxiv_id);
+            CREATE INDEX IF NOT EXISTS idx_citations_cited ON citations(cited_arxiv_id);
 
             CREATE VIRTUAL TABLE IF NOT EXISTS papers_fts USING fts5(
                 arxiv_id UNINDEXED,
@@ -255,6 +264,7 @@ class PaperDatabase:
         self._add_column_if_missing("papers", "refereed", "INTEGER DEFAULT 0")
         self._add_column_if_missing("users", "digest_frequency", "TEXT DEFAULT 'daily'")
         self._add_column_if_missing("users", "unsubscribe_token", "TEXT DEFAULT NULL")
+        self._add_column_if_missing("papers", "citations_fetched", "INTEGER DEFAULT 0")
         try:
             self.conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_unsubscribe_token ON users(unsubscribe_token)")
             self.conn.commit()
@@ -730,6 +740,81 @@ class PaperDatabase:
         # Don't include raw embedding blob in dict
         d.pop("embedding", None)
         return d
+
+    def add_citations_batch(self, links: list[tuple[str, str]]) -> None:
+        """Add citation links in batch (citing_arxiv_id, cited_arxiv_id)."""
+        self.conn.executemany(
+            "INSERT OR IGNORE INTO citations (citing_arxiv_id, cited_arxiv_id) VALUES (?, ?)",
+            links,
+        )
+        self.conn.commit()
+
+    def get_papers_citing(self, arxiv_id: str) -> list[dict]:
+        """Get papers in the database that cite the given paper."""
+        rows = self.conn.execute(
+            """
+            SELECT p.* FROM papers p
+            JOIN citations c ON p.arxiv_id = c.citing_arxiv_id
+            WHERE c.cited_arxiv_id = ?
+            ORDER BY p.published DESC
+            """,
+            (arxiv_id,),
+        ).fetchall()
+        return [self._row_to_dict(row) for row in rows]
+
+    def get_papers_cited_by(self, arxiv_id: str) -> list[dict]:
+        """Get papers in the database that are cited by the given paper."""
+        rows = self.conn.execute(
+            """
+            SELECT p.* FROM papers p
+            JOIN citations c ON p.arxiv_id = c.cited_arxiv_id
+            WHERE c.citing_arxiv_id = ?
+            ORDER BY p.published DESC
+            """,
+            (arxiv_id,),
+        ).fetchall()
+        return [self._row_to_dict(row) for row in rows]
+
+    def mark_citations_fetched(self, arxiv_id: str, fetched: bool = True) -> None:
+        """Mark a paper's citations as fetched/processed."""
+        val = 1 if fetched else 0
+        self.conn.execute(
+            "UPDATE papers SET citations_fetched = ? WHERE arxiv_id = ?",
+            (val, arxiv_id),
+        )
+        self.conn.commit()
+
+    def get_liked_citations_counts(self, liked_arxiv_ids: list[str]) -> dict[str, int]:
+        """Return a mapping of arxiv_id to the number of liked papers that cite it."""
+        if not liked_arxiv_ids:
+            return {}
+        placeholders = ",".join("?" for _ in liked_arxiv_ids)
+        rows = self.conn.execute(
+            f"""
+            SELECT cited_arxiv_id, COUNT(*) as cnt
+            FROM citations
+            WHERE citing_arxiv_id IN ({placeholders})
+            GROUP BY cited_arxiv_id
+            """,
+            liked_arxiv_ids,
+        ).fetchall()
+        return {row["cited_arxiv_id"]: row["cnt"] for row in rows}
+
+    def get_liked_references_counts(self, liked_arxiv_ids: list[str]) -> dict[str, int]:
+        """Return a mapping of arxiv_id to the number of liked papers that it cites."""
+        if not liked_arxiv_ids:
+            return {}
+        placeholders = ",".join("?" for _ in liked_arxiv_ids)
+        rows = self.conn.execute(
+            f"""
+            SELECT citing_arxiv_id, COUNT(*) as cnt
+            FROM citations
+            WHERE cited_arxiv_id IN ({placeholders})
+            GROUP BY citing_arxiv_id
+            """,
+            liked_arxiv_ids,
+        ).fetchall()
+        return {row["citing_arxiv_id"]: row["cnt"] for row in rows}
 
     def search_papers(
         self,

@@ -469,6 +469,12 @@ class RecommendationEngine:
                 paper["shadow_score"] = 0.5
                 scorable_papers.append(paper)
 
+        # Get rated papers to identify liked ones
+        rated_papers = self.db.get_rated_papers()
+        liked_arxiv_ids = [p["arxiv_id"] for p, emb, rating in rated_papers if rating >= 4 or rating == 1]
+        liked_citations_map = self.db.get_liked_citations_counts(liked_arxiv_ids)
+        liked_references_map = self.db.get_liked_references_counts(liked_arxiv_ids)
+
         # Calculate composite score with freshness and summary bonuses
         now = datetime.fromisoformat(datetime.now().isoformat())
         for paper in scorable_papers:
@@ -501,18 +507,23 @@ class RecommendationEngine:
             # Refereed status bonus: small boost for peer-reviewed publications
             refereed_bonus = 0.03 if paper.get("refereed") else 0
 
+            # Citation graph boost: boost based on liked citing/referenced papers
+            liked_cite_cnt = liked_citations_map.get(paper["arxiv_id"], 0)
+            liked_ref_cnt = liked_references_map.get(paper["arxiv_id"], 0)
+            citation_graph_bonus = min(0.15, liked_cite_cnt * 0.05 + liked_ref_cnt * 0.02)
+
             # Combine scores
             paper["score"] = round(
-                min(1.0, base_score + freshness_bonus + summary_bonus + citation_bonus + read_bonus + refereed_bonus), 4
+                min(1.0, base_score + freshness_bonus + summary_bonus + citation_bonus + read_bonus + refereed_bonus + citation_graph_bonus), 4
             )
             paper["freshness_bonus"] = round(freshness_bonus, 4)
             paper["summary_bonus"] = round(summary_bonus, 4)
             paper["citation_bonus"] = round(citation_bonus, 4)
             paper["read_bonus"] = round(read_bonus, 4)
             paper["refereed_bonus"] = round(refereed_bonus, 4)
+            paper["citation_graph_bonus"] = round(citation_graph_bonus, 4)
 
         # Explainability: attach the most similar liked paper to each recommendation
-        rated_papers = self.db.get_rated_papers()
         liked_papers_emb = [(p, emb) for p, emb, rating in rated_papers if rating >= 4 or rating == 1]
 
         if liked_papers_emb and scorable_papers:
@@ -853,6 +864,92 @@ class RecommendationEngine:
         # Sort topics by size descending
         topics.sort(key=lambda t: cast(int, t["paper_count"]), reverse=True)
         return topics
+
+    def _get_s2_arxiv_id(self, entry: dict) -> Optional[str]:
+        ext_ids = entry.get("externalIds") or {}
+        arxiv_id = ext_ids.get("ArXiv")
+        if arxiv_id:
+            return arxiv_id
+        paper_id = entry.get("paperId")
+        if paper_id:
+            return f"s2:{paper_id}"
+        return None
+
+    def fetch_and_store_citations(self, arxiv_id: str) -> None:
+        """Fetch citations and references from Semantic Scholar and store them in the database."""
+        # Check if already fetched
+        paper = self.db.get_paper(arxiv_id)
+        if not paper or paper.get("citations_fetched"):
+            return
+
+        # Prepare paper ID for Semantic Scholar
+        if arxiv_id.startswith("s2:"):
+            s2_id = arxiv_id.split(":", 1)[1]
+        else:
+            s2_id = f"arXiv:{arxiv_id}"
+
+        url = f"https://api.semanticscholar.org/graph/v1/paper/{s2_id}"
+        params = {
+            "fields": "citations.externalIds,citations.paperId,references.externalIds,references.paperId"
+        }
+
+        # Check config or environment for Semantic Scholar API key
+        import os
+        headers = {}
+        s2_key = os.environ.get("SEMANTIC_SCHOLAR_API_KEY")
+        if s2_key:
+            headers["x-api-key"] = s2_key
+
+        logger.info(f"Fetching citations and references for paper {arxiv_id} from Semantic Scholar")
+        try:
+            import requests
+            resp = requests.get(url, params=params, headers=headers, timeout=15)
+            # Handle rate limiting politely
+            if resp.status_code == 429:
+                logger.warning(f"Semantic Scholar API rate limited (429) when fetching citations for {arxiv_id}.")
+                return
+            resp.raise_for_status()
+            data = resp.json()
+
+            links = []
+            
+            # Citing papers (papers that cite the current paper)
+            for cit in data.get("citations") or []:
+                cit_id = self._get_s2_arxiv_id(cit)
+                if cit_id:
+                    links.append((cit_id, arxiv_id))
+
+            # Referenced papers (papers cited by the current paper)
+            for ref in data.get("references") or []:
+                ref_id = self._get_s2_arxiv_id(ref)
+                if ref_id:
+                    links.append((arxiv_id, ref_id))
+
+            if links:
+                self.db.add_citations_batch(links)
+
+            self.db.mark_citations_fetched(arxiv_id, True)
+            logger.info(f"Stored {len(links)} citation connections for paper {arxiv_id}")
+
+        except Exception as e:
+            logger.error(f"Failed to fetch citations/references for paper {arxiv_id}: {e}")
+
+    def get_or_fetch_citations(self, arxiv_id: str) -> tuple[list[dict], list[dict]]:
+        """Get citing and cited papers from the database.
+        If not fetched yet, fetch from Semantic Scholar first.
+        Returns:
+            tuple of (citing_papers, cited_papers)
+        """
+        paper = self.db.get_paper(arxiv_id)
+        if not paper:
+            return [], []
+
+        if not paper.get("citations_fetched"):
+            self.fetch_and_store_citations(arxiv_id)
+
+        citing = self.db.get_papers_citing(arxiv_id)
+        cited = self.db.get_papers_cited_by(arxiv_id)
+        return citing, cited
 
     def close(self):
         """Clean up resources."""
