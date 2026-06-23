@@ -42,23 +42,23 @@
 ### 9.1 Deep Dive Summaries
 **Why it matters:** Current summaries are 2-3 sentences from the abstract only. A real research assistant reads the methods and results.
 
-- [ ] Add PDF download + text extraction (PyMuPDF or pdfminer)
-- [ ] Generate structured summaries: Background / Methods / Results / Significance
-- [ ] Cache full-paper summaries separately from abstract summaries
-- [ ] Add "explain like I'm a grad student" vs "expert" summary modes
+- [x] Add PDF download + text extraction (PyMuPDF or pdfminer)
+- [x] Generate structured summaries: Background / Methods / Results / Significance
+- [x] Cache full-paper summaries separately from abstract summaries
+- [x] Add "explain like I'm a grad student" vs "expert" summary modes
 
 ### 9.2 Research Q&A
-- [ ] Add `/papers/{id}/ask` endpoint: "What dataset did they use?", "Did they compare to X?"
-- [ ] Use LLM with the paper's full text as context (RAG over the stored paper text)
-- [ ] Stream responses via Server-Sent Events
+- [x] Add `/papers/{id}/ask` endpoint: "What dataset did they use?", "Did they compare to X?"
+- [x] Use LLM with the paper's full text as context (RAG over the stored paper text)
+- [x] Stream responses via Server-Sent Events
 
 ### 9.3 Trend Radar
 **Why it matters:** The `trends.py` module generates monthly trend summaries but they're buried in the email. There's no visual trend view in the UI.
 
-- [ ] Add `/trends` page showing topic heatmap (papers per week per topic)
-- [ ] Plot publication velocity per topic as a sparkline
-- [ ] Alert user when a tracked topic spikes significantly
-- [ ] Compare trend velocity against a configurable baseline period
+- [x] Add `/trends` page showing topic heatmap (papers per week per topic)
+- [x] Plot publication velocity per topic as a sparkline
+- [x] Alert user when a tracked topic spikes significantly
+- [x] Compare trend velocity against a configurable baseline period
 
 ### 9.4 Citation Graph Integration
 - [ ] Pull citation and reference data from Semantic Scholar for stored papers

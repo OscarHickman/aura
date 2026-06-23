@@ -1,13 +1,8 @@
 import unittest
 import tempfile
 from pathlib import Path
-import os
-import shutil
-import numpy as np
-import torch
-
 from aura.web.app import sanitise_input, sanitise_tag
-from aura.model import PreferenceModel, PaperPreferenceNet
+from aura.model import PreferenceModel
 
 
 class TestSecurityAndAtomic(unittest.TestCase):

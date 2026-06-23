@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 sys.modules['openai'] = MagicMock()
 sys.modules['anthropic'] = MagicMock()
 
+from datetime import datetime, timedelta  # noqa: E402
 import numpy as np  # noqa: E402
 
 from aura import trends  # noqa: E402
@@ -211,6 +212,66 @@ class TestTrends(unittest.TestCase):
             for sec_topics in topics.values():
                 flat_topics.extend(sec_topics)
             self.assertIn("dynamic topic", flat_topics)
+
+    @patch("aura.trends.get_model")
+    def test_get_trends_data(self, mock_get_model):
+        mock_st = Mock()
+        # Mock encoding: topic 'Machine learning' embedding = [0.5, 0.5]
+        mock_st.encode.return_value = np.array([[0.5, 0.5]])
+        mock_get_model.return_value = mock_st
+
+        with tempfile.TemporaryDirectory() as td:
+            trends.save_topics(td, {
+                "sbi": [],
+                "galaxy_statistics": [],
+                "ml_methods": ["Machine learning"]
+            })
+            db_path = Path(td) / "papers.db"
+            db = PaperDatabase(db_path)
+
+            # Add a paper published today
+            now_iso = datetime.utcnow().isoformat()
+            db.add_paper(
+                {
+                    "arxiv_id": "2401.00001",
+                    "title": "A Great ML Paper",
+                    "abstract": "Machine learning emulators.",
+                    "authors": ["Ada"],
+                    "categories": ["astro-ph.CO"],
+                    "published": now_iso,
+                },
+                embedding=np.array([0.5, 0.5], dtype=np.float32)
+            )
+
+            # Add multiple papers in the past weeks to test spike threshold
+            # To get a spike in current week, baseline mean needs to be low
+            for i in range(1, 4):
+                past_iso = (datetime.utcnow() - timedelta(days=i*7 + 1)).isoformat()
+                db.add_paper(
+                    {
+                        "arxiv_id": f"2401.0000{i+1}",
+                        "title": f"Past Paper {i}",
+                        "abstract": "Older Machine learning stuff.",
+                        "authors": ["Bob"],
+                        "categories": ["astro-ph.CO"],
+                        "published": past_iso,
+                    },
+                    embedding=np.array([0.5, 0.5], dtype=np.float32)
+                )
+
+            db.close()
+
+            results = trends.get_trends_data(td, num_weeks=6, baseline_weeks=4)
+            self.assertIn("topics", results)
+            self.assertIn("week_labels", results)
+            self.assertEqual(results["num_weeks"], 6)
+
+            ml_trend = next(t for t in results["topics"] if t["topic"] == "Machine learning")
+            self.assertEqual(ml_trend["current_count"], 1)
+            # Baseline mean of preceding weeks (last week, 2 weeks ago, etc.)
+            # We added 3 papers, each 1 week apart, so counts should be 1 for the first few baseline weeks
+            self.assertTrue(ml_trend["baseline_mean"] > 0)
+            self.assertFalse(ml_trend["is_spike"])  # should not spike because current count is 1 (minimum threshold to spike is 3)
 
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@
 import logging
 import numpy as np
 from pathlib import Path
-from typing import cast
+from typing import cast, Optional
 
 from .database import PaperDatabase
 from .embedder import embed_papers_batch, get_embedding_dim
@@ -314,6 +314,70 @@ class RecommendationEngine:
             "failed": failed,
             "provider": get_default_provider(),
         }
+
+    def get_or_generate_full_summary(self, arxiv_id: str, mode: str = "grad_student") -> str:
+        """Fetch the full paper structured summary from cache or generate it."""
+        # 1. Check cache
+        cached = self.db.get_full_summary(arxiv_id, mode)
+        if cached:
+            logger.info(f"Loaded cached full summary for {arxiv_id} (mode: {mode})")
+            return cached
+
+        # 2. Get paper from DB
+        paper = self.db.get_paper(arxiv_id)
+        if not paper:
+            return f"Error: Paper {arxiv_id} not found in database."
+
+        pdf_url = paper.get("pdf_url")
+        if not pdf_url:
+            pdf_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
+
+        # 3. Generate summary
+        from .llm import generate_full_summary
+        summary = generate_full_summary(arxiv_id, pdf_url, mode)
+
+        # 4. Cache if successful
+        if summary and not summary.startswith("Error:"):
+            self.db.add_full_summary(arxiv_id, mode, summary)
+            logger.info(f"Cached new full summary for {arxiv_id} (mode: {mode})")
+
+        return summary
+
+    def ask_paper_question(self, arxiv_id: str, question: str):
+        """Answer a question about a paper using its full text, caching the text in DB."""
+        # 1. Check if paper text is cached in database
+        full_text = self.db.get_paper_text(arxiv_id)
+        
+        # 2. If not cached, we need to extract it
+        if not full_text:
+            paper = self.db.get_paper(arxiv_id)
+            if not paper:
+                yield f"Error: Paper {arxiv_id} not found in database."
+                return
+            
+            pdf_url = paper.get("pdf_url")
+            if not pdf_url:
+                pdf_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
+                
+            try:
+                from .llm import extract_text_from_pdf_url
+                full_text = extract_text_from_pdf_url(pdf_url)
+                if full_text and not full_text.startswith("Error:"):
+                    self.db.add_paper_text(arxiv_id, full_text)
+                    logger.info(f"Extracted and cached full text for paper {arxiv_id}")
+            except Exception as e:
+                logger.error(f"Failed to extract full text for paper {arxiv_id}: {e}")
+                yield f"Error: Failed to download or parse paper PDF ({e})"
+                return
+                
+        if not full_text or not full_text.strip():
+            yield "Error: Extracted text from paper PDF was empty."
+            return
+
+        # 3. Stream answer from LLM
+        from .llm import stream_ask_paper
+        for chunk in stream_ask_paper(arxiv_id, question, full_text):
+            yield chunk
 
     def generate_summary_for_paper(self, arxiv_id: str) -> dict:
         """Generate or retry the summary for a single paper."""

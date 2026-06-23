@@ -90,6 +90,8 @@ class TestWebApp(unittest.TestCase):
         }
         self.engine.retrain_full.return_value = {"status": "retrained"}
         self.engine.fetch_new_papers.return_value = 3
+        self.engine.data_dir = "/tmp"
+        self.engine.embedding_model = "all-MiniLM-L6-v2"
 
         # Multi-user mocks required by Flask-Login
         _test_user = {
@@ -149,6 +151,11 @@ class TestWebApp(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertIn(b"Auto-Discovered Topics", resp.data)
         self.assertIn(b"Test Topic", resp.data)
+
+        # Test Trends page
+        resp = self.client.get("/trends")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b"Trend Radar", resp.data)
 
         # Test health check
         resp = self.client.get("/health")

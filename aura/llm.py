@@ -397,3 +397,282 @@ _PROVIDER_FUNCS = {
     "openai": _summarize_openai,
     "anthropic": _summarize_anthropic,
 }
+
+
+def extract_text_from_pdf_url(pdf_url: str) -> str:
+    """Download PDF from URL and extract plain text."""
+    logger.info(f"Downloading PDF from {pdf_url}...")
+    headers = {
+        "User-Agent": "AURA Research Assistant (https://github.com/OscarHickman/aura)"
+    }
+    response = requests.get(pdf_url, headers=headers, timeout=30)
+    response.raise_for_status()
+    
+    # Load PDF bytes in pypdf
+    from pypdf import PdfReader
+    import io
+    pdf_file = io.BytesIO(response.content)
+    reader = PdfReader(pdf_file)
+    
+    text_parts = []
+    # Extract text from all pages
+    for page in reader.pages:
+        page_text = page.extract_text()
+        if page_text:
+            text_parts.append(page_text)
+            
+    return "\n".join(text_parts)
+
+
+def generate_full_summary(
+    arxiv_id: str,
+    pdf_url: str,
+    mode: str = "grad_student",
+    provider: Optional[str] = None,
+    api_key: Optional[str] = None,
+) -> str:
+    """Download the paper's PDF, extract text, and generate a structured deep-dive summary."""
+    try:
+        text = extract_text_from_pdf_url(pdf_url)
+    except Exception as e:
+        logger.error(f"Failed to extract text from PDF for {arxiv_id}: {e}")
+        return f"Error: Failed to download or parse PDF ({e})"
+
+    if not text.strip():
+        return "Error: Extracted text from PDF was empty."
+
+    # Limit size to prevent context overflow (approx 10k words / 40k characters)
+    text = text[:40000]
+
+    # Build Mode-specific prompts
+    if mode == "grad_student":
+        system_instruction = (
+            "You are a helpful senior research assistant. Summarise the following research paper. "
+            "Explain it clearly, intuitively, and in a way that is accessible to a first-year graduate student. "
+            "Use a professional, instructive tone. Always use UK-English spelling (e.g., colour, prioritising, analysing). "
+            "Your output must be structured exactly with these Markdown headings:\n\n"
+            "### Background\n[Context and motivation]\n\n"
+            "### Methods\n[Datasets, models, or observational/experimental techniques]\n\n"
+            "### Results\n[Key findings and measurements]\n\n"
+            "### Significance\n[Broader impact on the field]"
+        )
+    elif mode == "expert":
+        system_instruction = (
+            "You are a peer reviewer and expert cosmologist. Summarise the following research paper. "
+            "Provide a dense, highly technical, and precise analysis suitable for an expert researcher. "
+            "Use precise domain-specific terminology. Always use UK-English spelling (e.g., colour, prioritising, analysing). "
+            "Your output must be structured exactly with these Markdown headings:\n\n"
+            "### Background\n[Theoretical framework and exact problem addressed]\n\n"
+            "### Methods\n[Mathematical derivations, statistical tools, datasets, or simulation suites]\n\n"
+            "### Results\n[Quantitative results and statistics]\n\n"
+            "### Significance\n[Impact on cosmological constraints and future research]"
+        )
+    else:
+        raise ValueError(f"Invalid summary mode: {mode}")
+
+    prompt = f"{system_instruction}\n\nHere is the text extracted from the paper (arxiv ID {arxiv_id}):\n\n{text}"
+
+    # Call LLM provider
+    providers_to_try = [provider.lower()] if provider else _load_providers_order()
+    
+    for p in providers_to_try:
+        try:
+            if p == "groq":
+                from groq import Groq
+                resolved_key = _resolve_api_key(api_key, "GROQ_API_KEY", "groq")
+                if not resolved_key:
+                    continue
+                client = Groq(api_key=resolved_key)
+                model_name = _get_provider_setting("groq", "model") or "llama-3.3-70b-versatile"
+                message = client.chat.completions.create(
+                    messages=[{"role": "user", "content": prompt}],
+                    model=model_name,
+                    max_tokens=1000,
+                    temperature=0.3,
+                )
+                return message.choices[0].message.content.strip()
+
+            elif p == "google":
+                resolved_key = _resolve_api_key(api_key, "GOOGLE_API_KEY", "google")
+                if not resolved_key:
+                    continue
+                endpoint = (
+                    "https://generativelanguage.googleapis.com/v1beta/"
+                    f"models/gemini-2.0-flash:generateContent?key={resolved_key}"
+                )
+                payload = {
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {"temperature": 0.3, "maxOutputTokens": 1000},
+                }
+                response = requests.post(endpoint, json=payload, timeout=30)
+                response.raise_for_status()
+                data = response.json()
+                candidates = data.get("candidates", [])
+                if candidates:
+                    parts = candidates[0].get("content", {}).get("parts", [])
+                    return "".join(part.get("text", "") for part in parts).strip()
+
+            elif p == "openai":
+                from openai import OpenAI
+                resolved_key = _resolve_api_key(api_key, "OPENAI_API_KEY", "openai")
+                if not resolved_key:
+                    continue
+                client = OpenAI(api_key=resolved_key)
+                response = client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=1000,
+                    temperature=0.3,
+                )
+                return response.choices[0].message.content.strip()
+
+            elif p == "anthropic":
+                import anthropic
+                resolved_key = _resolve_api_key(api_key, "ANTHROPIC_API_KEY", "anthropic")
+                if not resolved_key:
+                    continue
+                client = anthropic.Anthropic(api_key=resolved_key)
+                message = client.messages.create(
+                    model="claude-3-5-sonnet-20241022",
+                    max_tokens=1000,
+                    messages=[{"role": "user", "content": prompt}],
+                )
+                return message.content[0].text.strip()
+        except Exception as e:
+            logger.error(f"Provider {p} failed to generate deep dive summary: {e}")
+            continue
+
+    return "Error: All configured LLM providers failed to generate deep dive summary."
+
+
+def stream_ask_paper(
+    arxiv_id: str,
+    question: str,
+    full_text: str,
+    provider: Optional[str] = None,
+    api_key: Optional[str] = None,
+):
+    """Stream answers to questions about a paper using its full text as context."""
+    # Limit full text size to prevent context overflow (approx 40k characters)
+    truncated_text = full_text[:40000]
+    
+    prompt = (
+        f"You are a helpful research assistant. Answer the user's question about the research paper (arxiv ID {arxiv_id}) "
+        f"using the provided full text of the paper. Always use UK-English spelling (e.g., colour, prioritising, analysing).\n\n"
+        f"Here is the text extracted from the paper:\n"
+        f"---\n"
+        f"{truncated_text}\n"
+        f"---\n\n"
+        f"Question: {question}\n"
+        f"Answer:"
+    )
+
+    providers_to_try = [provider.lower()] if provider else _load_providers_order()
+    
+    for p in providers_to_try:
+        try:
+            if p == "groq":
+                from groq import Groq
+                resolved_key = _resolve_api_key(api_key, "GROQ_API_KEY", "groq")
+                if not resolved_key:
+                    continue
+                client = Groq(api_key=resolved_key)
+                model_name = _get_provider_setting("groq", "model") or "llama-3.3-70b-versatile"
+                stream = client.chat.completions.create(
+                    messages=[{"role": "user", "content": prompt}],
+                    model=model_name,
+                    max_tokens=1000,
+                    temperature=0.3,
+                    stream=True,
+                )
+                has_yielded = False
+                for chunk in stream:
+                    content = chunk.choices[0].delta.content
+                    if content:
+                        has_yielded = True
+                        yield content
+                if has_yielded:
+                    return
+
+            elif p == "google":
+                resolved_key = _resolve_api_key(api_key, "GOOGLE_API_KEY", "google")
+                if not resolved_key:
+                    continue
+                endpoint = (
+                    "https://generativelanguage.googleapis.com/v1beta/"
+                    f"models/gemini-2.0-flash:streamGenerateContent?key={resolved_key}"
+                )
+                payload = {
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {"temperature": 0.3, "maxOutputTokens": 1000},
+                }
+                response = requests.post(endpoint, json=payload, stream=True, timeout=30)
+                response.raise_for_status()
+                has_yielded = False
+                for line in response.iter_lines():
+                    if line:
+                        line_str = line.decode("utf-8").strip()
+                        if not line_str or line_str == "[" or line_str == "]":
+                            continue
+                        if line_str.startswith(","):
+                            line_str = line_str[1:].strip()
+                        try:
+                            data = json.loads(line_str)
+                            candidates = data.get("candidates", [])
+                            if candidates:
+                                parts = candidates[0].get("content", {}).get("parts", [])
+                                text = "".join(part.get("text", "") for part in parts)
+                                if text:
+                                    has_yielded = True
+                                    yield text
+                        except Exception:
+                            pass
+                if has_yielded:
+                    return
+
+            elif p == "openai":
+                from openai import OpenAI
+                resolved_key = _resolve_api_key(api_key, "OPENAI_API_KEY", "openai")
+                if not resolved_key:
+                    continue
+                client = OpenAI(api_key=resolved_key)
+                stream = client.chat.completions.create(
+                    model="gpt-3.5-turbo",
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=1000,
+                    temperature=0.3,
+                    stream=True,
+                )
+                has_yielded = False
+                for chunk in stream:
+                    content = chunk.choices[0].delta.content
+                    if content:
+                        has_yielded = True
+                        yield content
+                if has_yielded:
+                    return
+
+            elif p == "anthropic":
+                import anthropic
+                resolved_key = _resolve_api_key(api_key, "ANTHROPIC_API_KEY", "anthropic")
+                if not resolved_key:
+                    continue
+                client = anthropic.Anthropic(api_key=resolved_key)
+                has_yielded = False
+                with client.messages.stream(
+                    model="claude-3-5-sonnet-20241022",
+                    max_tokens=1000,
+                    messages=[{"role": "user", "content": prompt}],
+                ) as stream:
+                    for text in stream.text_stream:
+                        if text:
+                            has_yielded = True
+                            yield text
+                if has_yielded:
+                    return
+        except Exception as e:
+            logger.error(f"Provider {p} failed to stream answer: {e}")
+            continue
+
+    yield "Error: All configured LLM providers failed to stream an answer."
+

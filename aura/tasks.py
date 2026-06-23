@@ -287,7 +287,6 @@ def refresh_ads_metadata_task(self):
             
             # Update database
             for p in updated_batch:
-                arxiv_id = p.get("arxiv_id")
                 matching_paper = None
                 p_arxiv = p.get("arxiv_id")
                 p_bibcode = p.get("bibcode")

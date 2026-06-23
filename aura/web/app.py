@@ -103,7 +103,7 @@ def _paper_to_bibtex(paper: dict) -> str:
         f"  journal={{arXiv preprint arXiv:{eprint}}},",
         f"  year={{{year}}},",
         f"  eprint={{{eprint}}},",
-        f"  archivePrefix={{arXiv}},"
+        "  archivePrefix={arXiv},"
     ]
     if primary_class:
         lines.append(f"  primaryClass={{{primary_class}}},")
@@ -600,6 +600,51 @@ def _register_routes(app: Flask) -> None:
             return jsonify({"error": "Paper not found"}), 404
         similar_liked = engine.get_similar_liked_papers(arxiv_id, limit=3) if engine else []
         return jsonify({"arxiv_id": arxiv_id, "similar_liked": similar_liked})
+
+    @app.route("/api/papers/<path:arxiv_id>/deep-summary", methods=["GET"])
+    @login_required
+    def get_paper_deep_summary(arxiv_id):
+        if not engine:
+            return jsonify({"error": "Engine not initialized"}), 500
+        mode = request.args.get("mode", "grad_student")
+        if mode not in ["grad_student", "expert"]:
+            return jsonify({"error": f"Invalid mode: {mode}"}), 400
+        
+        summary = engine.get_or_generate_full_summary(arxiv_id, mode=mode)
+        if summary.startswith("Error:"):
+            return jsonify({"error": summary}), 500
+            
+        return jsonify({
+            "arxiv_id": arxiv_id,
+            "mode": mode,
+            "summary": summary
+        })
+
+    @app.route("/api/papers/<path:arxiv_id>/ask", methods=["GET", "POST"])
+    @login_required
+    def ask_paper_question(arxiv_id):
+        if not engine:
+            return jsonify({"error": "Engine not initialized"}), 500
+            
+        if request.method == "POST":
+            data = request.get_json() or {}
+            question = data.get("question", "").strip()
+        else:
+            question = request.args.get("question", "").strip()
+            
+        if not question:
+            return jsonify({"error": "Question is required."}), 400
+            
+        from flask import Response
+        import json
+        def generate():
+            try:
+                for chunk in engine.ask_paper_question(arxiv_id, question):
+                    yield f"data: {json.dumps({'chunk': chunk})}\n\n"
+            except Exception as e:
+                yield f"data: {json.dumps({'error': str(e)})}\n\n"
+                
+        return Response(generate(), mimetype="text/event-stream")
 
     @app.route("/api/papers/<path:arxiv_id>/notes", methods=["GET"])
     @login_required
@@ -1172,6 +1217,17 @@ def _register_routes(app: Flask) -> None:
         tokens = engine.db.get_user_tokens(uid) if engine else []
         user_record = engine.db.get_user_by_id(uid) if engine else None
         return render_template("settings.html", stats=stats_data, config=config, tokens=tokens, user=user_record)
+
+    @app.route("/trends")
+    @login_required
+    def trends_page():
+        if not engine:
+            return "Engine not initialized", 500
+        from aura.trends import get_trends_data
+        uid = _get_current_user_id()
+        stats_data = engine.get_stats(user_id=uid)
+        trends_data = get_trends_data(engine.data_dir, engine.embedding_model)
+        return render_template("trends.html", trends=trends_data, stats=stats_data)
 
     @app.route("/unsubscribe/<token>")
     def unsubscribe(token):

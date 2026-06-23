@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+{% block title %}Trend Radar - AI Papers{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h1 class="mb-2"><i class="bi bi-graph-up text-info"></i> Topic Trend Radar</h1>
+        <p class="text-muted">Track publication velocity, topic heatmaps, and detect significant emerging spikes in cosmologist and machine learning topics.</p>
+    </div>
+</div>
+
+<!-- Spike Alerts Section -->
+<div class="row mb-4">
+    <div class="col-12">
+        {% set spikes = [] %}
+        {% for topic in trends.topics %}
+            {% if topic.is_spike %}
+                {% set _ = spikes.append(topic) %}
+            {% endif %}
+        {% endfor %}
+        
+        {% if spikes %}
+            <div class="card border-warning bg-warning bg-opacity-10 mb-3 animate-pulse">
+                <div class="card-header border-warning bg-warning bg-opacity-20 d-flex align-items-center gap-2">
+                    <h5 class="mb-0 text-warning"><i class="bi bi-exclamation-triangle-fill"></i> Significant Topic Spikes Detected</h5>
+                </div>
+                <div class="card-body">
+                    <ul class="mb-0 text-light-emphasis">
+                        {% for topic in spikes %}
+                        <li class="mb-2">
+                            <strong>{{ topic.topic }}</strong>: 
+                            This topic has spiked to <span class="badge bg-danger fs-6">{{ topic.current_count }}</span> papers this week, 
+                            exceeding the historical average of <span class="badge bg-secondary fs-6">{{ topic.baseline_mean }}</span> papers/week.
+                        </li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        {% else %}
+            <div class="card border-success bg-success bg-opacity-10 mb-3">
+                <div class="card-body py-3 d-flex align-items-center gap-2 text-success">
+                    <i class="bi bi-check-circle-fill"></i>
+                    <span class="small mb-0">All tracked topics are stable. No abnormal publication spikes detected in the current week.</span>
+                </div>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Heatmap & Sparklines Card -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card border-secondary">
+            <div class="card-header bg-dark border-secondary d-flex justify-content-between align-items-center">
+                <h5 class="mb-0 text-light"><i class="bi bi-grid-3x3 text-info"></i> Topic Publication Heatmap</h5>
+                <div class="d-flex align-items-center gap-2 text-muted small">
+                    <span class="me-1">Legend:</span>
+                    <span class="px-2 py-1 rounded small" style="background-color: rgba(255, 255, 255, 0.05); color: #fff;">0</span>
+                    <span class="px-2 py-1 rounded small" style="background-color: rgba(46, 196, 182, 0.25); color: #fff;">1</span>
+                    <span class="px-2 py-1 rounded small" style="background-color: rgba(46, 196, 182, 0.5); color: #fff;">2-3</span>
+                    <span class="px-2 py-1 rounded small" style="background-color: rgba(46, 196, 182, 0.75); color: #fff;">4-5</span>
+                    <span class="px-2 py-1 rounded small" style="background-color: rgba(46, 196, 182, 1.0); color: #000;">6+</span>
+                </div>
+            </div>
+            <div class="card-body bg-dark-subtle overflow-auto">
+                {% if trends.topics %}
+                <table class="table table-bordered border-secondary align-middle text-center text-light mb-0" id="heatmap-table">
+                    <thead>
+                        <tr class="table-dark">
+                            <th class="text-start" style="width: 250px;">Topic / Area</th>
+                            <th class="text-center" style="width: 150px;">Velocity</th>
+                            {% for label in trends.week_labels %}
+                            <th>{{ label }}</th>
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for topic in trends.topics %}
+                        <tr>
+                            <td class="text-start">
+                                <span class="fw-bold">{{ topic.topic }}</span>
+                                <div class="small text-muted mt-1" style="font-size: 0.75rem;">
+                                    Section: 
+                                    {% if topic.section == 'sbi' %}
+                                    <span class="badge border border-info text-info bg-transparent">SBI</span>
+                                    {% elif topic.section == 'galaxy_statistics' %}
+                                    <span class="badge border border-success text-success bg-transparent">Galaxy Stats</span>
+                                    {% else %}
+                                    <span class="badge border border-secondary text-secondary bg-transparent">ML Methods</span>
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td class="text-center">
+                                <div class="sparkline-container d-inline-block" data-values="{{ topic.sparkline | tojson }}"></div>
+                            </td>
+                            {% for count in topic.sparkline %}
+                            <td class="heatmap-cell py-3" data-count="{{ count }}" style="background-color: {% if count == 0 %}rgba(255, 255, 255, 0.03){% elif count == 1 %}rgba(46, 196, 182, 0.25){% elif count <= 3 %}rgba(46, 196, 182, 0.5){% elif count <= 5 %}rgba(46, 196, 182, 0.75){% else %}rgba(46, 196, 182, 1.0){% endif %}; color: {% if count > 5 %}#000{% else %}#fff{% endif %}; font-weight: {% if count > 0 %}bold{% else %}normal{% endif %};" title="{{ count }} papers matched '{{ topic.topic }}' in week ending {{ trends.week_labels[loop.index0] }}">
+                                {{ count }}
+                            </td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p class="text-muted text-center py-4 mb-0">No topics or paper embedding metadata available to generate a heatmap.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Detailed Topic Radar List -->
+<div class="row mb-4">
+    <div class="col-12">
+        <h3 class="h4 mb-3 text-light"><i class="bi bi-activity text-info"></i> Detailed Topic Breakdown</h3>
+        <div class="row g-3">
+            {% for topic in trends.topics %}
+            <div class="col-md-6 col-lg-4">
+                <div class="card h-100 border-secondary {% if topic.is_spike %}border-warning bg-warning bg-opacity-10{% endif %}">
+                    <div class="card-body">
+                        <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+                            <h5 class="card-title text-light mb-0">{{ topic.topic }}</h5>
+                            {% if topic.is_spike %}
+                            <span class="badge bg-danger"><i class="bi bi-lightning-fill"></i> Spiking</span>
+                            {% endif %}
+                        </div>
+                        <p class="text-muted small mb-3">
+                            Current Week Count: <span class="badge bg-info text-dark fs-7">{{ topic.current_count }}</span> <br>
+                            Baseline Avg: <strong>{{ topic.baseline_mean }}</strong> papers/week
+                        </p>
+                        
+                        <h6 class="small text-light border-bottom border-secondary pb-1 mb-2">Recent Matching Papers</h6>
+                        {% if topic.recent_papers %}
+                            <ul class="list-unstyled mb-0" style="font-size: 0.85rem;">
+                                {% for paper in topic.recent_papers %}
+                                <li class="mb-2 text-truncate-container">
+                                    <a href="/papers/{{ paper.arxiv_id }}" class="text-decoration-none text-info text-truncate-link d-block" title="{{ paper.title }}">
+                                        {{ paper.title }}
+                                    </a>
+                                    <span class="text-muted small d-block">
+                                        {{ paper.authors[:2] | join(', ') }}{% if paper.authors | length > 2 %} + others{% endif %}
+                                    </span>
+                                </li>
+                                {% endfor %}
+                            </ul>
+                        {% else %}
+                            <p class="text-muted small mb-0">No papers published in this topic this week.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function drawSparklines() {
+    document.querySelectorAll('.sparkline-container').forEach(container => {
+        const values = JSON.parse(container.getAttribute('data-values') || '[]');
+        if (values.length === 0) return;
+        const width = 120;
+        const height = 30;
+        const maxVal = Math.max(...values, 2);
+        
+        const points = values.map((val, idx) => {
+            const x = (idx / (values.length - 1)) * width;
+            const y = height - (val / maxVal) * (height - 4) - 2;
+            return `${x},${y}`;
+        });
+        
+        container.innerHTML = `
+            <svg width="${width}" height="${height}" style="vertical-align: middle;">
+                <path d="M ${points.join(' L ')}" fill="none" stroke="#0dcaf0" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />
+                ${points.map((p, idx) => `
+                    <circle cx="${p.split(',')[0]}" cy="${p.split(',')[1]}" r="2" fill="#2ec4b6" class="sparkline-point" />
+                `).join('')}
+            </svg>
+        `;
+    });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    drawSparklines();
+});
+</script>
+<style>
+.heatmap-cell {
+    transition: filter 0.2s, transform 0.2s;
+    cursor: default;
+}
+.heatmap-cell:hover {
+    filter: brightness(1.2);
+    transform: scale(1.05);
+}
+.text-truncate-container {
+    max-width: 100%;
+}
+.text-truncate-link {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.sparkline-point {
+    transition: r 0.1s;
+}
+.sparkline-point:hover {
+    r: 4;
+}
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.005); }
+    100% { transform: scale(1); }
+}
+.animate-pulse {
+    animation: pulse 2s infinite ease-in-out;
+}
+</style>
+{% endblock %}

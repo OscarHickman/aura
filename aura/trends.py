@@ -355,3 +355,139 @@ def cleanup_topics(data_dir: str | Path):
             elif t in flat_defaults and t not in cleaned:
                 cleaned.append(t)
         save_topics(data_dir, cleaned)
+
+
+def get_trends_data(
+    data_dir: str | Path,
+    embedding_model: str = "all-MiniLM-L6-v2",
+    num_weeks: int = 12,
+    baseline_weeks: int = 8,
+) -> dict:
+    """Analyze paper publication frequencies and velocities for tracked topics.
+    
+    Identifies topics showing significant publication spikes compared to a baseline.
+    """
+    # 1. Load topics
+    grouped_topics = load_topics(data_dir)
+    topics = []
+    topic_to_section = {}
+    
+    if isinstance(grouped_topics, dict):
+        for sec, sec_topics in grouped_topics.items():
+            for t in sec_topics:
+                topics.append(t)
+                topic_to_section[t] = sec
+    else:
+        topics = grouped_topics
+        for t in topics:
+            topic_to_section[t] = "ml_methods"
+
+    if not topics:
+        return {}
+
+    # 2. Load papers from database
+    db = PaperDatabase(Path(data_dir) / "papers.db")
+    papers_with_emb = db.get_papers_with_embeddings()
+    if not papers_with_emb:
+        return {}
+
+    # Filter to papers within the timeframe (plus a small buffer)
+    now = datetime.utcnow()
+    total_days = (num_weeks + 2) * 7
+    cutoff_date = now - timedelta(days=total_days)
+
+    recent_papers = []
+    for paper, emb in papers_with_emb:
+        try:
+            pub_date = datetime.fromisoformat(paper["published"].replace("Z", "+00:00")).replace(tzinfo=None)
+            if pub_date >= cutoff_date:
+                recent_papers.append((paper, emb, pub_date))
+        except Exception:
+            continue
+
+    if not recent_papers:
+        return {}
+
+    # 3. Define weekly boundaries (recent to oldest)
+    intervals = []
+    for i in range(num_weeks):
+        start = now - timedelta(days=(i + 1) * 7)
+        end = now - timedelta(days=i * 7)
+        intervals.append((start, end))
+
+    # 4. Embed topics
+    model = get_model(embedding_model)
+    topic_embeddings = model.encode(topics, normalize_embeddings=True)
+    paper_embs = np.stack([emb for _, emb, _ in recent_papers])
+
+    # 5. Populate the grid of counts
+    matching_grid = [[[] for _ in range(num_weeks)] for _ in range(len(topics))]
+
+    for t_idx, topic in enumerate(topics):
+        topic_emb = topic_embeddings[t_idx]
+        similarities = np.dot(paper_embs, topic_emb)
+        
+        for p_idx, (paper, _, pub_date) in enumerate(recent_papers):
+            score = similarities[p_idx]
+            if score >= 0.33:  # Relevance threshold for match
+                # Determine which week this falls into
+                for w_idx, (start, end) in enumerate(intervals):
+                    if start <= pub_date < end:
+                        matching_grid[t_idx][w_idx].append(paper)
+                        break
+
+    # 6. Build trend metrics for each topic
+    trends_by_topic = []
+    for t_idx, topic in enumerate(topics):
+        # Counts ordered from current week (index 0) to oldest
+        counts = [len(matching_grid[t_idx][w]) for w in range(num_weeks)]
+        
+        # Chronological order for plotting (oldest to current)
+        sparkline_counts = list(reversed(counts))
+        current_count = counts[0]
+        
+        # Baseline analysis on preceding weeks
+        baseline_slice = counts[1:1 + baseline_weeks]
+        if baseline_slice:
+            baseline_mean = float(np.mean(baseline_slice))
+            baseline_std = float(np.std(baseline_slice))
+        else:
+            baseline_mean = 0.0
+            baseline_std = 0.0
+
+        # Spike detection: current week is significantly higher than historical std dev
+        threshold = max(3.0, baseline_mean + 2.0 * (baseline_std if baseline_std > 0 else 0.5))
+        is_spike = current_count >= threshold
+        
+        trends_by_topic.append({
+            "topic": topic,
+            "section": topic_to_section.get(topic, "ml_methods"),
+            "counts": counts,
+            "sparkline": sparkline_counts,
+            "current_count": current_count,
+            "baseline_mean": round(baseline_mean, 2),
+            "is_spike": is_spike,
+            "spike_threshold": round(threshold, 2),
+            "recent_papers": [
+                {
+                    "arxiv_id": p["arxiv_id"],
+                    "title": p["title"],
+                    "authors": p["authors"] if isinstance(p["authors"], list) else json.loads(p["authors"]),
+                    "published": p["published"]
+                }
+                for p in matching_grid[t_idx][0][:3]
+            ]
+        })
+
+    # Chronological week labels for UI headers
+    week_labels = []
+    for start, end in intervals:
+        week_labels.append(end.strftime("%d %b"))
+    week_labels = list(reversed(week_labels))
+
+    return {
+        "topics": trends_by_topic,
+        "week_labels": week_labels,
+        "num_weeks": num_weeks,
+    }
+

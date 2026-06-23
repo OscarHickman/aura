@@ -2,7 +2,7 @@
 
 import logging
 import requests
-from typing import Any, List, Dict, Optional
+from typing import Any, List, Dict
 
 logger = logging.getLogger(__name__)
 

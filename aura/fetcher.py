@@ -1,6 +1,7 @@
 """Paper ingestion framework with multiple source support."""
 
 import logging
+import os
 import time
 from datetime import datetime, timedelta
 from typing import Optional, Any, Protocol

@@ -164,6 +164,20 @@ class PaperDatabase:
                 UNIQUE(user_id, arxiv_id)
             );
 
+            CREATE TABLE IF NOT EXISTS full_summaries (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                arxiv_id TEXT NOT NULL,
+                mode TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(arxiv_id, mode)
+            );
+
+            CREATE TABLE IF NOT EXISTS paper_texts (
+                arxiv_id TEXT PRIMARY KEY,
+                full_text TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
         """)
         self.conn.commit()
 
@@ -191,6 +205,7 @@ class PaperDatabase:
             CREATE INDEX IF NOT EXISTS idx_notes_user_id ON notes(user_id);
             CREATE INDEX IF NOT EXISTS idx_reading_list_user_id ON reading_list(user_id);
             CREATE INDEX IF NOT EXISTS idx_reading_list_added_at ON reading_list(added_at);
+            CREATE INDEX IF NOT EXISTS idx_full_summaries_arxiv_id ON full_summaries(arxiv_id);
 
             CREATE VIRTUAL TABLE IF NOT EXISTS papers_fts USING fts5(
                 arxiv_id UNINDEXED,
@@ -1551,6 +1566,62 @@ class PaperDatabase:
             return True
         except sqlite3.Error as e:
             logger.error(f"Failed to update ADS metadata for {arxiv_id}: {e}")
+            return False
+
+    def get_full_summary(self, arxiv_id: str, mode: str) -> Optional[str]:
+        """Fetch cached full-paper summary for a paper and mode."""
+        try:
+            row = self.conn.execute(
+                "SELECT summary FROM full_summaries WHERE arxiv_id = ? AND mode = ?",
+                (arxiv_id, mode),
+            ).fetchone()
+            return row["summary"] if row else None
+        except sqlite3.Error as e:
+            logger.error(f"Failed to fetch full summary for {arxiv_id} (mode: {mode}): {e}")
+            return None
+
+    def add_full_summary(self, arxiv_id: str, mode: str, summary: str) -> bool:
+        """Cache a full-paper summary. Returns True if successful."""
+        try:
+            self.conn.execute(
+                """
+                INSERT OR REPLACE INTO full_summaries (arxiv_id, mode, summary, created_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (arxiv_id, mode, summary, datetime.utcnow().isoformat()),
+            )
+            self.conn.commit()
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Failed to cache full summary for {arxiv_id} (mode: {mode}): {e}")
+            return False
+
+    def get_paper_text(self, arxiv_id: str) -> Optional[str]:
+        """Fetch cached full text for a paper."""
+        try:
+            row = self.conn.execute(
+                "SELECT full_text FROM paper_texts WHERE arxiv_id = ?",
+                (arxiv_id,),
+            ).fetchone()
+            return row["full_text"] if row else None
+        except sqlite3.Error as e:
+            logger.error(f"Failed to fetch paper text for {arxiv_id}: {e}")
+            return None
+
+    def add_paper_text(self, arxiv_id: str, full_text: str) -> bool:
+        """Cache full text for a paper. Returns True if successful."""
+        try:
+            self.conn.execute(
+                """
+                INSERT OR REPLACE INTO paper_texts (arxiv_id, full_text, created_at)
+                VALUES (?, ?, ?)
+                """,
+                (arxiv_id, full_text, datetime.utcnow().isoformat()),
+            )
+            self.conn.commit()
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Failed to cache paper text for {arxiv_id}: {e}")
             return False
 
     def close(self) -> None:

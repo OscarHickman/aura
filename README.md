@@ -10,10 +10,13 @@ A powerful research discovery and organization tool. AURA fetches papers from **
 ## Key Features
 
 - **Multi-Source Discovery:** Ingest papers from arXiv, Semantic Scholar (with citation counts), and custom journal RSS feeds.
-- **Personalized Ranking:** 5-star rating system with a PyTorch neural network that learns your research interests.
+- **Personalised Ranking:** 5-star rating system with a PyTorch neural network that learns your research interests.
 - **Smart Search:** Toggle between Keyword (FTS) and Semantic search (vector similarity).
+- **Deep Dive Summaries:** Extract full-text PDFs to generate structured summaries (Background, Methods, Results, Significance) in multiple reading modes (expert vs. graduate student).
+- **Research Q&A:** RAG-powered assistant to ask arbitrary questions about a paper's full text, streamed to the UI in real-time.
+- **Trend Radar:** Visual heatmap displaying publication density per topic per week, including publication velocity sparklines and automated trend velocity spike detection.
 - **Auto-Discovery:** Unsupervised topic clustering (K-Means) to find new trends in your field.
-- **Organization:** Manage personal collections, tags, reading lists (queue), and paper annotations.
+- **Organisation:** Manage personal collections, tags, reading lists (queue), and paper annotations.
 - **Explainable AI:** Score breakdowns and "Because you liked" context for all recommendations.
 - **Modern UI:** Responsive dark-mode interface with infinite scrolling and keyboard shortcuts.
 - **Daily Digest:** Automated daily email digests with AI summaries of top papers.

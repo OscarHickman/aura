@@ -3,9 +3,14 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import Mock, patch
+import sys
+from unittest.mock import Mock, MagicMock, patch
 
-from aura import llm
+# Fake missing modules for import
+sys.modules['openai'] = MagicMock()
+sys.modules['anthropic'] = MagicMock()
+
+from aura import llm  # noqa: E402
 
 
 class TestLLM(unittest.TestCase):

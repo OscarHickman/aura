@@ -163,6 +163,62 @@
                 </div>
                 {% endif %}
 
+                <!-- Deep Dive Summary Section -->
+                <div class="card mb-4 border-secondary" id="deep-summary-card">
+                    <div class="card-header bg-dark border-secondary d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0 text-light"><i class="bi bi-rocket-takeoff-fill text-info"></i> Research Deep Dive</h5>
+                        <div class="d-flex align-items-center gap-2">
+                            <select class="form-select form-select-sm bg-dark text-light border-secondary" id="deep-summary-mode" style="width: 170px;">
+                                <option value="grad_student" selected>Grad Student Mode</option>
+                                <option value="expert">Expert Analysis</option>
+                            </select>
+                            <button class="btn btn-sm btn-info text-white" id="load-deep-summary-btn" onclick="loadDeepSummary('{{ paper.arxiv_id }}')">
+                                <i class="bi bi-sparkles"></i> Analyze PDF
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body bg-dark-subtle" id="deep-summary-body">
+                        <div class="" id="deep-summary-status">
+                            <p class="text-muted mb-0 small text-center py-2">
+                                <i class="bi bi-file-pdf text-danger fs-4 d-block mb-1"></i>
+                                Extract sections from the original PDF and generate a structured summary.
+                            </p>
+                        </div>
+                        <div class="d-none" id="deep-summary-spinner">
+                            <div class="d-flex flex-column align-items-center py-3">
+                                <div class="spinner-border text-info mb-2" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <span class="text-muted small">Downloading PDF and extracting text. This can take up to 20-30 seconds...</span>
+                            </div>
+                        </div>
+                        <div class="d-none" id="deep-summary-content">
+                            <div class="formatted-text leading-relaxed text-light-emphasis" id="deep-summary-text"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Research Q&A Section -->
+                <div class="card mb-4 border-secondary" id="qa-card">
+                    <div class="card-header bg-dark border-secondary">
+                        <h5 class="mb-0 text-light"><i class="bi bi-chat-left-text-fill text-info"></i> Research Q&A</h5>
+                    </div>
+                    <div class="card-body bg-dark-subtle d-flex flex-column gap-3">
+                        <div id="qa-history" class="d-flex flex-column gap-2" style="max-height: 400px; overflow-y: auto; padding-right: 5px;">
+                            <p class="text-muted small mb-0 text-center py-2" id="qa-empty-msg">
+                                Ask any question about this paper (e.g. "What dataset was used?", "What are the limitations?").
+                            </p>
+                        </div>
+                        
+                        <form onsubmit="askPaperQuestion('{{ paper.arxiv_id }}', this); return false;" class="d-flex gap-2">
+                            <input type="text" class="form-control bg-dark text-light border-secondary" id="qa-input" placeholder="Ask a question about this paper..." required>
+                            <button type="submit" class="btn btn-info text-white" id="qa-submit-btn">
+                                <i class="bi bi-send"></i> Ask
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
                 <div class="mb-4">
                     <h6 class="text-muted mb-2">Abstract</h6>
                     <p class="abstract-text formatted-text leading-relaxed text-light-emphasis">{{ paper.abstract }}</p>
@@ -374,6 +430,167 @@
 
 {% block scripts %}
 <script>
+async function loadDeepSummary(arxivId) {
+    const statusEl = document.getElementById('deep-summary-status');
+    const spinnerEl = document.getElementById('deep-summary-spinner');
+    const contentEl = document.getElementById('deep-summary-content');
+    const textEl = document.getElementById('deep-summary-text');
+    const modeEl = document.getElementById('deep-summary-mode');
+    const loadBtn = document.getElementById('load-deep-summary-btn');
+    
+    const mode = modeEl.value;
+
+    // Show loading spinner
+    statusEl.classList.add('d-none');
+    contentEl.classList.add('d-none');
+    spinnerEl.classList.remove('d-none');
+    loadBtn.disabled = true;
+
+    try {
+        const resp = await fetch(`/api/papers/${encodeURIComponent(arxivId)}/deep-summary?mode=${mode}`);
+        const data = await resp.json();
+        
+        if (resp.ok && data.summary) {
+            let formattedHtml = data.summary
+                .replace(/^### (.*$)/gim, '<h5 class="text-info mt-3">$1</h5>')
+                .replace(/^## (.*$)/gim, '<h4 class="text-info mt-3">$1</h4>')
+                .replace(/^# (.*$)/gim, '<h3 class="text-info mt-3">$1</h3>')
+                .replace(/\n\n/g, '</p><p>')
+                .replace(/\n/g, '<br>');
+            
+            textEl.innerHTML = `<p>${formattedHtml}</p>`;
+            
+            if (typeof renderFormattedText === 'function') {
+                renderFormattedText(textEl);
+            }
+            
+            spinnerEl.classList.add('d-none');
+            contentEl.classList.remove('d-none');
+        } else {
+            textEl.innerHTML = `<div class="alert alert-danger">Error: ${data.error || 'Failed to generate deep summary'}</div>`;
+            spinnerEl.classList.add('d-none');
+            contentEl.classList.remove('d-none');
+        }
+    } catch (e) {
+        textEl.innerHTML = `<div class="alert alert-danger">Error: Request failed (${e})</div>`;
+        spinnerEl.classList.add('d-none');
+        contentEl.classList.remove('d-none');
+    } finally {
+        loadBtn.disabled = false;
+    }
+}
+
+let currentEventSource = null;
+
+async function askPaperQuestion(arxivId, form) {
+    const inputEl = document.getElementById('qa-input');
+    const historyEl = document.getElementById('qa-history');
+    const emptyMsgEl = document.getElementById('qa-empty-msg');
+    const submitBtn = document.getElementById('qa-submit-btn');
+    
+    const question = inputEl.value.trim();
+    if (!question) return;
+    
+    // Clear input
+    inputEl.value = '';
+    
+    // Hide empty msg
+    if (emptyMsgEl) {
+        emptyMsgEl.classList.add('d-none');
+    }
+    
+    // Append User Question bubble
+    const userBubble = document.createElement('div');
+    userBubble.className = 'qa-message user-message align-self-end bg-dark border border-secondary text-light rounded px-3 py-2 my-1';
+    userBubble.style.maxWidth = '85%';
+    userBubble.innerHTML = `<strong>Q: </strong><span class="qa-text"></span>`;
+    userBubble.querySelector('.qa-text').textContent = question;
+    historyEl.appendChild(userBubble);
+    
+    // Append Assistant Answer bubble (spinner state initially)
+    const assistantBubble = document.createElement('div');
+    assistantBubble.className = 'qa-message assistant-message align-self-start bg-secondary-subtle border border-secondary text-light rounded px-3 py-2 my-1';
+    assistantBubble.style.maxWidth = '85%';
+    assistantBubble.innerHTML = `<strong>A: </strong><span class="qa-text"><span class="spinner-border spinner-border-sm text-info" role="status"></span> Downloading PDF/extracting text if needed & thinking...</span>`;
+    historyEl.appendChild(assistantBubble);
+    
+    // Scroll to bottom
+    historyEl.scrollTop = historyEl.scrollHeight;
+    
+    // Disable inputs
+    inputEl.disabled = true;
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span>';
+    
+    const textEl = assistantBubble.querySelector('.qa-text');
+    let answerText = '';
+    let isFirstChunk = true;
+    
+    // Setup SSE connection
+    const sseUrl = `/api/papers/${encodeURIComponent(arxivId)}/ask?question=${encodeURIComponent(question)}`;
+    currentEventSource = new EventSource(sseUrl);
+    
+    currentEventSource.onmessage = function(event) {
+        try {
+            const data = JSON.parse(event.data);
+            if (data.chunk) {
+                if (isFirstChunk) {
+                    textEl.innerHTML = '';
+                    isFirstChunk = false;
+                }
+                answerText += data.chunk;
+                
+                // Format simple line breaks and clean up
+                let formattedHtml = answerText
+                    .replace(/\n\n/g, '</p><p>')
+                    .replace(/\n/g, '<br>');
+                textEl.innerHTML = formattedHtml;
+                
+                // Render KaTeX math equations if present
+                if (typeof renderFormattedText === 'function') {
+                    renderFormattedText(textEl);
+                }
+                
+                // Scroll to bottom
+                historyEl.scrollTop = historyEl.scrollHeight;
+            } else if (data.error) {
+                textEl.innerHTML = `<span class="text-danger">Error: ${data.error}</span>`;
+                currentEventSource.close();
+                enableInputs();
+            }
+        } catch (e) {
+            console.error('Failed to parse SSE data:', e);
+        }
+    };
+    
+    currentEventSource.onerror = function() {
+        currentEventSource.close();
+        if (isFirstChunk) {
+            textEl.innerHTML = `<span class="text-danger">Error: Connection failed. Make sure the API key is configured.</span>`;
+        }
+        enableInputs();
+    };
+    
+    function enableInputs() {
+        inputEl.disabled = false;
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = '<i class="bi bi-send"></i> Ask';
+        inputEl.focus();
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    const modeEl = document.getElementById('deep-summary-mode');
+    if (modeEl) {
+        modeEl.addEventListener('change', () => {
+            const contentEl = document.getElementById('deep-summary-content');
+            if (!contentEl.classList.contains('d-none')) {
+                loadDeepSummary('{{ paper.arxiv_id }}');
+            }
+        });
+    }
+});
+
 async function ratePaper(arxivId, rating, btn) {
     const card = btn.closest('.paper-card');
     const stars = card.querySelectorAll('.btn-rate-star');
@@ -622,6 +839,15 @@ async function deleteNote(id) {
 }
 .note-item:hover {
     background-color: rgba(255,255,255,0.05) !important;
+}
+.qa-message {
+    word-break: break-word;
+}
+.assistant-message {
+    border-left: 3px solid #0dcaf0 !important;
+}
+.user-message {
+    border-right: 3px solid #6c757d !important;
 }
 </style>
 {% endblock %}
