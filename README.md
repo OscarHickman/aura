@@ -20,6 +20,7 @@ A powerful research discovery and organization tool. AURA fetches papers from **
 - **Explainable AI:** Score breakdowns and "Because you liked" context for all recommendations.
 - **Modern UI:** Responsive dark-mode interface with infinite scrolling and keyboard shortcuts.
 - **Daily Digest:** Automated daily email digests with AI summaries of top papers.
+- **Weekly Research Briefs:** Synthesised weekly briefs outlining top recommended papers, emerging topics, notable authors, and methodology trends (viewable at `/briefs` and delivered via email).
 
 ## Quick Start
 
@@ -37,6 +38,7 @@ Open `http://127.0.0.1:5000`.
 - `python run.py serve` — Launch the web interface
 - `python run.py summarize --limit 20` — Generate AI summaries
 - `python run.py email-digest --top-n 3` — Send daily summary email
+- `python run.py weekly-brief` — Generate and email the weekly research brief
 - `python run.py retrain` — Full model retraining
 - `python run.py stats` — System statistics
 

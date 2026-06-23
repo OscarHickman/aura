@@ -67,9 +67,9 @@
 - [x] Use citation graph for recommendation boosting (a paper cited by many liked papers is likely good)
 
 ### 9.5 Research Brief Generation
-- [ ] Weekly auto-generated brief: "Here's what happened in your fields this week"
-- [ ] Structured: top papers, emerging topics, notable authors, methodology trends
-- [ ] Delivered via email and viewable at `/briefs/{date}`
+- [x] Weekly auto-generated brief: "Here's what happened in your fields this week"
+- [x] Structured: top papers, emerging topics, notable authors, methodology trends
+- [x] Delivered via email and viewable at `/briefs/{date}`
 
 ---
 

@@ -1031,6 +1031,50 @@ def _register_routes(app: Flask) -> None:
         collection_papers = engine.db.get_collection_papers(coll["id"]) if engine else []
         return render_template("public_collection.html", collection=coll, papers=collection_papers)
 
+    # ------------------------------------------------------------------
+    # Weekly Research Briefs (Phase 9.5)
+    # ------------------------------------------------------------------
+
+    @app.route("/briefs")
+    @login_required
+    def briefs_list():
+        """List all generated briefs."""
+        briefs = engine.db.get_all_briefs() if engine else []
+        return render_template("briefs_list.html", briefs=briefs)
+
+    @app.route("/briefs/<date>")
+    @login_required
+    def view_brief(date):
+        """View a specific weekly brief, generating it if it doesn't exist."""
+        from datetime import datetime
+        if not re.match(r"^\d{4}-\d{2}-\d{2}$", date):
+            return "Invalid date format. Use YYYY-MM-DD.", 400
+            
+        brief = engine.db.get_brief(date) if engine else None
+        if not brief:
+            from aura.briefs import generate_weekly_brief_content
+            content = generate_weekly_brief_content(engine, date) if engine else ""
+            if engine:
+                engine.db.add_brief(date, content)
+            brief = {
+                "date": date,
+                "content": content,
+                "created_at": datetime.utcnow().isoformat()
+            }
+        return render_template("brief_detail.html", brief=brief)
+
+    @app.route("/api/briefs/generate", methods=["POST"])
+    @login_required
+    def generate_brief():
+        """Trigger generation of a new brief for today."""
+        from datetime import date
+        today_str = date.today().isoformat()
+        from aura.briefs import generate_weekly_brief_content
+        content = generate_weekly_brief_content(engine, today_str) if engine else ""
+        if engine:
+            engine.db.add_brief(today_str, content)
+        return jsonify({"status": "success", "date": today_str})
+
     @app.route("/api/collections/<int:collection_id>/share", methods=["POST"])
     @login_required
     def toggle_collection_share(collection_id):

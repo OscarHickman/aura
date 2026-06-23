@@ -174,6 +174,22 @@ def cmd_email_digest(args, config):
     print(json.dumps(result, indent=2))
 
 
+def cmd_weekly_brief(args, config):
+    """Generate and send the weekly research brief."""
+    from aura.briefs import send_weekly_brief_email
+    from datetime import date
+
+    date_str = args.date or date.today().isoformat()
+    result = send_weekly_brief_email(
+        data_dir=config.get("data_dir", "data"),
+        categories=config.get("categories", ["astro-ph.CO", "astro-ph.GA"]),
+        embedding_model=config.get("embedding_model", "all-MiniLM-L6-v2"),
+        date_str=date_str,
+        email_config_path=args.email_config,
+    )
+    print(json.dumps(result, indent=2))
+
+
 def cmd_group_digest(args, config):
     """Send a group digest email to all members of a group."""
     from aura.email_digest import send_group_digest_email
@@ -363,6 +379,21 @@ def main():
         help="Path to email config JSON",
     )
 
+    # weekly-brief
+    brief_parser = subparsers.add_parser(
+        "weekly-brief",
+        help="Generate and email the weekly research brief",
+    )
+    brief_parser.add_argument(
+        "--date",
+        help="Specific date for the brief (YYYY-MM-DD), default is today",
+    )
+    brief_parser.add_argument(
+        "--email-config",
+        default="user_credentials/email_config.json",
+        help="Path to email config JSON",
+    )
+
     # stats
     subparsers.add_parser("stats", help="Show system stats")
 
@@ -395,6 +426,7 @@ def main():
         "recommend": cmd_recommend,
         "email-digest": cmd_email_digest,
         "group-digest": cmd_group_digest,
+        "weekly-brief": cmd_weekly_brief,
         "retrain": cmd_retrain,
         "stats": cmd_stats,
         "migrate": cmd_migrate,

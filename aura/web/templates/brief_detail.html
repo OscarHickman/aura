@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Research Brief - {{ brief.date }} - AURA{% endblock %}
+
+{% block content %}
+<div class="row mb-3">
+    <div class="col-12">
+        <a href="/briefs" class="btn btn-outline-secondary btn-sm mb-3">
+            <i class="bi bi-arrow-left"></i> Back to Briefs List
+        </a>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-9 mx-auto">
+        <div class="card border-secondary bg-dark shadow-lg">
+            <div class="card-header border-secondary bg-dark bg-opacity-70 p-4 d-flex justify-content-between align-items-center flex-wrap gap-2">
+                <div>
+                    <h2 class="mb-1 text-warning"><i class="bi bi-mailbox"></i> Weekly Research Brief</h2>
+                    <h5 class="text-muted mb-0">Week of {{ brief.date }}</h5>
+                </div>
+                <div class="text-end">
+                    <span class="badge bg-secondary p-2">Generated: {{ brief.created_at[:10] }}</span>
+                </div>
+            </div>
+            
+            <div class="card-body p-4 text-light content-rendered">
+                {{ brief.content | safe }}
+            </div>
+            
+            <div class="card-footer border-secondary bg-dark bg-opacity-30 text-center py-3">
+                <small class="text-muted">
+                    This brief was synthesised using your personalised preference profile and the latest literature in your database.
+                </small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+/* CSS to style the dynamically generated brief content */
+.content-rendered h2, .content-rendered h3 {
+    color: #ffc107;
+    margin-top: 2rem;
+    margin-bottom: 1rem;
+    border-bottom: 1px solid #333;
+    padding-bottom: 0.5rem;
+}
+.content-rendered h2:first-of-type, .content-rendered h3:first-of-type {
+    margin-top: 0.5rem;
+}
+.content-rendered ul, .content-rendered ol {
+    padding-left: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+.content-rendered li {
+    margin-bottom: 0.75rem;
+}
+.content-rendered p {
+    line-height: 1.7;
+    margin-bottom: 1.25rem;
+}
+.content-rendered strong {
+    color: #ffffff;
+}
+.content-rendered a {
+    color: #0dcaf0;
+    text-decoration: none;
+}
+.content-rendered a:hover {
+    text-decoration: underline;
+}
+</style>
+{% endblock %}

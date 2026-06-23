@@ -35,6 +35,7 @@ python run.py recommend --limit 10         # Print top recommendations to termin
 python run.py summarize --limit 20         # Generate LLM summaries for papers
 python run.py summarize --limit 20 --only-missing  # Skip papers marked as failed
 python run.py email-digest --top-n 3       # Send email with top papers
+python run.py weekly-brief                 # Generate and email the weekly research brief
 python run.py retrain --epochs 20          # Retrain preference model from feedback
 python run.py stats                        # Show database and model statistics
 

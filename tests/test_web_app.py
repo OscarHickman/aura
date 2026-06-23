@@ -718,5 +718,43 @@ class TestWebApp(unittest.TestCase):
         self.assertTrue(data["success"])
         self.assertEqual(data["title"], "New Paper")
 
+    @patch("aura.briefs.generate_weekly_brief_content")
+    def test_research_brief_routes(self, mock_gen_content):
+        mock_gen_content.return_value = "<div>Mock Brief Content</div>"
+        
+        # 1. Test get all briefs list
+        self.engine.db.get_all_briefs.return_value = [
+            {"date": "2026-06-23", "content": "<div>Brief content</div>", "created_at": "2026-06-23T23:39:34"}
+        ]
+        resp = self.client.get("/briefs")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b"Weekly Research Briefs", resp.data)
+        self.assertIn(b"Brief for 2026-06-23", resp.data)
+
+        # 2. Test get a specific brief (existing)
+        self.engine.db.get_brief.return_value = {
+            "date": "2026-06-23", "content": "<div>Brief content</div>", "created_at": "2026-06-23T23:39:34"
+        }
+        resp = self.client.get("/briefs/2026-06-23")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b"Weekly Research Brief", resp.data)
+        self.assertIn(b"Brief content", resp.data)
+
+        # 3. Test get a specific brief (non-existing, should trigger generate)
+        self.engine.db.get_brief.return_value = None
+        resp = self.client.get("/briefs/2026-06-24")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b"Mock Brief Content", resp.data)
+        mock_gen_content.assert_called_once()
+
+        # 4. Test generate endpoint (POST)
+        mock_gen_content.reset_mock()
+        resp = self.client.post("/api/briefs/generate")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertEqual(data["status"], "success")
+        self.assertTrue("date" in data)
+        mock_gen_content.assert_called_once()
+
 if __name__ == "__main__":
     unittest.main()

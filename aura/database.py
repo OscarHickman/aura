@@ -185,6 +185,12 @@ class PaperDatabase:
                 full_text TEXT NOT NULL,
                 created_at TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS briefs (
+                date TEXT PRIMARY KEY,
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            );
         """)
         self.conn.commit()
 
@@ -1708,6 +1714,45 @@ class PaperDatabase:
         except sqlite3.Error as e:
             logger.error(f"Failed to cache paper text for {arxiv_id}: {e}")
             return False
+
+    def get_brief(self, date: str) -> Optional[dict]:
+        """Fetch research brief for a specific date (YYYY-MM-DD)."""
+        try:
+            row = self.conn.execute(
+                "SELECT date, content, created_at FROM briefs WHERE date = ?",
+                (date,),
+            ).fetchone()
+            return dict(row) if row else None
+        except sqlite3.Error as e:
+            logger.error(f"Failed to fetch brief for {date}: {e}")
+            return None
+
+    def add_brief(self, date: str, content: str) -> bool:
+        """Add or replace a research brief for a specific date. Returns True if successful."""
+        try:
+            self.conn.execute(
+                """
+                INSERT OR REPLACE INTO briefs (date, content, created_at)
+                VALUES (?, ?, ?)
+                """,
+                (date, content, datetime.utcnow().isoformat()),
+            )
+            self.conn.commit()
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Failed to save brief for {date}: {e}")
+            return False
+
+    def get_all_briefs(self) -> list[dict]:
+        """Fetch all research briefs, sorted by date descending."""
+        try:
+            rows = self.conn.execute(
+                "SELECT date, content, created_at FROM briefs ORDER BY date DESC"
+            ).fetchall()
+            return [dict(row) for row in rows]
+        except sqlite3.Error as e:
+            logger.error(f"Failed to fetch all briefs: {e}")
+            return []
 
     def close(self) -> None:
         """Close the database connection."""
