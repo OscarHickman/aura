@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>AURA Connector</title>
+  <style>
+    body {
+      width: 320px;
+      margin: 0;
+      padding: 16px;
+      background-color: #0f172a;
+      color: #f8fafc;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+      border-bottom: 1px solid #1e293b;
+      padding-bottom: 10px;
+    }
+    .title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #38bdf8;
+      margin: 0;
+    }
+    .status {
+      font-size: 0.75rem;
+      background: #1e293b;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      color: #94a3b8;
+    }
+    .content-box {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 16px;
+    }
+    .paper-title {
+      font-size: 0.9rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+      line-height: 1.4;
+      color: #f8fafc;
+    }
+    .score-badge {
+      display: inline-flex;
+      align-items: center;
+      background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+      color: white;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 0.85rem;
+      margin-top: 4px;
+    }
+    .btn {
+      width: 100%;
+      background: #38bdf8;
+      color: #0f172a;
+      border: none;
+      padding: 10px;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .btn:hover {
+      background: #0ea5e9;
+      transform: translateY(-1px);
+    }
+    .btn:disabled {
+      background: #334155;
+      color: #64748b;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .info {
+      font-size: 0.75rem;
+      color: #94a3b8;
+      margin-top: 8px;
+      line-height: 1.4;
+    }
+    .error-msg {
+      color: #f87171;
+      font-size: 0.8rem;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1 class="title">AURA</h1>
+    <span class="status" id="connection-status">Checking...</span>
+  </div>
+
+  <div id="main-ui">
+    <div class="content-box">
+      <div class="paper-title" id="paper-title-placeholder">Detecting arXiv paper...</div>
+      <div id="score-container" style="display: none;">
+        Recommendation Score: <span class="score-badge" id="paper-score">--%</span>
+      </div>
+    </div>
+    <button class="btn" id="action-btn" disabled>Add to AURA</button>
+    <div class="info" id="status-info">Please navigate to an arXiv abstract page to add papers.</div>
+    <div class="error-msg" id="error-box" style="display: none;"></div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

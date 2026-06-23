@@ -18,25 +18,21 @@ logger = logging.getLogger(__name__)
 
 
 class PaperPreferenceNet(nn.Module):
-    """Small feedforward network that predicts paper interest score from embeddings.
+    """Small feedforward network that predicts paper interest score from embeddings."""
 
-    Architecture: embedding_dim -> 128 -> 64 -> 32 -> 1 (sigmoid)
-    """
-
-    def __init__(self, embedding_dim: int = 384):
+    def __init__(self, embedding_dim: int = 384, hidden_dims: list[int] = [128, 64, 32], dropout: float = 0.2):
         super().__init__()
-        self.net = nn.Sequential(
-            nn.Linear(embedding_dim, 128),
-            nn.ReLU(),
-            nn.Dropout(0.2),
-            nn.Linear(128, 64),
-            nn.ReLU(),
-            nn.Dropout(0.1),
-            nn.Linear(64, 32),
-            nn.ReLU(),
-            nn.Linear(32, 1),
-            nn.Sigmoid(),
-        )
+        layers = []
+        prev_dim = embedding_dim
+        for i, dim in enumerate(hidden_dims):
+            layers.append(nn.Linear(prev_dim, dim))
+            layers.append(nn.ReLU())
+            if dropout > 0 and i < len(hidden_dims) - 1:
+                layers.append(nn.Dropout(dropout / (i + 1)))
+            prev_dim = dim
+        layers.append(nn.Linear(prev_dim, 1))
+        layers.append(nn.Sigmoid())
+        self.net = nn.Sequential(*layers)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         return self.net(x).squeeze(-1)
@@ -55,13 +51,17 @@ class PreferenceModel:
         embedding_dim: int = 384,
         learning_rate: float = 1e-3,
         device: str = "cpu",
+        hidden_dims: list[int] = [128, 64, 32],
+        dropout: float = 0.2,
     ):
         self.model_path = Path(model_path)
         self.embedding_dim = embedding_dim
         self.device = torch.device(device)
         self.learning_rate = learning_rate
+        self.hidden_dims = hidden_dims
+        self.dropout = dropout
 
-        self.model = PaperPreferenceNet(embedding_dim).to(self.device)
+        self.model = PaperPreferenceNet(embedding_dim, hidden_dims, dropout).to(self.device)
         self.optimizer = torch.optim.Adam(self.model.parameters(), lr=learning_rate)
         self.criterion = nn.BCELoss()
 
@@ -227,6 +227,8 @@ class PreferenceModel:
             "embedding_dim": self.embedding_dim,
             "total_trained": self.total_trained,
             "learning_rate": self.learning_rate,
+            "hidden_dims": self.hidden_dims,
+            "dropout": self.dropout,
             "train_history": self.train_history,
             "replay_buffer": self.replay_buffer,
         }
@@ -252,14 +254,20 @@ class PreferenceModel:
             )
             return
 
+        self.hidden_dims = checkpoint.get("hidden_dims", self.hidden_dims)
+        self.dropout = checkpoint.get("dropout", self.dropout)
+        
+        # Re-initialize model structure in case loaded checkpoint had different dimensions
+        self.model = PaperPreferenceNet(self.embedding_dim, self.hidden_dims, self.dropout).to(self.device)
         self.model.load_state_dict(checkpoint["model_state_dict"])
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
         self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
         self.total_trained = checkpoint.get("total_trained", 0)
         self.learning_rate = checkpoint.get("learning_rate", self.learning_rate)
         self.train_history = checkpoint.get("train_history", [])
         self.replay_buffer = checkpoint.get("replay_buffer", [])
         logger.info(
-            f"Model loaded from {self.model_path} (total_trained={self.total_trained})"
+            f"Model loaded from {self.model_path} (total_trained={self.total_trained}, hidden_dims={self.hidden_dims})"
         )
 
     def get_stats(self) -> dict:

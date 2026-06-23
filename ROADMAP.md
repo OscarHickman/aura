@@ -6,49 +6,6 @@
 
 ---
 
-## Phase 3 — ML & Recommendation Improvements
-
-*Make the recommendations actually learn better and faster.*
-
-### 3.3 Better Model Architecture
-- [ ] Add A/B testing capability: shadow model trained on different hyperparameters
-
----
-
-
-
-## Phase 7 — Notifications & Integrations
-
-*Meet researchers where they already are.*
-
-### 7.1 Email Digest Improvements
-**Why it matters:** The current digest email is plain HTML with inline styles. It has no unsubscribe link, no open tracking, and no way to rate papers from the email.
-
-- [ ] Add one-click rating links in the email (authenticated via signed JWT in URL)
-- [ ] Add unsubscribe link (`/unsubscribe/{token}`) stored in `users` table
-- [ ] Add configurable digest frequency: daily, weekly, or off
-- [ ] Improve HTML template: better typography, paper cover images from arXiv
-
-### 7.2 Slack / Discord Integration
-- [ ] Webhook-based notification when a high-scoring paper is fetched
-- [ ] `/aura recommend` Slack slash command (OAuth app)
-- [ ] Daily digest posted to a configured Slack channel
-
-### 7.3 Reference Manager Export
-**Why it matters:** Researchers live in Zotero and Mendeley. Discovered papers should flow directly into their citation manager.
-
-- [x] Add `/papers/{id}/export/bibtex` endpoint
-- [x] Add `/papers/export/bibtex?collection={id}` for bulk export
-- [x] Add `/papers/export/ris` for RIS format
-- [x] Add Zotero Connector compatibility header so the browser extension works
-
-### 7.4 Browser Extension
-- [ ] Simple Chrome/Firefox extension: "Add to AURA" button on arXiv paper pages
-- [ ] Fetches the paper and adds it directly to the user's library
-- [ ] Shows AURA score for the current page if already in the database
-
----
-
 ## Phase 8 — Scale & Production Hardening
 
 *Make it reliable enough to run on a server.*

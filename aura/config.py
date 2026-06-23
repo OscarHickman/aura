@@ -59,6 +59,16 @@ def get_validated_config(config_path: str = "config.yaml") -> dict:
     sources.setdefault("biorxiv", True)
     sources.setdefault("rss", True)
     
+    # Integrations defaults
+    integrations = config.setdefault("integrations", {})
+    slack = integrations.setdefault("slack", {})
+    slack.setdefault("enabled", False)
+    slack.setdefault("score_threshold", 0.8)
+    
+    discord = integrations.setdefault("discord", {})
+    discord.setdefault("enabled", False)
+    discord.setdefault("score_threshold", 0.8)
+
     # 2. Merge Legacy and Env configurations
     email = config.setdefault("email", {})
     old_email_path = Path("user_credentials/email_config.json")

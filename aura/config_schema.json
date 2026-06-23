@@ -192,6 +192,31 @@
         }
       },
       "additionalProperties": false
+    },
+    "integrations": {
+      "type": "object",
+      "properties": {
+        "slack": {
+          "type": "object",
+          "properties": {
+            "webhook_url": { "type": "string" },
+            "channel": { "type": "string" },
+            "enabled": { "type": "boolean" },
+            "score_threshold": { "type": "number" }
+          },
+          "additionalProperties": false
+        },
+        "discord": {
+          "type": "object",
+          "properties": {
+            "webhook_url": { "type": "string" },
+            "enabled": { "type": "boolean" },
+            "score_threshold": { "type": "number" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
     }
   },
   "required": [

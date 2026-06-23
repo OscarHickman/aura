@@ -241,6 +241,19 @@ def _setup_scheduler(app, config):
                     days_back=fetch_config.get("days_back", 2),
                 )
                 logging.getLogger(__name__).info(f"Scheduled fetch: {count} new papers")
+                
+                # Trigger Slack daily digest if configured
+                try:
+                    integrations = config.get("integrations", {})
+                    slack_conf = integrations.get("slack", {})
+                    if slack_conf.get("enabled", False) and slack_conf.get("webhook_url"):
+                        recs = engine.get_recommendations(limit=5, user_id=1)
+                        if recs:
+                            from aura.notifications import send_slack_digest
+                            send_slack_digest(slack_conf["webhook_url"], recs)
+                            logging.getLogger(__name__).info("Daily digest posted to Slack channel.")
+                except Exception as e:
+                    logging.getLogger(__name__).error(f"Failed to post daily digest to Slack: {e}")
 
     scheduler.add_job(daily_fetch, "cron", hour=hour, minute=minute)
 

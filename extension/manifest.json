@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "AURA Connector",
+  "version": "1.0.0",
+  "description": "Add papers directly to AURA and view your recommendation scores on arXiv pages.",
+  "permissions": [
+    "activeTab",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://arxiv.org/*",
+    "http://127.0.0.1:5000/*"
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://arxiv.org/abs/*"],
+      "js": ["content.js"]
+    }
+  ]
+}

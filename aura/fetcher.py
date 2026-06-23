@@ -173,6 +173,22 @@ class ArxivSource:
         logger.info(f"Fetched {len(papers)} papers total from arXiv")
         return papers
 
+    def fetch_by_id(self, arxiv_id: str) -> Optional[dict]:
+        """Fetch a single paper from arXiv by its ID."""
+        params = {
+            "id_list": arxiv_id
+        }
+        try:
+            resp = requests.get(self.ARXIV_API_URL, params=params, timeout=15)
+            resp.raise_for_status()
+            root = ElementTree.fromstring(resp.text)
+            entry = root.find(f"{self.ATOM_NS}entry")
+            if entry is not None:
+                return self._parse_entry(entry)
+        except Exception as e:
+            logger.error(f"Failed to fetch paper {arxiv_id} by ID: {e}")
+        return None
+
     def _parse_entry(self, entry: ElementTree.Element) -> Optional[dict]:
         """Parse a single arXiv Atom entry into a paper dict."""
         try:

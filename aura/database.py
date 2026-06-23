@@ -31,6 +31,8 @@ class PaperDatabase:
                 password_hash TEXT NOT NULL,
                 is_admin INTEGER DEFAULT 0,
                 is_active INTEGER DEFAULT 1,
+                digest_frequency TEXT DEFAULT 'daily',
+                unsubscribe_token TEXT UNIQUE DEFAULT NULL,
                 created_at TEXT NOT NULL
             );
 
@@ -171,6 +173,7 @@ class PaperDatabase:
         # Phase 3: create indexes and FTS (now safe — user_id columns exist)
         self.conn.executescript("""
             CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_users_unsubscribe_token ON users(unsubscribe_token);
             CREATE INDEX IF NOT EXISTS idx_api_tokens_token ON api_tokens(token);
             CREATE INDEX IF NOT EXISTS idx_api_tokens_user_id ON api_tokens(user_id);
             CREATE INDEX IF NOT EXISTS idx_papers_published ON papers(published);
@@ -235,6 +238,21 @@ class PaperDatabase:
         self._add_column_if_missing("papers", "bibcode", "TEXT")
         self._add_column_if_missing("papers", "read_count", "INTEGER DEFAULT 0")
         self._add_column_if_missing("papers", "refereed", "INTEGER DEFAULT 0")
+        self._add_column_if_missing("users", "digest_frequency", "TEXT DEFAULT 'daily'")
+        self._add_column_if_missing("users", "unsubscribe_token", "TEXT DEFAULT NULL")
+        try:
+            self.conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_unsubscribe_token ON users(unsubscribe_token)")
+            self.conn.commit()
+        except sqlite3.OperationalError:
+            pass
+
+        # Populate missing tokens
+        import uuid
+        users = self.conn.execute("SELECT id FROM users WHERE unsubscribe_token IS NULL").fetchall()
+        for user in users:
+            token = uuid.uuid4().hex
+            self.conn.execute("UPDATE users SET unsubscribe_token = ? WHERE id = ?", (token, user["id"]))
+        self.conn.commit()
 
         # Tables that need structural migration (UNIQUE constraint changes)
         self._migrate_reading_list()
@@ -1191,11 +1209,13 @@ class PaperDatabase:
 
     def create_user(self, email: str, password_hash: str, is_admin: bool = False) -> Optional[int]:
         """Create a new user. Returns the user ID or None on failure."""
+        import uuid
+        token = uuid.uuid4().hex
         now = datetime.utcnow().isoformat()
         try:
             cursor = self.conn.execute(
-                "INSERT INTO users (email, password_hash, is_admin, is_active, created_at) VALUES (?, ?, ?, 1, ?)",
-                (email.strip().lower(), password_hash, int(is_admin), now),
+                "INSERT INTO users (email, password_hash, is_admin, is_active, digest_frequency, unsubscribe_token, created_at) VALUES (?, ?, ?, 1, 'daily', ?, ?)",
+                (email.strip().lower(), password_hash, int(is_admin), token, now),
             )
             self.conn.commit()
             return cursor.lastrowid
@@ -1206,7 +1226,7 @@ class PaperDatabase:
     def get_user_by_id(self, user_id: int) -> Optional[dict]:
         """Look up a user by primary key."""
         row = self.conn.execute(
-            "SELECT id, email, password_hash, is_admin, is_active, created_at FROM users WHERE id = ?",
+            "SELECT id, email, password_hash, is_admin, is_active, digest_frequency, unsubscribe_token, created_at FROM users WHERE id = ?",
             (user_id,),
         ).fetchone()
         return dict(row) if row else None
@@ -1214,8 +1234,16 @@ class PaperDatabase:
     def get_user_by_email(self, email: str) -> Optional[dict]:
         """Look up a user by email address."""
         row = self.conn.execute(
-            "SELECT id, email, password_hash, is_admin, is_active, created_at FROM users WHERE email = ?",
+            "SELECT id, email, password_hash, is_admin, is_active, digest_frequency, unsubscribe_token, created_at FROM users WHERE email = ?",
             (email.strip().lower(),),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def get_user_by_unsubscribe_token(self, token: str) -> Optional[dict]:
+        """Look up a user by unsubscribe token."""
+        row = self.conn.execute(
+            "SELECT id, email, password_hash, is_admin, is_active, digest_frequency, unsubscribe_token, created_at FROM users WHERE unsubscribe_token = ?",
+            (token,),
         ).fetchone()
         return dict(row) if row else None
 
@@ -1232,6 +1260,8 @@ class PaperDatabase:
         is_active: Optional[bool] = None,
         is_admin: Optional[bool] = None,
         password_hash: Optional[str] = None,
+        digest_frequency: Optional[str] = None,
+        unsubscribe_token: Optional[str] = None,
     ) -> bool:
         """Update user fields. Returns True if updated."""
         updates: list[str] = []
@@ -1245,6 +1275,12 @@ class PaperDatabase:
         if password_hash is not None:
             updates.append("password_hash = ?")
             params.append(password_hash)
+        if digest_frequency is not None:
+            updates.append("digest_frequency = ?")
+            params.append(digest_frequency)
+        if unsubscribe_token is not None:
+            updates.append("unsubscribe_token = ?")
+            params.append(unsubscribe_token)
         if not updates:
             return True
         params.append(user_id)

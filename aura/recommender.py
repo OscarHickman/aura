@@ -58,8 +58,15 @@ class RecommendationEngine:
             model_path=self.data_dir / "preference_model.pt",
             embedding_dim=self._embedding_dim,
         )
+        self.shadow_model = PreferenceModel(
+            model_path=self.data_dir / "preference_model_shadow.pt",
+            embedding_dim=self._embedding_dim,
+            learning_rate=5e-4,
+            hidden_dims=[64, 32],
+        )
         # Per-user model cache: {user_id: PreferenceModel}
         self._user_models: dict[int, PreferenceModel] = {1: self.preference_model}
+        self._user_shadow_models: dict[int, PreferenceModel] = {1: self.shadow_model}
 
     def get_user_preference_model(self, user_id: int) -> PreferenceModel:
         """Return the preference model for a given user, creating it if needed."""
@@ -72,6 +79,21 @@ class RecommendationEngine:
             embedding_dim=self._embedding_dim,
         )
         self._user_models[user_id] = model
+        return model
+
+    def get_user_shadow_model(self, user_id: int) -> PreferenceModel:
+        """Return the shadow preference model for a given user, creating it if needed."""
+        if user_id in self._user_shadow_models:
+            return self._user_shadow_models[user_id]
+        models_dir = self.data_dir / "models"
+        models_dir.mkdir(exist_ok=True)
+        model = PreferenceModel(
+            model_path=models_dir / f"{user_id}_shadow.pt",
+            embedding_dim=self._embedding_dim,
+            learning_rate=5e-4,
+            hidden_dims=[64, 32],
+        )
+        self._user_shadow_models[user_id] = model
         return model
 
     def fetch_new_papers(
@@ -136,6 +158,15 @@ class RecommendationEngine:
         count = self.db.add_papers_batch(new_papers, embeddings, summaries)
         self.db.log_fetch(count, self.categories)
 
+        if count > 0:
+            try:
+                from .config import get_validated_config
+                from .notifications import notify_high_scoring_papers
+                cfg = get_validated_config()
+                notify_high_scoring_papers(self, new_papers, cfg)
+            except Exception as e:
+                logger.error(f"Failed to dispatch integration notifications: {e}")
+
         if generate_summaries and papers_needing_summary:
             self.generate_missing_summaries(
                 limit=len(papers_needing_summary), include_failed=False
@@ -143,6 +174,27 @@ class RecommendationEngine:
 
         logger.info(f"Added {count} new papers to database")
         return count
+
+    def fetch_and_add_paper(self, arxiv_id: str) -> Optional[dict]:
+        """Fetch a specific paper from arXiv, embed it, summarize it, and add to database."""
+        existing = self.db.get_paper(arxiv_id)
+        if existing:
+            return existing
+
+        from .fetcher import ArxivSource
+        source = ArxivSource()
+        paper = source.fetch_by_id(arxiv_id)
+        if not paper:
+            return None
+
+        from .embedder import embed_papers_batch
+        embeddings = embed_papers_batch([paper], model_name=self.embedding_model)
+
+        summaries = self._generate_summaries_for_papers([paper])
+        summary = summaries[0] if summaries else None
+
+        self.db.add_papers_batch([paper], embeddings, [summary] if summary else None)
+        return self.db.get_paper(arxiv_id)
 
     def _generate_summaries_for_papers(
         self, papers: list[dict], retry: bool = True, progress_callback=None
@@ -266,15 +318,19 @@ class RecommendationEngine:
 
         # Get preference model scores
         pref_model = self.get_user_preference_model(user_id)
+        shadow_model = self.get_user_shadow_model(user_id)
         if embeddings:
             model_scores, uncertainties = pref_model.predict_batch(embeddings)
-            for paper, score, unc in zip(scorable_papers, model_scores, uncertainties):
+            shadow_scores, _ = shadow_model.predict_batch(embeddings)
+            for paper, score, unc, sh_score in zip(scorable_papers, model_scores, uncertainties, shadow_scores):
                 paper["model_score"] = float(score)
                 paper["model_uncertainty"] = float(unc)
+                paper["shadow_score"] = float(sh_score)
         else:
             for paper in scorable_papers:
                 paper["model_score"] = 0.5
                 paper["model_uncertainty"] = 0.0
+                paper["shadow_score"] = 0.5
 
         # Add unscorable papers
         scored_ids = {p["arxiv_id"] for p in scorable_papers}
@@ -282,6 +338,7 @@ class RecommendationEngine:
             if paper["arxiv_id"] not in scored_ids:
                 paper["model_score"] = 0.5
                 paper["model_uncertainty"] = 0.0
+                paper["shadow_score"] = 0.5
                 scorable_papers.append(paper)
 
         # Calculate composite score with freshness and summary bonuses
@@ -427,6 +484,9 @@ class RecommendationEngine:
         pref_model = self.get_user_preference_model(user_id)
         loss = pref_model.train_single(embedding, label, arxiv_id=arxiv_id)
 
+        shadow_model = self.get_user_shadow_model(user_id)
+        shadow_model.train_single(embedding, label, arxiv_id=arxiv_id)
+
         return {
             "status": "rated",
             "trained": True,
@@ -455,6 +515,19 @@ class RecommendationEngine:
 
         loss = pref_model.train_step(
             embeddings, labels, epochs=epochs, progress_callback=progress_callback, use_scheduler=True
+        )
+
+        # Retrain shadow model
+        shadow_model = self.get_user_shadow_model(user_id)
+        shadow_model = PreferenceModel(
+            model_path=shadow_model.model_path,
+            embedding_dim=self._embedding_dim,
+            learning_rate=5e-4,
+            hidden_dims=[64, 32],
+        )
+        self._user_shadow_models[user_id] = shadow_model
+        shadow_model.train_step(
+            embeddings, labels, epochs=epochs, progress_callback=None, use_scheduler=True
         )
 
         return {

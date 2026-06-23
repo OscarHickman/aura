@@ -1079,14 +1079,283 @@ def _register_routes(app: Flask) -> None:
         stats_data = engine.get_stats(user_id=_get_current_user_id())
         return render_template("fetch.html", stats=stats_data)
 
-    @app.route("/settings")
+    @app.route("/settings", methods=["GET", "POST"])
     @login_required
     def settings():
         uid = _get_current_user_id()
+        if request.method == "POST":
+            freq = request.form.get("digest_frequency")
+            if freq in ["daily", "weekly", "off"]:
+                success = engine.db.update_user(uid, digest_frequency=freq) if engine else False
+                if success:
+                    flash("Settings updated successfully.", "success")
+                else:
+                    flash("Failed to update settings.", "danger")
+            else:
+                flash("Invalid digest frequency option.", "danger")
+            return redirect(url_for("settings"))
+
         stats_data = engine.get_stats(user_id=uid)
         config = app.config.get("AI_PAPERS", {})
         tokens = engine.db.get_user_tokens(uid) if engine else []
-        return render_template("settings.html", stats=stats_data, config=config, tokens=tokens)
+        user_record = engine.db.get_user_by_id(uid) if engine else None
+        return render_template("settings.html", stats=stats_data, config=config, tokens=tokens, user=user_record)
+
+    @app.route("/unsubscribe/<token>")
+    def unsubscribe(token):
+        if not engine:
+            return "Engine not initialized", 500
+        user_record = engine.db.get_user_by_unsubscribe_token(token)
+        if not user_record:
+            return render_template("404.html"), 404
+        
+        # Turn off digest frequency
+        engine.db.update_user(user_record["id"], digest_frequency="off")
+        
+        html = f"""
+        <html>
+        <head>
+            <title>Unsubscribed</title>
+            <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+            <style>
+                body {{ background: #0f172a; color: #f8fafc; font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }}
+                .card {{ background: #1e293b; border: 1px solid #334155; padding: 2.5rem; border-radius: 12px; max-width: 450px; width: 100%; text-align: center; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06); }}
+                h2 {{ margin-bottom: 1rem; color: #38bdf8; }}
+                p {{ margin-bottom: 2rem; color: #94a3b8; font-size: 0.95rem; line-height: 1.5; }}
+            </style>
+        </head>
+        <body>
+            <div class="card">
+                <h2>Unsubscribed Successfully</h2>
+                <p>You have been unsubscribed from the AURA daily digest emails for <strong>{user_record["email"]}</strong>.</p>
+                <a href="/login" class="btn btn-primary w-100">Go to Sign in</a>
+            </div>
+        </body>
+        </html>
+        """
+        from flask import render_template_string
+        return render_template_string(html)
+
+    @app.route("/rate-direct")
+    def rate_direct():
+        if not engine:
+            return "Engine not initialized", 500
+        
+        token = request.args.get("token")
+        if not token:
+            return "Missing token", 400
+            
+        from itsdangerous import URLSafeTimedSerializer, SignatureExpired, BadSignature
+        serializer = URLSafeTimedSerializer(app.secret_key)
+        
+        try:
+            # Token valid for 30 days
+            payload = serializer.loads(token, max_age=30 * 24 * 3600)
+        except SignatureExpired:
+            return "The rating link has expired. Ratings links are valid for 30 days.", 400
+        except BadSignature:
+            return "Invalid signature token.", 400
+            
+        user_id = payload.get("user_id")
+        arxiv_id = payload.get("arxiv_id")
+        rating = payload.get("rating")
+        
+        if not arxiv_id or rating is None or not user_id:
+            return "Invalid token payload.", 400
+            
+        # Get paper info to show in confirmation page
+        paper = engine.db.get_paper(arxiv_id)
+        paper_title = paper["title"] if paper else arxiv_id
+        
+        # Apply rating
+        engine.rate_paper(arxiv_id, rating, user_id=user_id)
+        
+        rating_str = "👍 Thumbs Up" if rating == 1 else "👎 Thumbs Down"
+        badge_color = "#2e7d32" if rating == 1 else "#c62828"
+        
+        html = f"""
+        <html>
+        <head>
+            <title>Feedback Received</title>
+            <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+            <style>
+                body {{ background: #0f172a; color: #f8fafc; font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }}
+                .card {{ background: #1e293b; border: 1px solid #334155; padding: 2.5rem; border-radius: 12px; max-width: 550px; width: 100%; text-align: center; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06); }}
+                h2 {{ margin-bottom: 1.5rem; color: #38bdf8; }}
+                .paper-box {{ background: #0f172a; border: 1px solid #1e293b; padding: 1.25rem; border-radius: 8px; margin-bottom: 1.5rem; text-align: left; }}
+                .paper-title {{ font-weight: 600; font-size: 1.05rem; margin-bottom: 0.5rem; color: #f8fafc; }}
+                .badge-rating {{ display: inline-block; padding: 0.35em 0.65em; font-size: .75em; font-weight: 700; line-height: 1; text-align: center; white-space: nowrap; vertical-align: baseline; border-radius: 0.375rem; background-color: {badge_color}; color: #fff; }}
+                p.info {{ margin-bottom: 2rem; color: #94a3b8; font-size: 0.95rem; line-height: 1.5; }}
+            </style>
+        </head>
+        <body>
+            <div class="card">
+                <h2>Feedback Received</h2>
+                <div class="paper-box">
+                    <div class="paper-title">{paper_title}</div>
+                    <span class="badge-rating">{rating_str}</span>
+                </div>
+                <p class="info">Thank you! Your feedback has been recorded, and AURA's recommendation models have been updated in real-time.</p>
+                <a href="/" class="btn btn-primary w-100">Go to Dashboard</a>
+            </div>
+        </body>
+        </html>
+        """
+        from flask import render_template_string
+        return render_template_string(html)
+
+    @app.route("/api/integrations/slack/command", methods=["POST"])
+    def slack_command():
+        if not engine:
+            return jsonify({"text": "AURA engine is not initialized."}), 500
+            
+        command = request.form.get("command")
+        text = (request.form.get("text") or "").strip().lower()
+        
+        if not command:
+            return "Missing command parameter", 400
+            
+        if "recommend" in text:
+            parts = text.split()
+            limit = 5
+            if len(parts) > 1:
+                try:
+                    limit = int(parts[1])
+                except ValueError:
+                    pass
+            limit = min(max(1, limit), 20)
+            
+            recs = engine.get_recommendations(limit=limit, user_id=1)
+            if not recs:
+                return jsonify({
+                    "response_type": "ephemeral",
+                    "text": "No recommendations found. Try fetching new papers first!"
+                })
+                
+            blocks = [
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f"Here are your top *{len(recs)}* paper recommendations from *AURA*:"
+                    }
+                },
+                {
+                    "type": "divider"
+                }
+            ]
+            
+            for i, paper in enumerate(recs, 1):
+                score_percent = round(float(paper.get("score", 0.0)) * 100)
+                title = paper.get("title", "Untitled")
+                url = paper.get("url", "")
+                authors = ", ".join(paper.get("authors", [])[:3])
+                summary = paper.get("summary") or paper.get("abstract", "")
+                if len(summary) > 200:
+                    summary = summary[:197] + "..."
+                    
+                blocks.append({
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": f"{i}. *<{url}|{title}>* [Score: *{score_percent}%*]\n*Authors*: {authors}\n{summary}"
+                    }
+                })
+                
+            return jsonify({
+                "response_type": "in_channel",
+                "blocks": blocks
+            })
+            
+        else:
+            return jsonify({
+                "response_type": "ephemeral",
+                "text": "Usage:\n`/aura recommend [limit]` - List top paper recommendations (default 5)\n`/aura help` - Show this message"
+            })
+
+    @app.route("/api/extension/check")
+    def extension_check():
+        arxiv_id = request.args.get("arxiv_id")
+        if not arxiv_id:
+            return jsonify({"error": "arxiv_id query parameter is required"}), 400
+            
+        if not engine:
+            return jsonify({"error": "Engine not initialized"}), 500
+            
+        uid = _get_current_user_id()
+        
+        # Check database
+        paper = engine.db.get_paper(arxiv_id)
+        if paper:
+            rating = engine.db.get_latest_rating(arxiv_id, user_id=uid)
+            
+            papers_emb = engine.db.get_papers_with_embeddings([arxiv_id])
+            score = 0.5
+            if papers_emb:
+                _, embedding = papers_emb[0]
+                import torch
+                pref_model = engine.get_user_preference_model(uid)
+                with torch.no_grad():
+                    emb_t = torch.tensor(embedding, dtype=torch.float32).unsqueeze(0)
+                    score = float(torch.sigmoid(pref_model(emb_t)).item())
+                    
+            return jsonify({
+                "exists": True,
+                "title": paper["title"],
+                "score": round(score, 4),
+                "rating": rating,
+                "summary": paper.get("summary")
+            })
+        else:
+            # Fetch and score on the fly
+            from ..fetcher import ArxivSource
+            source = ArxivSource()
+            fetched = source.fetch_by_id(arxiv_id)
+            if not fetched:
+                return jsonify({"exists": False, "score": 0.5, "error": "Paper not found on arXiv"})
+                
+            from ..embedder import embed_papers_batch
+            embeddings = embed_papers_batch([fetched], model_name=engine.embedding_model)
+            
+            score = 0.5
+            if len(embeddings) > 0:
+                import torch
+                pref_model = engine.get_user_preference_model(uid)
+                with torch.no_grad():
+                    emb_t = torch.tensor(embeddings[0], dtype=torch.float32).unsqueeze(0)
+                    score = float(torch.sigmoid(pref_model(emb_t)).item())
+                    
+            return jsonify({
+                "exists": False,
+                "title": fetched["title"],
+                "score": round(score, 4),
+                "rating": None,
+                "summary": None
+            })
+
+    @app.route("/api/extension/add", methods=["POST"])
+    def extension_add():
+        if not engine:
+            return jsonify({"error": "Engine not initialized"}), 500
+            
+        data = request.get_json() or {}
+        arxiv_id = data.get("arxiv_id")
+        if not arxiv_id:
+            return jsonify({"error": "arxiv_id is required"}), 400
+            
+        paper = engine.fetch_and_add_paper(arxiv_id)
+        if not paper:
+            return jsonify({"error": "Failed to fetch or add paper"}), 400
+            
+        uid = _get_current_user_id()
+        rating = engine.db.get_latest_rating(arxiv_id, user_id=uid)
+        
+        return jsonify({
+            "success": True,
+            "title": paper["title"],
+            "rating": rating,
+            "summary": paper.get("summary")
+        })
 
     @app.route("/papers/<path:arxiv_id>/export/bibtex")
     @login_required

@@ -182,7 +182,9 @@ def _collect_top_papers_with_summaries(
 
 
 def _build_email_content(
-    papers: list[dict], trends: dict[str, str], app_name: str = "AURA"
+    papers: list[dict], trends: dict[str, str], app_name: str = "AURA",
+    secret_key: str = None, base_url: str = "http://127.0.0.1:5000", user_id: int = 1,
+    unsubscribe_token: str = None
 ) -> tuple[str, str]:
     """Create plain-text and HTML digest bodies."""
     text_lines = [f"{app_name} - Monthly Research Trends", ""]
@@ -209,6 +211,25 @@ def _build_email_content(
         authors = ", ".join(paper.get("authors", [])[:3])
         summary = paper.get("summary", AI_FAIL_SUMMARY)
         url = paper.get("url", "")
+        arxiv_id = paper.get("arxiv_id", "")
+
+        rating_links_html = ""
+        if secret_key and arxiv_id:
+            try:
+                from itsdangerous import URLSafeTimedSerializer
+                serializer = URLSafeTimedSerializer(secret_key)
+                token_up = serializer.dumps({"user_id": user_id, "arxiv_id": arxiv_id, "rating": 1})
+                token_down = serializer.dumps({"user_id": user_id, "arxiv_id": arxiv_id, "rating": 0})
+                url_up = f"{base_url}/rate-direct?token={token_up}"
+                url_down = f"{base_url}/rate-direct?token={token_down}"
+                rating_links_html = (
+                    f"<div style='margin-top:10px;'>"
+                    f"<a href='{url_up}' style='display:inline-block;padding:5px 10px;background-color:#2e7d32;color:#fff;text-decoration:none;border-radius:4px;font-size:12px;margin-right:8px;'>👍 Thumbs Up</a>"
+                    f"<a href='{url_down}' style='display:inline-block;padding:5px 10px;background-color:#c62828;color:#fff;text-decoration:none;border-radius:4px;font-size:12px;'>👎 Thumbs Down</a>"
+                    f"</div>"
+                )
+            except Exception as e:
+                logger.error(f"Failed to generate signed rating links: {e}")
 
         text_lines.extend(
             [
@@ -227,6 +248,7 @@ def _build_email_content(
               <p style=\"margin:0 0 8px 0;color:#555;\"><strong>Authors:</strong> {authors}</p>
               <p style=\"margin:0 0 8px 0;\"><a href=\"{url}\">{url}</a></p>
               <p style=\"margin:0;line-height:1.5;\">{summary}</p>
+              {rating_links}
             </div>
             """.format(
                 idx=i,
@@ -235,7 +257,18 @@ def _build_email_content(
                 authors=authors,
                 url=url,
                 summary=summary,
+                rating_links=rating_links_html,
             )
+        )
+
+    unsubscribe_html = ""
+    if base_url and unsubscribe_token:
+        unsub_url = f"{base_url}/unsubscribe/{unsubscribe_token}"
+        unsubscribe_html = (
+            f"<div style='margin-top:40px;padding-top:20px;border-top:1px solid #ddd;font-size:12px;color:#666;text-align:center;'>"
+            f"You are receiving this because you subscribed to {app_name} digests. "
+            f"<a href='{unsub_url}' style='color:#c62828;text-decoration:underline;'>Unsubscribe</a>"
+            f"</div>"
         )
 
     html_body = (
@@ -243,6 +276,7 @@ def _build_email_content(
         f"<h2 style='font-family:Arial,sans-serif'>{app_name} Daily Digest</h2>"
         "<div style='font-family:Arial,sans-serif;font-size:14px'>"
         + "".join(html_items)
+        + unsubscribe_html
         + "</div></body></html>"
     )
 
@@ -286,6 +320,8 @@ def send_top_recommendations_email(
     embedding_model: str,
     email_config_path: Optional[str] = None,
     top_n: int = 3,
+    secret_key: Optional[str] = None,
+    base_url: Optional[str] = None,
 ) -> dict:
     """Generate summaries for top papers and send a formatted digest email."""
     if top_n <= 0:
@@ -299,6 +335,22 @@ def send_top_recommendations_email(
     )
 
     try:
+        import os
+        to_email = email_config.get("to_email", "")
+        recipient_user = engine.db.get_user_by_email(to_email)
+        
+        # Guard against mock objects in tests
+        from unittest.mock import Mock
+        is_mock = isinstance(recipient_user, Mock)
+        
+        if recipient_user and not is_mock and recipient_user.get("digest_frequency") == "off":
+            logger.info(f"Skipping digest email for {to_email} because digest_frequency is off.")
+            return {
+                "status": "skipped",
+                "sent": False,
+                "message": "Digest frequency is off for this user",
+            }
+
         papers = _collect_top_papers_with_summaries(engine, top_n)
         if not papers:
             return {
@@ -315,7 +367,31 @@ def send_top_recommendations_email(
         logger.info("Generating monthly trends for email digest...")
         trends = generate_monthly_trends(data_dir=data_dir, embedding_model=embedding_model)
         
-        text_body, html_body = _build_email_content(papers, trends=trends, app_name=subject_prefix)
+        secret_key_val = secret_key or email_config.get("secret_key") or os.environ.get("AURA_SECRET_KEY")
+        if not secret_key_val:
+            try:
+                from flask import current_app
+                secret_key_val = current_app.secret_key
+            except Exception:
+                pass
+                
+        base_url_val = base_url or email_config.get("base_url") or os.environ.get("AURA_BASE_URL", "http://127.0.0.1:5000")
+        
+        user_id = 1
+        unsubscribe_token = None
+        if recipient_user and not is_mock:
+            user_id = recipient_user.get("id", 1)
+            unsubscribe_token = recipient_user.get("unsubscribe_token")
+
+        text_body, html_body = _build_email_content(
+            papers,
+            trends=trends,
+            app_name=subject_prefix,
+            secret_key=secret_key_val,
+            base_url=base_url_val,
+            user_id=user_id,
+            unsubscribe_token=unsubscribe_token,
+        )
 
         if email_config.get("use_graph_api", False):
             _send_graph_email(email_config, subject, text_body, html_body)

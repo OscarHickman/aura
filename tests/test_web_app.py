@@ -586,5 +586,130 @@ class TestWebApp(unittest.TestCase):
         self.assertIn("export/bibtex", link_header)
         self.assertIn("export/ris", link_header)
 
+    def test_one_click_unsubscribe_and_rate_direct(self):
+        # 1. Test unsubscribe success
+        self.engine.db.get_user_by_unsubscribe_token.return_value = {
+            "id": 1,
+            "email": "test@example.com",
+            "digest_frequency": "daily",
+        }
+        self.engine.db.update_user.return_value = True
+        resp = self.client.get("/unsubscribe/my_unsub_token")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b"Unsubscribed Successfully", resp.data)
+        self.engine.db.update_user.assert_called_with(1, digest_frequency="off")
+
+        # 2. Test unsubscribe fail (missing token)
+        self.engine.db.get_user_by_unsubscribe_token.return_value = None
+        resp = self.client.get("/unsubscribe/invalid_token")
+        self.assertEqual(resp.status_code, 404)
+
+        # 3. Test rate-direct success
+        from itsdangerous import URLSafeTimedSerializer
+        secret_key = self.client.application.secret_key
+        serializer = URLSafeTimedSerializer(secret_key)
+        valid_token = serializer.dumps({"user_id": 1, "arxiv_id": "2401.00001", "rating": 1})
+
+        self.engine.db.get_paper.return_value = {"title": "A Great Astro Paper"}
+        self.engine.rate_paper.return_value = {"status": "rated", "trained": True}
+
+        resp = self.client.get(f"/rate-direct?token={valid_token}")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b"Feedback Received", resp.data)
+        self.assertIn(b"A Great Astro Paper", resp.data)
+        self.assertIn(b"Thumbs Up", resp.data)
+        self.engine.rate_paper.assert_called_with("2401.00001", 1, user_id=1)
+
+        # 4. Test rate-direct missing token
+        resp = self.client.get("/rate-direct")
+        self.assertEqual(resp.status_code, 400)
+
+        # 5. Test rate-direct invalid token
+        resp = self.client.get("/rate-direct?token=badtoken")
+        self.assertEqual(resp.status_code, 400)
+
+    def test_slack_command(self):
+        # 1. Test help response
+        resp = self.client.post("/api/integrations/slack/command", data={"command": "/aura", "text": "help"})
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertIn("Usage", data["text"])
+
+        # 2. Test recommend response
+        self.engine.get_recommendations.return_value = [
+            {
+                "arxiv_id": "2401.00001",
+                "title": "A Great Astro Paper",
+                "score": 0.95,
+                "url": "http://arxiv.org/abs/2401.00001",
+                "authors": ["Ada"],
+                "summary": "This is a great paper.",
+            }
+        ]
+        resp = self.client.post("/api/integrations/slack/command", data={"command": "/aura", "text": "recommend"})
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertEqual(data["response_type"], "in_channel")
+        self.assertIn("A Great Astro Paper", data["blocks"][2]["text"]["text"])
+        self.assertIn("Score: *95%*", data["blocks"][2]["text"]["text"])
+        self.engine.get_recommendations.assert_called_with(limit=5, user_id=1)
+
+        # 3. Test recommend with custom limit
+        resp = self.client.post("/api/integrations/slack/command", data={"command": "/aura", "text": "recommend 10"})
+        self.assertEqual(resp.status_code, 200)
+        self.engine.get_recommendations.assert_called_with(limit=10, user_id=1)
+
+        # 4. Test recommend no papers found
+        self.engine.get_recommendations.return_value = []
+        resp = self.client.post("/api/integrations/slack/command", data={"command": "/aura", "text": "recommend"})
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertIn("No recommendations found", data["text"])
+
+    @patch("aura.embedder.embed_papers_batch")
+    @patch("aura.fetcher.ArxivSource")
+    @patch("torch.sigmoid")
+    @patch("torch.tensor")
+    def test_extension_endpoints(self, mock_tensor, mock_sigmoid, mock_source_cls, mock_embed_batch):
+        # 1. Test check when paper exists in DB
+        self.engine.db.get_paper.return_value = {"title": "Existing Paper", "summary": "A summary"}
+        self.engine.db.get_latest_rating.return_value = 1
+        self.engine.db.get_papers_with_embeddings.return_value = [("2401.00001", [0.1, 0.2, 0.3])]
+        
+        pref_model = Mock()
+        self.engine.get_user_preference_model.return_value = pref_model
+        mock_sigmoid.return_value.item.return_value = 0.92
+        
+        resp = self.client.get("/api/extension/check?arxiv_id=2401.00001")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertTrue(data["exists"])
+        self.assertEqual(data["score"], 0.92)
+        self.assertEqual(data["rating"], 1)
+
+        # 2. Test check when paper NOT in DB
+        self.engine.db.get_paper.return_value = None
+        mock_source = Mock()
+        mock_source.fetch_by_id.return_value = {"title": "New Paper"}
+        mock_source_cls.return_value = mock_source
+        mock_embed_batch.return_value = [[0.1, 0.2, 0.3]]
+        
+        resp = self.client.get("/api/extension/check?arxiv_id=2401.00002")
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertFalse(data["exists"])
+        self.assertEqual(data["title"], "New Paper")
+        self.assertEqual(data["score"], 0.92)
+
+        # 3. Test add paper
+        self.engine.fetch_and_add_paper.return_value = {"title": "New Paper", "summary": "A summary"}
+        self.engine.db.get_latest_rating.return_value = None
+        
+        resp = self.client.post("/api/extension/add", json={"arxiv_id": "2401.00002"})
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertTrue(data["success"])
+        self.assertEqual(data["title"], "New Paper")
+
 if __name__ == "__main__":
     unittest.main()

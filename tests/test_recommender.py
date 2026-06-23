@@ -144,7 +144,7 @@ class TestRecommendationEngine(unittest.TestCase):
 
         self.assertEqual(result["status"], "rated")
         self.assertTrue(result["trained"])
-        model.train_single.assert_called_once()
+        self.assertEqual(model.train_single.call_count, 2)
 
     @patch("aura.recommender.PreferenceModel")
     @patch("aura.recommender.PaperDatabase")
