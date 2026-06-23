@@ -21,10 +21,26 @@ class TestTrends(unittest.TestCase):
             topics = trends.load_topics(td)
             self.assertEqual(topics, trends.DEFAULT_TOPICS)
 
-            custom_topics = ["quantum computing", "black holes"]
-            trends.save_topics(td, custom_topics)
+            # Test list-based migration
+            custom_topics_list = ["quantum computing", "black holes"]
+            trends.save_topics(td, custom_topics_list)
             loaded = trends.load_topics(td)
-            self.assertEqual(loaded, custom_topics)
+            expected_migrated = {
+                "sbi": [],
+                "galaxy_statistics": [],
+                "ml_methods": ["quantum computing", "black holes"]
+            }
+            self.assertEqual(loaded, expected_migrated)
+
+            # Test dictionary-based saving and loading
+            custom_topics_dict = {
+                "sbi": ["neural posterior estimation"],
+                "galaxy_statistics": ["galaxy clustering"],
+                "ml_methods": ["quantum computing", "black holes"]
+            }
+            trends.save_topics(td, custom_topics_dict)
+            loaded_dict = trends.load_topics(td)
+            self.assertEqual(loaded_dict, custom_topics_dict)
 
     @patch("ai_papers.trends._load_providers_order", return_value=["groq", "openai", "anthropic"])
     @patch("ai_papers.trends._resolve_api_key", return_value="some-api-key")
@@ -66,8 +82,7 @@ class TestTrends(unittest.TestCase):
 
     @patch("ai_papers.trends._generate_generic_text")
     @patch("ai_papers.trends.get_model")
-    @patch("ai_papers.trends.load_topics", return_value=["Machine learning"])
-    def test_verbose_discovery_response_not_saved(self, mock_load_topics, mock_get_model, mock_gen_text):
+    def test_verbose_discovery_response_not_saved(self, mock_get_model, mock_gen_text):
         """LLM returning a verbose paragraph instead of keywords must not corrupt saved topics."""
         verbose_response = (
             "None of these topics are directly related to the following emerging new subfields:\n\n"
@@ -82,6 +97,11 @@ class TestTrends(unittest.TestCase):
         mock_get_model.return_value = mock_st
 
         with tempfile.TemporaryDirectory() as td:
+            trends.save_topics(td, {
+                "sbi": [],
+                "galaxy_statistics": [],
+                "ml_methods": ["Machine learning"]
+            })
             db_path = Path(td) / "papers.db"
             db = PaperDatabase(db_path)
             from datetime import datetime
@@ -95,15 +115,17 @@ class TestTrends(unittest.TestCase):
 
             trends.generate_monthly_trends(td)
             saved_topics = trends.load_topics(td)
-            for t in saved_topics:
+            flat_saved = []
+            for sec_topics in saved_topics.values():
+                flat_saved.extend(sec_topics)
+            for t in flat_saved:
                 self.assertLessEqual(len(t.split()), 5, f"Topic looks like a sentence: {t!r}")
                 self.assertNotIn(":", t, f"Topic contains colon: {t!r}")
                 self.assertNotIn(".", t, f"Topic contains period: {t!r}")
 
     @patch("ai_papers.trends._generate_generic_text")
     @patch("ai_papers.trends.get_model")
-    @patch("ai_papers.trends.load_topics", return_value=["Machine learning"])
-    def test_no_provider_response_not_saved(self, mock_load_topics, mock_get_model, mock_gen_text):
+    def test_no_provider_response_not_saved(self, mock_get_model, mock_gen_text):
         """'No AI provider available' fallback must never be saved as a topic."""
         mock_gen_text.return_value = "No AI provider available to generate trends."
 
@@ -112,6 +134,11 @@ class TestTrends(unittest.TestCase):
         mock_get_model.return_value = mock_st
 
         with tempfile.TemporaryDirectory() as td:
+            trends.save_topics(td, {
+                "sbi": [],
+                "galaxy_statistics": [],
+                "ml_methods": ["Machine learning"]
+            })
             db_path = Path(td) / "papers.db"
             db = PaperDatabase(db_path)
             from datetime import datetime
@@ -125,31 +152,38 @@ class TestTrends(unittest.TestCase):
 
             trends.generate_monthly_trends(td)
             saved_topics = trends.load_topics(td)
-            for t in saved_topics:
+            flat_saved = []
+            for sec_topics in saved_topics.values():
+                flat_saved.extend(sec_topics)
+            for t in flat_saved:
                 self.assertNotIn("no ai provider", t.lower())
 
     @patch("ai_papers.trends._generate_generic_text")
     @patch("ai_papers.trends.get_model")
-    @patch("ai_papers.trends.load_topics", return_value=["Machine learning"])
-    def test_generate_monthly_trends(self, mock_load_topics, mock_get_model, mock_gen_text):
+    def test_generate_monthly_trends(self, mock_get_model, mock_gen_text):
         def mock_gen_response(prompt):
             if "emerging" in prompt:
                 return "dynamic topic"
             if "distinct scientific" in prompt:
                 return "YES"
             return "trend summary"
-            
+
         mock_gen_text.side_effect = mock_gen_response
-        
+
         # Mock sentence-transformers model. Topic embedding must be a 1D vector (dim 2)
         mock_st = Mock()
         mock_st.encode.return_value = np.array([[0.5, 0.5]])
         mock_get_model.return_value = mock_st
 
         with tempfile.TemporaryDirectory() as td:
+            trends.save_topics(td, {
+                "sbi": [],
+                "galaxy_statistics": [],
+                "ml_methods": ["Machine learning"]
+            })
             db_path = Path(td) / "papers.db"
             db = PaperDatabase(db_path)
-            
+
             # Add a paper published today
             from datetime import datetime
             now_iso = datetime.utcnow().isoformat()
@@ -170,10 +204,13 @@ class TestTrends(unittest.TestCase):
             results = trends.generate_monthly_trends(td)
             self.assertIn("Machine learning", results)
             self.assertEqual(results["Machine learning"], "trend summary")
-            
+
             # Check if dynamic topic was added
             topics = trends.load_topics(td)
-            self.assertIn("dynamic topic", topics)
+            flat_topics = []
+            for sec_topics in topics.values():
+                flat_topics.extend(sec_topics)
+            self.assertIn("dynamic topic", flat_topics)
 
 
 if __name__ == "__main__":

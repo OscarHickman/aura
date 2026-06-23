@@ -1,24 +1,28 @@
-[
-  "galaxy clustering",
-  "large scale structure",
-  "galaxy correlations function",
-  "machine learning",
-  "simulation based inference",
-  "emulators",
-  "pure ai inference",
-  "cosmic-ray ionization",
-  "dark sector interactions",
-  "cosmological distance tensions",
-  "quantum gravity",
-  "cosmological bayesian inference",
-  "dark matter",
-  "fast radio bursts",
-  "and cosmic-ray ionization",
-  "based on the recent papers",
-  "field-level vs summaries",
-  "tidal gravity and planetary rotation",
-  "astroinformatics",
-  "gravitational wave data analysis",
-  "gravitational wave machine learning",
-  "cosmic-ray boosted relic neutrinos"
-]
+{
+  "sbi": [
+    "simulation based inference",
+    "pure ai inference",
+    "cosmological bayesian inference"
+  ],
+  "galaxy_statistics": [
+    "galaxy clustering",
+    "large scale structure",
+    "galaxy correlations function"
+  ],
+  "ml_methods": [
+    "machine learning",
+    "emulators",
+    "cosmic-ray ionization",
+    "dark sector interactions",
+    "cosmological distance tensions",
+    "quantum gravity",
+    "dark matter",
+    "fast radio bursts",
+    "field-level vs summaries",
+    "tidal gravity and planetary rotation",
+    "astroinformatics",
+    "gravitational wave data analysis",
+    "gravitational wave machine learning",
+    "cosmic-ray boosted relic neutrinos"
+  ]
+}

@@ -13,31 +13,74 @@ from .llm import _load_providers_order, _resolve_api_key
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_TOPICS = [
-    "galaxy clustering",
-    "large scale structure",
-    "galaxy correlations function",
-    "Machine learning",
-    "simulation based inference",
-    "emulators",
-    "pure ai inference"
-]
+DEFAULT_TOPICS = {
+    "sbi": [
+        "simulation based inference",
+        "neural posterior estimation",
+        "normalizing flows cosmology",
+        "field level inference",
+        "neural compression",
+        "likelihood free inference",
+        "implicit likelihood inference",
+        "amortized inference"
+    ],
+    "galaxy_statistics": [
+        "galaxy clustering",
+        "large scale structure",
+        "galaxy correlations function",
+        "two point statistics",
+        "galaxy power spectrum",
+        "higher order statistics cosmology",
+        "summary statistics inference"
+    ],
+    "ml_methods": [
+        "Machine learning",
+        "emulators",
+        "pure ai inference"
+    ]
+}
 
 
-def load_topics(data_dir: str | Path) -> list[str]:
-    """Load research topics to track."""
+def load_topics(data_dir: str | Path) -> dict[str, list[str]]:
+    """Load research topics to track, grouped by section."""
     path = Path(data_dir) / "research_topics.json"
     if not path.exists():
         path.write_text(json.dumps(DEFAULT_TOPICS, indent=2))
         return DEFAULT_TOPICS
     try:
-        return json.loads(path.read_text())
+        data = json.loads(path.read_text())
+        if isinstance(data, dict):
+            # Ensure all default sections exist
+            for sec, defaults in DEFAULT_TOPICS.items():
+                if sec not in data:
+                    data[sec] = defaults
+            return data
+        elif isinstance(data, list):
+            # Migrate old flat list to grouped dictionary
+            migrated = {sec: [] for sec in DEFAULT_TOPICS}
+            for topic in data:
+                categorized = False
+                for sec, topics in DEFAULT_TOPICS.items():
+                    if topic in topics:
+                        migrated[sec].append(topic)
+                        categorized = True
+                        break
+                if not categorized:
+                    t_lower = topic.lower()
+                    if any(x in t_lower for x in ["inference", "posterior", "flows", "compression"]):
+                        migrated["sbi"].append(topic)
+                    elif any(x in t_lower for x in ["galaxy", "statistics", "spectrum", "structure"]):
+                        migrated["galaxy_statistics"].append(topic)
+                    else:
+                        migrated["ml_methods"].append(topic)
+            return migrated
+        return DEFAULT_TOPICS
     except Exception as e:
         logger.error(f"Failed to load topics: {e}")
         return DEFAULT_TOPICS
 
 
-def save_topics(data_dir: str | Path, topics: list[str]):
+def save_topics(data_dir: str | Path, topics: dict[str, list[str]] | list[str]):
     """Save research topics."""
     path = Path(data_dir) / "research_topics.json"
     path.write_text(json.dumps(topics, indent=2))
@@ -131,7 +174,15 @@ def generate_monthly_trends(data_dir: str | Path, embedding_model: str = "all-Mi
     
     Returns a dict mapping topic -> summary text.
     """
-    topics = load_topics(data_dir)
+    grouped_topics = load_topics(data_dir)
+    # Flatten grouped topics to a list for analysis
+    if isinstance(grouped_topics, dict):
+        topics = []
+        for sec_topics in grouped_topics.values():
+            topics.extend(sec_topics)
+    else:
+        topics = grouped_topics
+
     db = PaperDatabase(Path(data_dir) / "papers.db")
     
     # Get all papers from last 30 days
@@ -242,28 +293,65 @@ def generate_monthly_trends(data_dir: str | Path, embedding_model: str = "all-Mi
 
         if valid_new:
             logger.info(f"Discovered new dynamic topics: {valid_new}")
-            topics.extend(valid_new)
-            save_topics(data_dir, topics)
+            if isinstance(grouped_topics, dict):
+                for t in valid_new:
+                    # Dynamically classify topic
+                    sec = "ml_methods"
+                    t_lower = t.lower()
+                    if any(x in t_lower for x in ["inference", "posterior", "flows", "compression", "likelihood", "amortized", "sbi"]):
+                        sec = "sbi"
+                    elif any(x in t_lower for x in ["galaxy", "statistics", "spectrum", "structure", "point", "correlation"]):
+                        sec = "galaxy_statistics"
+                    
+                    if sec not in grouped_topics:
+                        grouped_topics[sec] = []
+                    if t not in grouped_topics[sec]:
+                        grouped_topics[sec].append(t)
+                save_topics(data_dir, grouped_topics)
+            else:
+                grouped_topics.extend(valid_new)
+                save_topics(data_dir, grouped_topics)
             
     return trends
 
 
 def cleanup_topics(data_dir: str | Path):
     """One-time cleanup script to purge existing junk entries from research_topics.json."""
-    topics = load_topics(data_dir)
+    grouped_topics = load_topics(data_dir)
     import re
     junk_pattern = re.compile(r"^(and|the|a|an|with|from|to|for|of|by|in|on|at|as|but|or)\b|[.:;!?\n]", re.IGNORECASE)
     
-    cleaned = []
-    for t in topics:
-        words = t.split()
-        if (len(words) >= 2 and 
-            not junk_pattern.search(t) and 
-            t not in cleaned):
-            cleaned.append(t)
-        elif t in DEFAULT_TOPICS and t not in cleaned:
-            cleaned.append(t)
-            
-    if len(cleaned) < len(topics):
-        logger.info(f"Cleaned up {len(topics) - len(cleaned)} junk topics.")
+    # Flatten default topics for membership check
+    flat_defaults = []
+    if isinstance(DEFAULT_TOPICS, dict):
+        for val in DEFAULT_TOPICS.values():
+            flat_defaults.extend(val)
+    else:
+        flat_defaults = DEFAULT_TOPICS
+
+    if isinstance(grouped_topics, dict):
+        cleaned_grouped = {}
+        for section, topics_list in grouped_topics.items():
+            cleaned = []
+            for t in topics_list:
+                words = t.split()
+                if (len(words) >= 2 and 
+                    not junk_pattern.search(t) and 
+                    t not in cleaned):
+                    cleaned.append(t)
+                elif t in flat_defaults and t not in cleaned:
+                    cleaned.append(t)
+            cleaned_grouped[section] = cleaned
+        save_topics(data_dir, cleaned_grouped)
+    else:
+        # Legacy list cleanup
+        cleaned = []
+        for t in grouped_topics:
+            words = t.split()
+            if (len(words) >= 2 and 
+                not junk_pattern.search(t) and 
+                t not in cleaned):
+                cleaned.append(t)
+            elif t in flat_defaults and t not in cleaned:
+                cleaned.append(t)
         save_topics(data_dir, cleaned)

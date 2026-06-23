@@ -193,9 +193,9 @@
 - [ ] Optionally fetch the linked GitHub repo metadata (stars, last commit, language)
 
 ### 12.2 SBI & Neural Inference Topic Seeds
-- [ ] Add to `DEFAULT_TOPICS`: `"neural posterior estimation"`, `"normalizing flows cosmology"`, `"field level inference"`, `"neural compression"`, `"likelihood free inference"`, `"implicit likelihood inference"`, `"amortized inference"`
-- [ ] Add to `DEFAULT_TOPICS`: `"two point statistics"`, `"galaxy power spectrum"`, `"higher order statistics cosmology"`, `"summary statistics inference"`
-- [ ] Group topics in `research_topics.json` by section (`sbi`, `galaxy_statistics`, `ml_methods`)
+- [x] Add to `DEFAULT_TOPICS`: `"neural posterior estimation"`, `"normalizing flows cosmology"`, `"field level inference"`, `"neural compression"`, `"likelihood free inference"`, `"implicit likelihood inference"`, `"amortized inference"`
+- [x] Add to `DEFAULT_TOPICS`: `"two point statistics"`, `"galaxy power spectrum"`, `"higher order statistics cosmology"`, `"summary statistics inference"`
+- [x] Group topics in `research_topics.json` by section (`sbi`, `galaxy_statistics`, `ml_methods`)
 
 ### 12.3 Simulation & Inference Code Awareness
 - [ ] Add a `simulation_codes` list to `config.yaml`
