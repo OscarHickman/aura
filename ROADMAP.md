@@ -78,9 +78,9 @@
 *Make AURA something others can build on.*
 
 ### 10.1 REST API Documentation
-- [ ] Add `flask-restx` or generate OpenAPI 3.0 spec from existing routes
-- [ ] Serve interactive docs at `/api/docs`
-- [ ] Document all endpoints, request/response schemas, error codes
+- [x] Add `flask-restx` or generate OpenAPI 3.0 spec from existing routes
+- [x] Serve interactive docs at `/api/docs`
+- [x] Document all endpoints, request/response schemas, error codes
 
 ### 10.2 Plugin / Source SDK
 - [ ] Define a formal `PaperSource` plugin interface (from Phase 4.1)
