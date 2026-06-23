@@ -87,7 +87,7 @@ class TestADSSource(unittest.TestCase):
             "author": ["Alice", "Bob"],
             "pubdate": "2026-01-00",
             "title": ["Test Paper"],
-            "abstract": "An abstract about a code repository here.",
+            "abstract": "An abstract about a code repository at https://github.com/user/repo here.",
             "arxiv_class": ["astro-ph.CO"],
             "citation_count": 5,
             "read_count": 10,
