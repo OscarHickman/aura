@@ -200,6 +200,9 @@ class RecommendationEngine:
             self.db.log_fetch(0, self.categories)
             return 0
 
+        # Extract cosmology metadata for new papers
+        self._extract_and_save_metadata(new_papers)
+
         # Generate embeddings for new papers
         embeddings = embed_papers_batch(new_papers, model_name=self.embedding_model)
 
@@ -246,6 +249,9 @@ class RecommendationEngine:
         paper = source.fetch_by_id(arxiv_id)
         if not paper:
             return None
+
+        # Extract cosmology metadata for the paper
+        self._extract_and_save_metadata([paper])
 
         from .embedder import embed_papers_batch
         embeddings = embed_papers_batch([paper], model_name=self.embedding_model)
@@ -476,6 +482,40 @@ class RecommendationEngine:
         liked_citations_map = self.db.get_liked_citations_counts(liked_arxiv_ids)
         liked_references_map = self.db.get_liked_references_counts(liked_arxiv_ids)
 
+        # Get auto-tags for liked papers to establish user preference
+        liked_tag_counts = {}
+        try:
+            liked_papers_tags_rows = self.db.conn.execute(
+                """
+                SELECT t.tag FROM tags t
+                JOIN ratings r ON t.arxiv_id = r.arxiv_id
+                WHERE r.user_id = ? AND (r.rating >= 4 OR r.rating = 1) AND t.source = 'auto'
+                """, (user_id,)
+            ).fetchall()
+            from collections import Counter
+            liked_tag_counts = Counter([row["tag"] for row in liked_papers_tags_rows])
+        except Exception as e:
+            logger.warning(f"Failed to fetch liked tag history for recommendations: {e}")
+
+        # Batch load auto-tags for candidate papers
+        auto_tags_by_paper = {}
+        if scorable_papers:
+            placeholders = ",".join("?" for _ in scorable_papers)
+            query_tags = f"""
+                SELECT arxiv_id, tag FROM tags
+                WHERE source = 'auto' AND arxiv_id IN ({placeholders})
+            """
+            try:
+                rows = self.db.conn.execute(query_tags, [p["arxiv_id"] for p in scorable_papers]).fetchall()
+                for row in rows:
+                    aid = row["arxiv_id"]
+                    tag_name = row["tag"]
+                    if aid not in auto_tags_by_paper:
+                        auto_tags_by_paper[aid] = []
+                    auto_tags_by_paper[aid].append(tag_name)
+            except Exception as e:
+                logger.warning(f"Failed to batch load candidate tags for recommendations: {e}")
+
         # Calculate composite score with freshness and summary bonuses
         now = datetime.fromisoformat(datetime.now().isoformat())
         for paper in scorable_papers:
@@ -513,9 +553,16 @@ class RecommendationEngine:
             liked_ref_cnt = liked_references_map.get(paper["arxiv_id"], 0)
             citation_graph_bonus = min(0.15, liked_cite_cnt * 0.05 + liked_ref_cnt * 0.02)
 
+            # Tag match bonus: boost if paper has auto-extracted tags that user has liked before
+            tag_match_bonus = 0.0
+            paper_auto_tags = auto_tags_by_paper.get(paper["arxiv_id"], [])
+            if paper_auto_tags and liked_tag_counts:
+                total_matches = sum(liked_tag_counts[t] for t in paper_auto_tags if t in liked_tag_counts)
+                tag_match_bonus = min(0.1, total_matches * 0.03)
+
             # Combine scores
             paper["score"] = round(
-                min(1.0, base_score + freshness_bonus + summary_bonus + citation_bonus + read_bonus + refereed_bonus + citation_graph_bonus), 4
+                min(1.0, base_score + freshness_bonus + summary_bonus + citation_bonus + read_bonus + refereed_bonus + citation_graph_bonus + tag_match_bonus), 4
             )
             paper["freshness_bonus"] = round(freshness_bonus, 4)
             paper["summary_bonus"] = round(summary_bonus, 4)
@@ -951,6 +998,22 @@ class RecommendationEngine:
         citing = self.db.get_papers_citing(arxiv_id)
         cited = self.db.get_papers_cited_by(arxiv_id)
         return citing, cited
+
+    def _extract_and_save_metadata(self, papers: list[dict]) -> None:
+        """Run LLM metadata extraction and save tags."""
+        from aura.llm import extract_cosmology_metadata
+        for paper in papers:
+            title = paper.get("title", "")
+            abstract = paper.get("abstract", "")
+            if not title or not abstract:
+                continue
+            try:
+                meta = extract_cosmology_metadata(title, abstract)
+                tags = meta.get("observables", []) + meta.get("datasets", []) + meta.get("methods", [])
+                for tag in tags:
+                    self.db.add_tag(paper["arxiv_id"], tag, source="auto")
+            except Exception as e:
+                logger.error(f"Failed to extract metadata for paper {paper.get('arxiv_id')}: {e}")
 
     def close(self):
         """Clean up resources."""

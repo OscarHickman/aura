@@ -175,6 +175,54 @@
             </div>
         </div>
 
+        <!-- Observables Sidebar -->
+        <div class="card mb-3">
+            <div class="card-header bg-dark border-secondary py-2">
+                <h6 class="mb-0 text-light small"><i class="bi bi-eye"></i> Observables</h6>
+            </div>
+            <div class="card-body p-2">
+                <div class="d-flex flex-wrap gap-2">
+                    {% set obs_list = ["power spectrum", "correlation function", "bispectrum", "void statistics", "CMB temperature/polarization", "weak lensing", "shear"] %}
+                    {% set has_obs = false %}
+                    {% for obs in obs_list %}
+                    {% if obs in all_tags %}
+                    {% set has_obs = true %}
+                    <a href="/papers?tag={{ obs }}" class="badge {% if selected_tag == obs %}bg-warning text-dark{% else %}bg-dark border border-secondary text-warning-emphasis{% endif %} text-decoration-none" title="Filter by {{ obs }}">
+                        {{ obs | title }}
+                    </a>
+                    {% endif %}
+                    {% endfor %}
+                    {% if not has_obs %}
+                    <p class="text-muted small mb-0">No observables found.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Methods Sidebar -->
+        <div class="card mb-3">
+            <div class="card-header bg-dark border-secondary py-2">
+                <h6 class="mb-0 text-light small"><i class="bi bi-cpu"></i> Methods & Statistics</h6>
+            </div>
+            <div class="card-body p-2">
+                <div class="d-flex flex-wrap gap-2">
+                    {% set meth_list = ["MCMC", "nested sampling", "SBI", "neural posterior estimation", "emulator", "N-body", "semi-analytic model"] %}
+                    {% set has_meth = false %}
+                    {% for meth in meth_list %}
+                    {% if meth | lower in all_tags %}
+                    {% set has_meth = true %}
+                    <a href="/papers?tag={{ meth | lower }}" class="badge {% if selected_tag == meth | lower %}bg-success text-white{% else %}bg-dark border border-secondary text-success-emphasis{% endif %} text-decoration-none" title="Filter by {{ meth }}">
+                        {{ meth }}
+                    </a>
+                    {% endif %}
+                    {% endfor %}
+                    {% if not has_meth %}
+                    <p class="text-muted small mb-0">No methods found.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
         <!-- Tags Sidebar -->
         <div class="card">
             <div class="card-header bg-dark border-secondary py-2">

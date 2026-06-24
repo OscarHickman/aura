@@ -128,6 +128,7 @@ class PaperDatabase:
                 user_id INTEGER NOT NULL DEFAULT 1,
                 arxiv_id TEXT NOT NULL,
                 tag TEXT NOT NULL,
+                source TEXT DEFAULT 'user',
                 created_at TEXT NOT NULL,
                 UNIQUE(user_id, arxiv_id, tag)
             );
@@ -286,6 +287,7 @@ class PaperDatabase:
         self._add_column_if_missing("papers", "bibcode", "TEXT")
         self._add_column_if_missing("papers", "read_count", "INTEGER DEFAULT 0")
         self._add_column_if_missing("papers", "refereed", "INTEGER DEFAULT 0")
+        self._add_column_if_missing("tags", "source", "TEXT DEFAULT 'user'")
         self._add_column_if_missing("users", "digest_frequency", "TEXT DEFAULT 'daily'")
         self._add_column_if_missing("users", "unsubscribe_token", "TEXT DEFAULT NULL")
         self._add_column_if_missing("papers", "citations_fetched", "INTEGER DEFAULT 0")
@@ -962,15 +964,15 @@ class PaperDatabase:
             logger.error(f"Failed to get papers by authors: {e}")
             return []
 
-    def add_tag(self, arxiv_id: str, tag: str, user_id: int = 1) -> bool:
+    def add_tag(self, arxiv_id: str, tag: str, user_id: int = 1, source: str = "user") -> bool:
         """Add a tag to a paper for a user. Returns True if added."""
         clean_tag = tag.strip().lower()
         if not clean_tag:
             return False
         try:
             self.conn.execute(
-                "INSERT OR IGNORE INTO tags (user_id, arxiv_id, tag, created_at) VALUES (?, ?, ?, ?)",
-                (user_id, arxiv_id, clean_tag, datetime.utcnow().isoformat()),
+                "INSERT OR IGNORE INTO tags (user_id, arxiv_id, tag, source, created_at) VALUES (?, ?, ?, ?, ?)",
+                (user_id, arxiv_id, clean_tag, source, datetime.utcnow().isoformat()),
             )
             self.conn.commit()
             return True
@@ -1840,7 +1842,7 @@ class PaperDatabase:
                         matched = True
                         break
                 if matched:
-                    self.add_tag(paper["arxiv_id"], name)
+                    self.add_tag(paper["arxiv_id"], name, source="survey")
             return True
         except sqlite3.Error as e:
             logger.error(f"Failed to add survey {name}: {e}")
@@ -1877,7 +1879,7 @@ class PaperDatabase:
                     matched = True
                     break
             if matched:
-                self.add_tag(arxiv_id, name)
+                self.add_tag(arxiv_id, name, source="survey")
 
     def close(self) -> None:
         """Close the database connection."""

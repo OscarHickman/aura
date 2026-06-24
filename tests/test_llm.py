@@ -167,5 +167,27 @@ class TestLLM(unittest.TestCase):
             self.assertEqual(summary, "Anthropic summary response")
 
 
+    @patch("aura.llm._load_providers_order", return_value=["groq"])
+    @patch("aura.llm._resolve_api_key", return_value="test-key")
+    def test_execute_llm_groq(self, mock_key, _mock_order):
+        mock_client = Mock()
+        mock_message = Mock()
+        mock_message.choices = [Mock()]
+        mock_message.choices[0].message.content = '{"observables": ["weak lensing"], "datasets": ["DESI"], "methods": ["MCMC"]}'
+        mock_client.chat.completions.create.return_value = mock_message
+        
+        with patch("groq.Groq", return_value=mock_client):
+            res = llm.execute_llm("test prompt")
+            self.assertIn("DESI", res)
+
+    @patch("aura.llm.execute_llm")
+    def test_extract_cosmology_metadata(self, mock_execute):
+        mock_execute.return_value = '{"observables": ["weak lensing", "invalid_obs"], "datasets": ["DESI"], "methods": ["MCMC"]}'
+        meta = llm.extract_cosmology_metadata("Title", "Abstract")
+        self.assertEqual(meta["observables"], ["weak lensing"]) # invalid_obs filtered out
+        self.assertEqual(meta["datasets"], ["DESI"])
+        self.assertEqual(meta["methods"], ["MCMC"])
+
+
 if __name__ == "__main__":
     unittest.main()

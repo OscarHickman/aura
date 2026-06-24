@@ -676,3 +676,196 @@ def stream_ask_paper(
 
     yield "Error: All configured LLM providers failed to stream an answer."
 
+
+def execute_llm(
+    prompt: str,
+    max_tokens: int = 150,
+    temperature: float = 0.5,
+    provider: Optional[str] = None,
+    api_key: Optional[str] = None,
+) -> Optional[str]:
+    """Execute a custom LLM prompt, falling back through providers on failure."""
+    providers_to_try = [provider.lower()] if provider else _load_providers_order()
+
+    for p in providers_to_try:
+        try:
+            if p == "groq":
+                try:
+                    from groq import Groq
+                except ImportError:
+                    continue
+                key = _resolve_api_key(api_key, "GROQ_API_KEY", "groq")
+                if not key:
+                    continue
+                client = Groq(api_key=key)
+                configured_model = _get_provider_setting("groq", "model")
+                candidate_models = [m for m in [configured_model, "llama-3.1-8b-instant", "llama-3.3-70b-versatile"] if m]
+                for model_name in candidate_models:
+                    try:
+                        message = client.chat.completions.create(
+                            messages=[{"role": "user", "content": prompt}],
+                            model=model_name,
+                            max_tokens=max_tokens,
+                            temperature=temperature,
+                        )
+                        return message.choices[0].message.content.strip()
+                    except Exception:
+                        continue
+                        
+            elif p == "google":
+                try:
+                    import google.generativeai as genai
+                except ImportError:
+                    continue
+                key = _resolve_api_key(api_key, "GOOGLE_API_KEY", "google")
+                if not key:
+                    continue
+                genai.configure(api_key=key)
+                configured_model = _get_provider_setting("google", "model")
+                candidate_models = [m for m in [configured_model, "gemini-1.5-flash", "gemini-2.5-flash"] if m]
+                for model_name in candidate_models:
+                    try:
+                        model = genai.GenerativeModel(model_name)
+                        response = model.generate_content(
+                            prompt,
+                            generation_config=genai.types.GenerationConfig(
+                                max_output_tokens=max_tokens,
+                                temperature=temperature,
+                            )
+                        )
+                        return response.text.strip()
+                    except Exception:
+                        continue
+
+            elif p == "openai":
+                try:
+                    from openai import OpenAI
+                except ImportError:
+                    continue
+                key = _resolve_api_key(api_key, "OPENAI_API_KEY", "openai")
+                if not key:
+                    continue
+                client = OpenAI(api_key=key)
+                configured_model = _get_provider_setting("openai", "model")
+                model_name = configured_model or "gpt-4o-mini"
+                try:
+                    message = client.chat.completions.create(
+                        messages=[{"role": "user", "content": prompt}],
+                        model=model_name,
+                        max_tokens=max_tokens,
+                        temperature=temperature,
+                    )
+                    return message.choices[0].message.content.strip()
+                except Exception:
+                    continue
+
+            elif p == "anthropic":
+                try:
+                    from anthropic import Anthropic
+                except ImportError:
+                    continue
+                key = _resolve_api_key(api_key, "ANTHROPIC_API_KEY", "anthropic")
+                if not key:
+                    continue
+                client = Anthropic(api_key=key)
+                configured_model = _get_provider_setting("anthropic", "model")
+                model_name = configured_model or "claude-3-5-sonnet-20241022"
+                try:
+                    message = client.messages.create(
+                        model=model_name,
+                        max_tokens=max_tokens,
+                        messages=[{"role": "user", "content": prompt}],
+                    )
+                    return message.content[0].text.strip()
+                except Exception:
+                    continue
+
+        except Exception as e:
+            logger.warning(f"Provider {p} custom execute failed: {e}")
+            continue
+
+    return None
+
+
+def build_extraction_prompt(title: str, abstract: str) -> str:
+    """Build prompt for cosmology concept extraction."""
+    return f"""Analyze the following scientific paper's title and abstract. Identify and extract any specific cosmological/astronomical concepts from the lists below.
+
+Paper Title: {title}
+Abstract: {abstract}
+
+You must ONLY extract concepts that are explicitly mentioned or strongly implied, and map them to the exact terms from the lists below:
+
+Observables list (choose zero or more):
+- "power spectrum"
+- "correlation function"
+- "bispectrum"
+- "void statistics"
+- "CMB temperature/polarization"
+- "weak lensing"
+- "shear"
+
+Datasets list (choose zero or more):
+- "BOSS"
+- "DESI"
+- "HSC"
+- "DES"
+- "Planck"
+- "SPT"
+- "ACT"
+- "IllustrisTNG"
+- "CAMELS"
+- "EAGLE"
+
+Methods list (choose zero or more):
+- "MCMC"
+- "nested sampling"
+- "SBI"
+- "neural posterior estimation"
+- "emulator"
+- "N-body"
+- "semi-analytic model"
+
+Respond with a JSON object in this exact format, and no other text:
+{{
+  "observables": ["extracted_observable1", ...],
+  "datasets": ["extracted_dataset1", ...],
+  "methods": ["extracted_method1", ...]
+}}
+"""
+
+
+def extract_cosmology_metadata(title: str, abstract: str) -> dict:
+    """Extract cosmological statistics, datasets, and methods from paper metadata."""
+    prompt = build_extraction_prompt(title, abstract)
+    response = execute_llm(prompt, max_tokens=200, temperature=0.0)
+    
+    result = {"observables": [], "datasets": [], "methods": []}
+    if not response:
+        return result
+        
+    import json
+    import re
+    try:
+        json_match = re.search(r"\{.*?\}", response, re.DOTALL)
+        if json_match:
+            parsed = json.loads(json_match.group(0))
+            for key in ["observables", "datasets", "methods"]:
+                if key in parsed and isinstance(parsed[key], list):
+                    allowed_sets = {
+                        "observables": ["power spectrum", "correlation function", "bispectrum", "void statistics", "CMB temperature/polarization", "weak lensing", "shear"],
+                        "datasets": ["BOSS", "DESI", "HSC", "DES", "Planck", "SPT", "ACT", "IllustrisTNG", "CAMELS", "EAGLE"],
+                        "methods": ["MCMC", "nested sampling", "SBI", "neural posterior estimation", "emulator", "N-body", "semi-analytic model"]
+                    }
+                    validated = []
+                    for item in parsed[key]:
+                        for allowed in allowed_sets[key]:
+                            if allowed.lower() == str(item).strip().lower():
+                                validated.append(allowed)
+                                break
+                    result[key] = validated
+    except Exception as e:
+        logger.warning(f"Failed to parse metadata extraction JSON: {e}")
+        
+    return result
+

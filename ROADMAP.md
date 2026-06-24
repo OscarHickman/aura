@@ -121,13 +121,13 @@
 - [x] Digest: include a "From the surveys" sub-section in the email
 
 ### 11.3 Cosmological Statistics & Method Extraction
-- [ ] LLM-powered metadata extraction pass running after fetch (before embedding):
+- [x] LLM-powered metadata extraction pass running after fetch (before embedding):
   - **Observable:** power spectrum, correlation function, bispectrum, void statistics, CMB temperature/polarization, weak lensing, shear
   - **Dataset:** BOSS, DESI, HSC, DES, Planck, SPT, ACT, IllustrisTNG, CAMELS, EAGLE
   - **Method:** MCMC, nested sampling, SBI, neural posterior estimation, emulator, N-body, semi-analytic model
-- [ ] Store extracted tags in the `tags` table with `source='auto'`
-- [ ] Use extracted method/dataset tags to boost recommendation precision
-- [ ] Filter UI: show papers by observable or method type
+- [x] Store extracted tags in the `tags` table with `source='auto'`
+- [x] Use extracted method/dataset tags to boost recommendation precision
+- [x] Filter UI: show papers by observable or method type
 
 ### 11.4 Author & Research Group Tracking
 - [ ] Add `tracked_authors` table: `id`, `name`, `orcid` (optional), `affiliation` (optional), `relationship` (`follow` | `collaborator`)

@@ -245,5 +245,55 @@ class TestRecommendationEngine(unittest.TestCase):
         self.assertIn("2401.00002", ids)
 
 
+    @patch("aura.recommender.PreferenceModel")
+    @patch("aura.recommender.PaperDatabase")
+    @patch("aura.recommender.get_embedding_dim", return_value=3)
+    def test_get_recommendations_with_tag_match_bonus(
+        self, _mock_dim, mock_db_cls, _mock_model_cls
+    ):
+        db = Mock()
+        p1 = _paper("2401.00001")
+        p2 = _paper("2401.00002")
+        db.get_papers.return_value = [p1, p2]
+        
+        emb1 = np.array([0.1, 0.2, 0.3], dtype=np.float32)
+        emb2 = np.array([0.4, 0.5, 0.6], dtype=np.float32)
+        db.get_papers_with_embeddings.return_value = [(p1, emb1), (p2, emb2)]
+        
+        # Mock rated papers and database connections for tags query
+        db.get_rated_papers.return_value = [(p1, emb1, 1)] # liked p1
+        db.get_liked_citations_counts.return_value = {}
+        db.get_liked_references_counts.return_value = {}
+        
+        # Mock liked tags query return value: p1 is tagged with 'mcmc' via source='auto'
+        mock_cursor_liked = Mock()
+        mock_cursor_liked.fetchall.return_value = [{"tag": "mcmc"}]
+        
+        # Mock scorable papers tags query: p2 is tagged with 'mcmc' via source='auto'
+        mock_cursor_tags = Mock()
+        mock_cursor_tags.fetchall.return_value = [{"arxiv_id": "2401.00002", "tag": "mcmc"}]
+        
+        db.conn.execute.side_effect = lambda sql, params=(): (
+            mock_cursor_liked if "ratings r" in sql else mock_cursor_tags
+        )
+        
+        mock_db_cls.return_value = db
+        
+        # Mock pref model predictions to return 0.5 for both
+        mock_model = Mock()
+        mock_model.predict_batch.return_value = (np.array([0.5, 0.5]), np.array([0.0, 0.0]))
+        
+        with tempfile.TemporaryDirectory() as td:
+            engine = RecommendationEngine(Path(td), ["astro-ph.CO"])
+            with patch.object(engine, "get_user_preference_model", return_value=mock_model), \
+                 patch.object(engine, "get_user_shadow_model", return_value=mock_model):
+                recs = engine.get_recommendations(limit=2)
+                
+        # p2 should have tag match bonus of 0.03, resulting in higher score than p1
+        self.assertEqual(len(recs), 2)
+        self.assertEqual(recs[0]["arxiv_id"], "2401.00002")
+        self.assertGreater(recs[0]["score"], recs[1]["score"])
+
+
 if __name__ == "__main__":
     unittest.main()
