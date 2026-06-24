@@ -147,7 +147,7 @@
 ## Phase 12 — Simulation-Based Inference & Computational Cosmology
 
 ### 12.1 Code & Data Release Detection
-- [ ] Optionally fetch the linked GitHub repo metadata (stars, last commit, language)
+- [x] Optionally fetch the linked GitHub repo metadata (stars, last commit, language)
 
 ### 12.2 SBI & Neural Inference Topic Seeds
 - [x] Add to `DEFAULT_TOPICS`: `"neural posterior estimation"`, `"normalizing flows cosmology"`, `"field level inference"`, `"neural compression"`, `"likelihood free inference"`, `"implicit likelihood inference"`, `"amortized inference"`
