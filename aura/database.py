@@ -395,6 +395,34 @@ class PaperDatabase:
     ) -> bool:
         """Add a paper to the database. Returns True if newly inserted."""
         try:
+            # Check if paper already exists for cross-listing deduplication
+            existing = self.conn.execute(
+                "SELECT categories FROM papers WHERE arxiv_id = ?", (paper["arxiv_id"],)
+            ).fetchone()
+            if existing:
+                try:
+                    existing_cats = json.loads(existing[0])
+                    if not isinstance(existing_cats, list):
+                        existing_cats = [existing_cats] if existing_cats else []
+                except Exception:
+                    existing_cats = []
+                new_cats = paper.get("categories", [])
+                if not isinstance(new_cats, list):
+                    new_cats = [new_cats] if new_cats else []
+                merged_cats = list(existing_cats)
+                updated = False
+                for cat in new_cats:
+                    if cat not in merged_cats:
+                        merged_cats.append(cat)
+                        updated = True
+                if updated:
+                    self.conn.execute(
+                        "UPDATE papers SET categories = ? WHERE arxiv_id = ?",
+                        (json.dumps(merged_cats), paper["arxiv_id"]),
+                    )
+                    self.conn.commit()
+                return False
+
             emb_blob = embedding.tobytes() if embedding is not None else None
             source = paper.get("source", "arxiv")
             citation_count = paper.get("citation_count", 0)
@@ -450,6 +478,35 @@ class PaperDatabase:
             has_code = paper.get("has_code", 0)
             has_data = paper.get("has_data", 0)
             try:
+                # Check if paper already exists for cross-listing deduplication
+                existing = self.conn.execute(
+                    "SELECT categories FROM papers WHERE arxiv_id = ?", (paper["arxiv_id"],)
+                ).fetchone()
+                if existing:
+                    try:
+                        existing_cats = json.loads(existing[0])
+                        if not isinstance(existing_cats, list):
+                            existing_cats = [existing_cats] if existing_cats else []
+                    except Exception:
+                        existing_cats = []
+                    new_cats = paper.get("categories", [])
+                    if not isinstance(new_cats, list):
+                        new_cats = [new_cats] if new_cats else []
+                    merged_cats = list(existing_cats)
+                    updated = False
+                    for cat in new_cats:
+                        if cat not in merged_cats:
+                            merged_cats.append(cat)
+                            updated = True
+                    if updated:
+                        self.conn.execute(
+                            "UPDATE papers SET categories = ? WHERE arxiv_id = ?",
+                            (json.dumps(merged_cats), paper["arxiv_id"]),
+                        )
+                        # We also auto tag new surveys if the categories changed, just in case
+                        self.auto_tag_paper_surveys(paper["arxiv_id"], paper["title"], paper["abstract"])
+                    continue
+
                 cursor = self.conn.execute(
                     """INSERT OR IGNORE INTO papers
                        (arxiv_id, title, abstract, authors, categories, published, url, pdf_url, fetched_at, embedding, summary, source, citation_count, has_code, has_data)

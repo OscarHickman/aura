@@ -363,6 +363,36 @@ class TestPaperDatabase(unittest.TestCase):
         self.assertTrue(self.db.delete_survey("JWST"))
         self.assertNotIn("jwst", self.db.get_paper_tags("2401.jwst1"))
 
+    def test_cross_listing_deduplication(self):
+        # Test add_paper category merging
+        p1 = make_paper("2401.cross1")
+        p1["categories"] = ["astro-ph.CO"]
+        self.assertTrue(self.db.add_paper(p1))
+        
+        stored = self.db.get_paper("2401.cross1")
+        self.assertEqual(stored["categories"], ["astro-ph.CO"])
+
+        p2 = make_paper("2401.cross1")
+        p2["categories"] = ["cs.LG"]
+        # Should return False as it is not newly inserted
+        self.assertFalse(self.db.add_paper(p2))
+
+        stored = self.db.get_paper("2401.cross1")
+        self.assertEqual(sorted(stored["categories"]), sorted(["astro-ph.CO", "cs.LG"]))
+
+        # Test add_papers_batch category merging
+        p3 = make_paper("2401.cross2")
+        p3["categories"] = ["astro-ph.CO"]
+        
+        p4 = make_paper("2401.cross2")
+        p4["categories"] = ["stat.ML"]
+        
+        self.assertEqual(self.db.add_papers_batch([p3]), 1)
+        self.assertEqual(self.db.add_papers_batch([p4]), 0)
+        
+        stored2 = self.db.get_paper("2401.cross2")
+        self.assertEqual(sorted(stored2["categories"]), sorted(["astro-ph.CO", "stat.ML"]))
+
 
 if __name__ == "__main__":
     unittest.main()

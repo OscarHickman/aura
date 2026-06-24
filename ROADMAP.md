@@ -138,9 +138,9 @@
 - [x] Import collaborators in bulk from a BibTeX file's `author` fields
 
 ### 11.5 arXiv Category Expansion for Computational Cosmology
-- [ ] Add `astro-ph.IM` to `config.example.yaml` defaults
-- [ ] Document optional `cs.LG` and `stat.ML` categories in `config.example.yaml`
-- [ ] Add cross-listing deduplication: a paper in both `astro-ph.CO` and `cs.LG` stores once with both category labels
+- [x] Add `astro-ph.IM` to `config.example.yaml` defaults
+- [x] Document optional `cs.LG` and `stat.ML` categories in `config.example.yaml`
+- [x] Add cross-listing deduplication: a paper in both `astro-ph.CO` and `cs.LG` stores once with both category labels
 
 ---
 

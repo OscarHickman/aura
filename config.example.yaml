@@ -7,6 +7,10 @@ categories:
   - astro-ph.GA   # Astrophysics of Galaxies
   - astro-ph.HE   # High Energy Astrophysical Phenomena
   - astro-ph.SR   # Solar and Stellar Astrophysics
+  - astro-ph.IM   # Instrumentation and Methods for Astrophysics (essential for cosmological computation and analysis)
+# Optional categories (e.g. for machine learning and statistical methods in cosmology):
+#  - cs.LG        # Machine Learning (Computer Science)
+#  - stat.ML      # Machine Learning (Statistics)
 
 # Where to store the database, model weights, etc.
 data_dir: data
