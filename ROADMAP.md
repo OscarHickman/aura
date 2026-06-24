@@ -130,12 +130,12 @@
 - [x] Filter UI: show papers by observable or method type
 
 ### 11.4 Author & Research Group Tracking
-- [ ] Add `tracked_authors` table: `id`, `name`, `orcid` (optional), `affiliation` (optional), `relationship` (`follow` | `collaborator`)
-- [ ] At fetch time, flag papers where any tracked author appears in the author list
-- [ ] UI: "From authors you follow" badge on paper cards
-- [ ] `/settings/authors` page to add/remove tracked authors
-- [ ] Digest: "From your network" section for papers by tracked authors
-- [ ] Import collaborators in bulk from a BibTeX file's `author` fields
+- [x] Add `tracked_authors` table: `id`, `name`, `orcid` (optional), `affiliation` (optional), `relationship` (`follow` | `collaborator`)
+- [x] At fetch time, flag papers where any tracked author appears in the author list
+- [x] UI: "From authors you follow" badge on paper cards
+- [x] `/settings/authors` page to add/remove tracked authors
+- [x] Digest: "From your network" section for papers by tracked authors
+- [x] Import collaborators in bulk from a BibTeX file's `author` fields
 
 ### 11.5 arXiv Category Expansion for Computational Cosmology
 - [ ] Add `astro-ph.IM` to `config.example.yaml` defaults

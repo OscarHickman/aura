@@ -267,6 +267,16 @@
                         <div class="flex-grow-1">
                             <h5 class="card-title mb-1">
                                 <a href="/papers/{{ paper.arxiv_id }}" class="text-decoration-none text-light">{{ paper.title | safe }}</a>
+                                {% if paper.from_followed_author %}
+                                <span class="badge bg-primary ms-1" title="From an author you follow">
+                                    <i class="bi bi-person-check-fill"></i> From authors you follow
+                                </span>
+                                {% endif %}
+                                {% if paper.from_collaborator %}
+                                <span class="badge bg-info text-dark ms-1" title="From a collaborator or research group member">
+                                    <i class="bi bi-people-fill"></i> Collaborator
+                                </span>
+                                {% endif %}
                                 {% if paper.freshness_bonus is defined and paper.freshness_bonus > 0.05 %}
                                 <span class="badge bg-danger ms-2"><i class="bi bi-fire"></i> NEW</span>
                                 {% endif %}

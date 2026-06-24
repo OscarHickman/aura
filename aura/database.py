@@ -198,6 +198,15 @@ class PaperDatabase:
                 name TEXT NOT NULL UNIQUE,
                 keywords TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS tracked_authors (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                orcid TEXT,
+                affiliation TEXT,
+                relationship TEXT NOT NULL CHECK(relationship IN ('follow', 'collaborator')),
+                UNIQUE(name, relationship)
+            );
         """)
         self.conn.commit()
 
@@ -229,6 +238,7 @@ class PaperDatabase:
             CREATE INDEX IF NOT EXISTS idx_citations_citing ON citations(citing_arxiv_id);
             CREATE INDEX IF NOT EXISTS idx_citations_cited ON citations(cited_arxiv_id);
             CREATE INDEX IF NOT EXISTS idx_surveys_name ON surveys(name);
+            CREATE INDEX IF NOT EXISTS idx_tracked_authors_name ON tracked_authors(name);
 
             CREATE VIRTUAL TABLE IF NOT EXISTS papers_fts USING fts5(
                 arxiv_id UNINDEXED,
@@ -274,6 +284,19 @@ class PaperDatabase:
                 keywords TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_surveys_name ON surveys(name);
+        """)
+        self.conn.commit()
+
+        self.conn.executescript("""
+            CREATE TABLE IF NOT EXISTS tracked_authors (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                orcid TEXT,
+                affiliation TEXT,
+                relationship TEXT NOT NULL CHECK(relationship IN ('follow', 'collaborator')),
+                UNIQUE(name, relationship)
+            );
+            CREATE INDEX IF NOT EXISTS idx_tracked_authors_name ON tracked_authors(name);
         """)
         self.conn.commit()
 
@@ -451,6 +474,7 @@ class PaperDatabase:
                 )
                 if cursor.rowcount > 0:
                     self.auto_tag_paper_surveys(paper["arxiv_id"], paper["title"], paper["abstract"])
+                    self.auto_tag_paper_authors(paper["arxiv_id"], paper["authors"])
                     count += 1
             except sqlite3.Error as e:
                 logger.error(f"Failed to add paper {paper.get('arxiv_id')}: {e}")
@@ -1880,6 +1904,108 @@ class PaperDatabase:
                     break
             if matched:
                 self.add_tag(arxiv_id, name, source="survey")
+
+    def get_tracked_authors(self) -> list[dict]:
+        """Get all tracked authors."""
+        try:
+            rows = self.conn.execute(
+                "SELECT id, name, orcid, affiliation, relationship FROM tracked_authors ORDER BY name ASC"
+            ).fetchall()
+            return [dict(row) for row in rows]
+        except sqlite3.Error as e:
+            logger.error(f"Failed to get tracked authors: {e}")
+            return []
+
+    def get_tracked_author(self, author_id: int) -> Optional[dict]:
+        """Get a tracked author by ID."""
+        try:
+            row = self.conn.execute(
+                "SELECT id, name, orcid, affiliation, relationship FROM tracked_authors WHERE id = ?",
+                (author_id,)
+            ).fetchone()
+            return dict(row) if row else None
+        except sqlite3.Error as e:
+            logger.error(f"Failed to get tracked author {author_id}: {e}")
+            return None
+
+    def add_tracked_author(
+        self,
+        name: str,
+        orcid: Optional[str] = None,
+        affiliation: Optional[str] = None,
+        relationship: str = "follow",
+    ) -> bool:
+        """Add a tracked author and auto-tag existing papers."""
+        try:
+            self.conn.execute(
+                "INSERT INTO tracked_authors (name, orcid, affiliation, relationship) VALUES (?, ?, ?, ?)",
+                (name, orcid, affiliation, relationship),
+            )
+            self.conn.commit()
+            self.auto_tag_all_existing_papers_by_authors()
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Failed to add tracked author {name}: {e}")
+            return False
+
+    def delete_tracked_author(self, author_id: int) -> bool:
+        """Delete a tracked author by ID and clean up tags."""
+        try:
+            author = self.get_tracked_author(author_id)
+            if not author:
+                return False
+            self.conn.execute("DELETE FROM tracked_authors WHERE id = ?", (author_id,))
+            self.conn.commit()
+            
+            # Clean up tag for this specific author
+            self.conn.execute(
+                "DELETE FROM tags WHERE tag = ? AND source = 'author'",
+                (author["name"].strip().lower(),),
+            )
+            self.conn.commit()
+            
+            # Re-evaluate network tags ('followed_author' or 'collaborator') for all papers.
+            self.conn.execute(
+                "DELETE FROM tags WHERE tag IN ('followed_author', 'collaborator') AND source = 'network'"
+            )
+            self.conn.commit()
+            self.auto_tag_all_existing_papers_by_authors()
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Failed to delete tracked author {author_id}: {e}")
+            return False
+
+    def auto_tag_paper_authors(self, arxiv_id: str, authors: list[str]) -> None:
+        """Auto-tag paper if any of its authors are tracked."""
+        try:
+            rows = self.conn.execute("SELECT name, relationship FROM tracked_authors").fetchall()
+            tracked = {row["name"].lower().strip(): row["relationship"] for row in rows}
+        except sqlite3.Error as e:
+            logger.error(f"Failed to fetch tracked authors for auto-tagging: {e}")
+            return
+
+        for author in authors:
+            author_clean = author.strip().lower()
+            if author_clean in tracked:
+                rel = tracked[author_clean]
+                if rel == "follow":
+                    self.add_tag(arxiv_id, "followed_author", source="network")
+                elif rel == "collaborator":
+                    self.add_tag(arxiv_id, "collaborator", source="network")
+                self.add_tag(arxiv_id, author, source="author")
+
+    def auto_tag_all_existing_papers_by_authors(self) -> None:
+        """Find any paper that has a tracked author and tag it."""
+        try:
+            papers = self.conn.execute("SELECT arxiv_id, authors FROM papers").fetchall()
+            for paper in papers:
+                try:
+                    authors = json.loads(paper["authors"])
+                except Exception:
+                    continue
+                self.auto_tag_paper_authors(paper["arxiv_id"], authors)
+        except sqlite3.Error as e:
+            logger.error(f"Failed to auto-tag existing papers by authors: {e}")
 
     def close(self) -> None:
         """Close the database connection."""

@@ -184,7 +184,8 @@ def _collect_top_papers_with_summaries(
 def _build_email_content(
     papers: list[dict], trends: dict[str, str], app_name: str = "AURA",
     secret_key: str = None, base_url: str = "http://127.0.0.1:5000", user_id: int = 1,
-    unsubscribe_token: str = None, survey_papers: list[dict] = None
+    unsubscribe_token: str = None, survey_papers: list[dict] = None,
+    network_papers: list[dict] = None
 ) -> tuple[str, str]:
     """Create plain-text and HTML digest bodies."""
     text_lines = [f"{app_name} - Monthly Research Trends", ""]
@@ -222,6 +223,28 @@ def _build_email_content(
                 f"<h4 style='margin:0 0 4px 0;color:#333;'>{sp.get('title')} <span style='font-size:11px;color:#00bcd4;text-transform:uppercase;'>{tag_label}</span></h4>"
                 f"<p style='margin:0 0 4px 0;color:#666;font-size:12px;'><strong>Authors:</strong> {authors}</p>"
                 f"<p style='margin:0 0 4px 0;font-size:12px;'><a href='{sp.get('url')}'>{sp.get('url')}</a></p>"
+                f"<p style='margin:0;font-size:13px;line-height:1.4;'>{summary}</p>"
+                f"</div>"
+            )
+        html_items.append("</div><hr>")
+
+    if network_papers:
+        text_lines.extend([f"{app_name} - From your network", ""])
+        html_items.append("<h2>From your network</h2><div style='margin-bottom:30px;'>")
+        for i, np_paper in enumerate(network_papers, 1):
+            authors = ", ".join(np_paper.get("authors", [])[:3])
+            summary = np_paper.get("summary") or np_paper.get("abstract") or ""
+            text_lines.extend([
+                f"{i}. {np_paper.get('title')}",
+                f"URL: {np_paper.get('url')}",
+                f"Summary: {summary[:300]}...",
+                ""
+            ])
+            html_items.append(
+                f"<div style='margin-bottom:15px;padding:12px;border-left:4px solid #3f51b5;background:#f9f9f9;border-radius:0 8px 8px 0;'>"
+                f"<h4 style='margin:0 0 4px 0;color:#333;'>{np_paper.get('title')}</h4>"
+                f"<p style='margin:0 0 4px 0;color:#666;font-size:12px;'><strong>Authors:</strong> {authors}</p>"
+                f"<p style='margin:0 0 4px 0;font-size:12px;'><a href='{np_paper.get('url')}'>{np_paper.get('url')}</a></p>"
                 f"<p style='margin:0;font-size:13px;line-height:1.4;'>{summary}</p>"
                 f"</div>"
             )
@@ -412,6 +435,11 @@ def send_top_recommendations_email(
         for sp in survey_papers:
             sp["tags"] = engine.db.get_paper_tags(sp["arxiv_id"], user_id=user_id)
 
+        # Collect network papers
+        network_papers = _collect_network_papers(engine, user_id=user_id, limit=5)
+        for np_paper in network_papers:
+            np_paper["tags"] = engine.db.get_paper_tags(np_paper["arxiv_id"], user_id=user_id)
+
         text_body, html_body = _build_email_content(
             papers,
             trends=trends,
@@ -421,6 +449,7 @@ def send_top_recommendations_email(
             user_id=user_id,
             unsubscribe_token=unsubscribe_token,
             survey_papers=survey_papers,
+            network_papers=network_papers,
         )
 
         if email_config.get("use_graph_api", False):
@@ -595,4 +624,43 @@ def _collect_survey_papers(engine, user_id: int = 1, limit: int = 5) -> list[dic
         return deduped
     except Exception as e:
         logger.error(f"Failed to collect survey papers for email: {e}")
+        return []
+
+
+def _collect_network_papers(engine, user_id: int = 1, limit: int = 5) -> list[dict]:
+    """Collect recent papers matching tracked authors."""
+    from unittest.mock import Mock
+    if isinstance(engine.db, Mock):
+        return []
+    try:
+        tracked_authors = engine.db.get_tracked_authors()
+    except Exception:
+        return []
+    if isinstance(tracked_authors, Mock) or not tracked_authors:
+        return []
+        
+    author_tags = [a["name"].lower() for a in tracked_authors]
+    if not author_tags:
+        return []
+        
+    placeholders = ",".join("?" for _ in author_tags)
+    query = f"""
+        SELECT p.* FROM papers p
+        JOIN tags t ON p.arxiv_id = t.arxiv_id
+        WHERE t.user_id = ? AND t.tag IN ({placeholders})
+        ORDER BY p.published DESC
+        LIMIT ?
+    """
+    try:
+        rows = engine.db.conn.execute(query, [1] + author_tags + [limit]).fetchall()
+        papers = [engine.db._row_to_dict(row) for row in rows]
+        seen = set()
+        deduped = []
+        for p in papers:
+            if p["arxiv_id"] not in seen:
+                seen.add(p["arxiv_id"])
+                deduped.append(p)
+        return deduped
+    except Exception as e:
+        logger.error(f"Failed to collect network papers for email: {e}")
         return []

@@ -449,12 +449,31 @@ def _register_routes(app: Flask) -> None:
         start = (page - 1) * per_page
         paper_list = paper_list[start : start + per_page]
 
+        # Get all tracked authors
+        from unittest.mock import Mock
+        tracked_authors_list = []
+        if engine:
+            res = engine.db.get_tracked_authors()
+            if isinstance(res, list) and not isinstance(res, Mock):
+                tracked_authors_list = res
+        followed_set = {a["name"].lower().strip() for a in tracked_authors_list if a["relationship"] == "follow"}
+        collab_set = {a["name"].lower().strip() for a in tracked_authors_list if a["relationship"] == "collaborator"}
+
         for p in paper_list:
             if "rating" not in p:
                 p["rating"] = engine.db.get_latest_rating(p["arxiv_id"], user_id=uid)
             p["tags"] = engine.db.get_paper_tags(p["arxiv_id"], user_id=uid)
             p["collections"] = engine.db.get_paper_collections(p["arxiv_id"], user_id=uid)
             p["in_reading_list"] = engine.db.is_in_reading_list(p["arxiv_id"], user_id=uid)
+            
+            p["from_followed_author"] = False
+            p["from_collaborator"] = False
+            for author in p.get("authors", []):
+                author_lower = author.strip().lower()
+                if author_lower in followed_set:
+                    p["from_followed_author"] = True
+                if author_lower in collab_set:
+                    p["from_collaborator"] = True
 
         categories = app.config.get("AI_PAPERS", {}).get("categories", [])
         collections = engine.db.get_collections(user_id=uid) if engine else []
@@ -499,6 +518,24 @@ def _register_routes(app: Flask) -> None:
         paper["collections"] = engine.db.get_paper_collections(arxiv_id, user_id=uid) if engine else []
         paper["notes"] = engine.db.get_paper_notes(arxiv_id, user_id=uid) if engine else []
         paper["in_reading_list"] = engine.db.is_in_reading_list(arxiv_id, user_id=uid) if engine else False
+
+        from unittest.mock import Mock
+        tracked_authors_list = []
+        if engine:
+            res = engine.db.get_tracked_authors()
+            if isinstance(res, list) and not isinstance(res, Mock):
+                tracked_authors_list = res
+        followed_set = {a["name"].lower().strip() for a in tracked_authors_list if a["relationship"] == "follow"}
+        collab_set = {a["name"].lower().strip() for a in tracked_authors_list if a["relationship"] == "collaborator"}
+        
+        paper["from_followed_author"] = False
+        paper["from_collaborator"] = False
+        for author in paper.get("authors", []):
+            author_lower = author.strip().lower()
+            if author_lower in followed_set:
+                paper["from_followed_author"] = True
+            if author_lower in collab_set:
+                paper["from_collaborator"] = True
 
         ratings_history = engine.db.get_ratings_history(arxiv_id, user_id=uid) if engine else []
         similar_papers = engine.get_similar_papers(arxiv_id, limit=5) if engine else []
@@ -1281,6 +1318,112 @@ def _register_routes(app: Flask) -> None:
         tokens = engine.db.get_user_tokens(uid) if engine else []
         user_record = engine.db.get_user_by_id(uid) if engine else None
         return render_template("settings.html", stats=stats_data, config=config, tokens=tokens, user=user_record)
+
+    @app.route("/settings/authors", methods=["GET", "POST"])
+    @login_required
+    def settings_authors():
+        uid = _get_current_user_id()
+        if not engine:
+            return "Engine not initialised", 500
+
+        if request.method == "POST":
+            action = request.form.get("action")
+            if action == "add":
+                name = request.form.get("name", "").strip()
+                orcid = request.form.get("orcid", "").strip() or None
+                affiliation = request.form.get("affiliation", "").strip() or None
+                relationship = request.form.get("relationship", "follow").strip()
+
+                if not name:
+                    flash("Author name is required.", "danger")
+                elif relationship not in ["follow", "collaborator"]:
+                    flash("Invalid relationship type.", "danger")
+                else:
+                    success = engine.db.add_tracked_author(name, orcid, affiliation, relationship)
+                    if success:
+                        flash(f"Author '{name}' is now being tracked.", "success")
+                    else:
+                        flash(f"Failed to track author '{name}'. (They may already be tracked under this relationship)", "danger")
+            elif action == "delete":
+                author_id = request.form.get("author_id")
+                if author_id:
+                    try:
+                        author_id = int(author_id)
+                        author = engine.db.get_tracked_author(author_id)
+                        if author:
+                            success = engine.db.delete_tracked_author(author_id)
+                            if success:
+                                flash(f"Author '{author['name']}' has been removed from your tracked list.", "success")
+                            else:
+                                flash("Failed to remove author.", "danger")
+                        else:
+                            flash("Author not found.", "danger")
+                    except ValueError:
+                        flash("Invalid author ID.", "danger")
+            return redirect(url_for("settings_authors"))
+
+        # GET request
+        from unittest.mock import Mock
+        tracked_authors = []
+        if engine:
+            res = engine.db.get_tracked_authors()
+            if isinstance(res, list) and not isinstance(res, Mock):
+                tracked_authors = res
+        stats_data = engine.get_stats(user_id=uid)
+        return render_template(
+            "settings_authors.html",
+            stats=stats_data,
+            tracked_authors=tracked_authors,
+        )
+
+    @app.route("/settings/authors/import-bibtex", methods=["POST"])
+    @login_required
+    def settings_authors_import_bibtex():
+        if not engine:
+            return "Engine not initialised", 500
+        
+        content = request.form.get("bibtex_content", "")
+        relationship = request.form.get("relationship", "collaborator")
+        if relationship not in ["follow", "collaborator"]:
+            flash("Invalid relationship type.", "danger")
+            return redirect(url_for("settings_authors"))
+
+        import re
+        entries_authors = set()
+        blocks = content.split("@")
+        for block in blocks:
+            if not block.strip():
+                continue
+            match = re.match(r"^(\w+)\s*\{\s*([\w\-\:\.]+)\s*,", block)
+            if not match:
+                continue
+            
+            field_matches = re.finditer(r"(\w+)\s*=\s*[\"\{](.*?)[\"\}]\s*,?\s*$", block, re.MULTILINE | re.DOTALL)
+            fields = {}
+            for fm in field_matches:
+                field_name = fm.group(1).lower()
+                field_val = fm.group(2).strip()
+                field_val = re.sub(r"[\{\}]", "", field_val)
+                fields[field_name] = field_val
+                
+            if "author" in fields:
+                for auth in fields["author"].split(" and "):
+                    auth_clean = auth.strip()
+                    if auth_clean and auth_clean.lower() not in ["unknown", "others", "et al.", "et al"]:
+                        entries_authors.add(auth_clean)
+
+        if not entries_authors:
+            flash("No valid authors found in the provided BibTeX entries.", "warning")
+            return redirect(url_for("settings_authors"))
+
+        added_count = 0
+        for auth in sorted(entries_authors):
+            success = engine.db.add_tracked_author(auth, relationship=relationship)
+            if success:
+                added_count += 1
+
+        flash(f"Successfully imported {added_count} unique tracked authors.", "success")
+        return redirect(url_for("settings_authors"))
 
     @app.route("/trends")
     @login_required

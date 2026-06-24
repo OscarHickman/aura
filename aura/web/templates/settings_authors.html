@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}Tracked Authors - AI Papers{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="bi bi-person-badge"></i> Tracked Authors & Research Groups</h1>
+    <a href="/settings" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back to Settings</a>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, message in messages %}
+      <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+        {{ message }}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+      </div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<div class="row g-4">
+    <!-- Add Author Form -->
+    <div class="col-md-5">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-person-plus"></i> Track a New Author</h5>
+            </div>
+            <div class="card-body">
+                <form method="post" action="/settings/authors">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="action" value="add">
+                    
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Author Name <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="name" name="name" required placeholder="e.g. Stephen Hawking">
+                        <div class="form-text">Case-insensitive exact match is used at paper fetch/import time.</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="orcid" class="form-label">ORCID iD <span class="text-muted">(Optional)</span></label>
+                        <input type="text" class="form-control" id="orcid" name="orcid" placeholder="e.g. 0000-0002-1825-0097">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="affiliation" class="form-label">Affiliation <span class="text-muted">(Optional)</span></label>
+                        <input type="text" class="form-control" id="affiliation" name="affiliation" placeholder="e.g. University of Cambridge">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="relationship" class="form-label">Relationship / Track Mode</label>
+                        <select class="form-select" id="relationship" name="relationship">
+                            <option value="follow">Follow (Flags papers and boosts recommendation score)</option>
+                            <option value="collaborator">Collaborator / Research Group (Stronger recommendation boost)</option>
+                        </select>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary w-100"><i class="bi bi-plus-circle"></i> Add Author</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-file-earmark-arrow-up"></i> Bulk Import from BibTeX</h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted small">
+                    Paste BibTeX entries below to extract all unique authors and track them in bulk.
+                </p>
+                <form method="post" action="/settings/authors/import-bibtex">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <div class="mb-3">
+                        <label for="bibtex_content" class="form-label small">BibTeX Entries</label>
+                        <textarea class="form-control font-monospace small" id="bibtex_content" name="bibtex_content" rows="6" placeholder="@article{... author = {Smith, John and Doe, Jane}, ...}"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label for="import_relationship" class="form-label small">Import As</label>
+                        <select class="form-select form-select-sm" id="import_relationship" name="relationship">
+                            <option value="collaborator">Collaborator / Research Group (Recommended)</option>
+                            <option value="follow">Followed Author</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-outline-success w-100 btn-sm"><i class="bi bi-upload"></i> Import Authors</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tracked Authors List -->
+    <div class="col-md-7">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-people"></i> Currently Tracked Authors</h5>
+                <span class="badge bg-secondary">{{ tracked_authors|length }} authors</span>
+            </div>
+            <div class="card-body p-0">
+                {% if tracked_authors %}
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover mb-0 align-middle">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Details</th>
+                                <th>Type</th>
+                                <th class="text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for author in tracked_authors %}
+                            <tr>
+                                <td>
+                                    <strong>{{ author.name }}</strong>
+                                </td>
+                                <td>
+                                    {% if author.orcid %}
+                                    <div class="small"><span class="text-muted">ORCID:</span> <code>{{ author.orcid }}</code></div>
+                                    {% endif %}
+                                    {% if author.affiliation %}
+                                    <div class="small"><span class="text-muted">Affiliation:</span> {{ author.affiliation }}</div>
+                                    {% endif %}
+                                    {% if not author.orcid and not author.affiliation %}
+                                    <span class="text-muted small">No extra details</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if author.relationship == 'collaborator' %}
+                                    <span class="badge bg-info"><i class="bi bi-people"></i> Collaborator</span>
+                                    {% else %}
+                                    <span class="badge bg-primary"><i class="bi bi-person-check"></i> Followed</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">
+                                    <form method="post" action="/settings/authors" style="display:inline;">
+                                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                        <input type="hidden" name="action" value="delete">
+                                        <input type="hidden" name="author_id" value="{{ author.id }}">
+                                        <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('Are you sure you want to stop tracking {{ author.name }}?')">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </form>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="p-4 text-center text-muted">
+                    <i class="bi bi-person-slash fs-2 mb-2 d-block"></i>
+                    <p class="mb-0">You are not tracking any authors yet. Add some on the left to get started!</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

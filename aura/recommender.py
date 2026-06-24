@@ -499,6 +499,7 @@ class RecommendationEngine:
 
         # Batch load auto-tags for candidate papers
         auto_tags_by_paper = {}
+        network_tags_by_paper = {}
         if scorable_papers:
             placeholders = ",".join("?" for _ in scorable_papers)
             query_tags = f"""
@@ -515,6 +516,21 @@ class RecommendationEngine:
                     auto_tags_by_paper[aid].append(tag_name)
             except Exception as e:
                 logger.warning(f"Failed to batch load candidate tags for recommendations: {e}")
+
+            query_network = f"""
+                SELECT arxiv_id, tag FROM tags
+                WHERE source = 'network' AND arxiv_id IN ({placeholders})
+            """
+            try:
+                rows = self.db.conn.execute(query_network, [p["arxiv_id"] for p in scorable_papers]).fetchall()
+                for row in rows:
+                    aid = row["arxiv_id"]
+                    tag_name = row["tag"]
+                    if aid not in network_tags_by_paper:
+                        network_tags_by_paper[aid] = []
+                    network_tags_by_paper[aid].append(tag_name)
+            except Exception as e:
+                logger.warning(f"Failed to batch load candidate network tags for recommendations: {e}")
 
         # Calculate composite score with freshness and summary bonuses
         now = datetime.fromisoformat(datetime.now().isoformat())
@@ -560,9 +576,18 @@ class RecommendationEngine:
                 total_matches = sum(liked_tag_counts[t] for t in paper_auto_tags if t in liked_tag_counts)
                 tag_match_bonus = min(0.1, total_matches * 0.03)
 
+            # Network / Tracked Author bonus: boost if paper has followed_author or collaborator tags
+            network_bonus = 0.0
+            paper_net_tags = network_tags_by_paper.get(paper["arxiv_id"], [])
+            if "followed_author" in paper_net_tags:
+                network_bonus += 0.15
+            if "collaborator" in paper_net_tags:
+                network_bonus += 0.20
+            network_bonus = min(0.25, network_bonus)
+
             # Combine scores
             paper["score"] = round(
-                min(1.0, base_score + freshness_bonus + summary_bonus + citation_bonus + read_bonus + refereed_bonus + citation_graph_bonus + tag_match_bonus), 4
+                min(1.0, base_score + freshness_bonus + summary_bonus + citation_bonus + read_bonus + refereed_bonus + citation_graph_bonus + tag_match_bonus + network_bonus), 4
             )
             paper["freshness_bonus"] = round(freshness_bonus, 4)
             paper["summary_bonus"] = round(summary_bonus, 4)
@@ -570,6 +595,7 @@ class RecommendationEngine:
             paper["read_bonus"] = round(read_bonus, 4)
             paper["refereed_bonus"] = round(refereed_bonus, 4)
             paper["citation_graph_bonus"] = round(citation_graph_bonus, 4)
+            paper["network_bonus"] = round(network_bonus, 4)
 
         # Explainability: attach the most similar liked paper to each recommendation
         liked_papers_emb = [(p, emb) for p, emb, rating in rated_papers if rating >= 4 or rating == 1]

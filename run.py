@@ -356,6 +356,21 @@ def cmd_import(args, config):
         categories=config.get("categories", ["astro-ph.CO"]),
         embedding_model=config.get("embedding_model", "all-MiniLM-L6-v2"),
     )
+
+    if getattr(args, "import_authors", None):
+        print(f"Importing authors as tracked '{args.import_authors}'...")
+        added_authors = 0
+        all_authors = set()
+        for entry in entries:
+            for author in entry["authors"]:
+                author_clean = author.strip()
+                if author_clean and author_clean.lower() not in ["unknown", "others", "et al.", "et al"]:
+                    all_authors.add(author_clean)
+        for author in sorted(all_authors):
+            success = engine.db.add_tracked_author(author, relationship=args.import_authors)
+            if success:
+                added_authors += 1
+        print(f"Successfully imported {added_authors} unique tracked authors.")
     
     print(f"Parsed {len(entries)} entries. Importing into AURA...")
     imported_count = 0
@@ -659,6 +674,11 @@ def main():
     # import
     import_parser = subparsers.add_parser("import", help="Import papers from a BibTeX file into the database")
     import_parser.add_argument("file", help="Path to BibTeX file to import")
+    import_parser.add_argument(
+        "--import-authors",
+        choices=["follow", "collaborator"],
+        help="Also import all authors from the BibTeX file into the tracked_authors table under the specified relationship"
+    )
 
     # export
     export_parser = subparsers.add_parser("export", help="Export papers from AURA database in a specified format")

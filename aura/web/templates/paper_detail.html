@@ -37,6 +37,16 @@
                     <div>
                         <h1 class="h2 text-light">
                             {{ paper.title | safe }}
+                            {% if paper.from_followed_author %}
+                            <span class="badge bg-primary ms-2" style="font-size: 0.9rem;" title="From an author you follow">
+                                <i class="bi bi-person-check-fill"></i> From authors you follow
+                            </span>
+                            {% endif %}
+                            {% if paper.from_collaborator %}
+                            <span class="badge bg-info text-dark ms-2" style="font-size: 0.9rem;" title="From a collaborator or research group member">
+                                <i class="bi bi-people-fill"></i> Collaborator
+                            </span>
+                            {% endif %}
                             {% if paper.refereed %}
                             <span class="badge border border-success text-success bg-transparent ms-2" style="border-color: #2ec4b6 !important; color: #2ec4b6 !important; font-size: 0.9rem;" title="Refereed publication (peer-reviewed)">
                                 <i class="bi bi-patch-check-fill"></i> REFEREED
