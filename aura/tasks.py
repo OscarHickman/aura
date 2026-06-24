@@ -326,3 +326,73 @@ def refresh_ads_metadata_task(self):
         raise
     finally:
         engine.close()
+
+
+@celery_app.task(bind=True)
+def refresh_github_metadata_task(self, force=False):
+    """Refreshes GitHub repository metadata (stars, last commit, language) for all papers with code."""
+    engine = RecommendationEngine(
+        data_dir=config.get("data_dir", "data"),
+        categories=config.get("categories", ["astro-ph.CO", "astro-ph.GA"]),
+        embedding_model=config.get("embedding_model", "all-MiniLM-L6-v2"),
+        sources_config=config.get("sources", {}),
+    )
+
+    task_id = self.request.id
+    engine.db.create_task_entry(task_id, "refresh_github_metadata", status="RUNNING")
+
+    try:
+        # Get all papers where has_code = 1
+        cursor = engine.db.conn.execute("SELECT arxiv_id, abstract, title FROM papers WHERE has_code = 1")
+        papers = cursor.fetchall()
+        total_papers = len(papers)
+        engine.db.update_task_progress(task_id, progress=0, total=total_papers, status="RUNNING")
+
+        updated_count = 0
+        from datetime import datetime, timedelta
+        from aura.github import extract_github_url, fetch_github_metadata
+        import time
+        now = datetime.utcnow()
+
+        for idx, paper in enumerate(papers):
+            arxiv_id = paper["arxiv_id"]
+            abstract = paper["abstract"]
+
+            repo_url = extract_github_url(abstract)
+            if repo_url:
+                if not force:
+                    existing_meta = engine.db.get_repo_metadata(arxiv_id)
+                    if existing_meta:
+                        try:
+                            fetched_at = datetime.fromisoformat(existing_meta["fetched_at"])
+                            if now - fetched_at < timedelta(hours=24):
+                                continue
+                        except Exception:
+                            pass
+
+                meta = fetch_github_metadata(repo_url)
+                if meta:
+                    success = engine.db.update_repo_metadata(
+                        arxiv_id=arxiv_id,
+                        repo_url=repo_url,
+                        stars=meta.get("stars", 0),
+                        last_commit=meta.get("last_commit"),
+                        language=meta.get("language"),
+                    )
+                    if success:
+                        updated_count += 1
+
+            engine.db.update_task_progress(task_id, progress=idx + 1, total=total_papers)
+            # Sleep slightly to respect GitHub API if unauthenticated
+            if not os.environ.get("GITHUB_TOKEN"):
+                time.sleep(1)
+
+        engine.db.complete_task(task_id, status="SUCCESS", result={"updated_papers": updated_count})
+        return {"updated_papers": updated_count}
+
+    except Exception as e:
+        logger.exception(f"Error in refresh_github_metadata_task: {e}")
+        engine.db.complete_task(task_id, status="FAILURE", error=str(e))
+        raise
+    finally:
+        engine.close()

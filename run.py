@@ -553,9 +553,44 @@ def _setup_scheduler(app, config):
                 logging.getLogger(__name__).error(f"Failed to queue scheduled ADS metadata refresh: {e}")
 
     scheduler.add_job(daily_ads_refresh, "cron", hour=ads_hour, minute=ads_minute)
+
+    gh_hour = sched_config.get("github_refresh_hour")
+    gh_minute = sched_config.get("github_refresh_minute")
+    if gh_hour is None:
+        gh_hour = (hour + 2) % 24
+    if gh_minute is None:
+        gh_minute = minute
+
+    def daily_github_refresh():
+        with app.app_context():
+            logging.getLogger(__name__).info("Scheduled daily GitHub repository metadata refresh: starting...")
+            try:
+                from aura.tasks import refresh_github_metadata_task
+                refresh_github_metadata_task.delay()
+                logging.getLogger(__name__).info("Scheduled daily GitHub repository metadata refresh: Celery task queued.")
+            except Exception as e:
+                logging.getLogger(__name__).error(f"Failed to queue scheduled GitHub repository metadata refresh: {e}")
+
+    scheduler.add_job(daily_github_refresh, "cron", hour=gh_hour, minute=gh_minute)
     scheduler.start()
     print(f"  Scheduler enabled: daily fetch at {hour:02d}:{minute:02d} UTC")
     print(f"  Scheduler enabled: daily ADS metadata refresh at {ads_hour:02d}:{ads_minute:02d} UTC")
+    print(f"  Scheduler enabled: daily GitHub repository metadata refresh at {gh_hour:02d}:{gh_minute:02d} UTC")
+
+
+def cmd_refresh_github_metadata(args, config):
+    """CLI handler for refreshing GitHub repository metadata."""
+    from aura.recommender import RecommendationEngine
+    engine = RecommendationEngine(
+        data_dir=config.get("data_dir", "data"),
+        categories=config.get("categories", ["astro-ph.CO", "astro-ph.GA"]),
+        embedding_model=config.get("embedding_model", "all-MiniLM-L6-v2"),
+        sources_config=config.get("sources", {}),
+    )
+    print("Refreshing GitHub repository metadata...")
+    result = engine.refresh_github_metadata(force=args.force)
+    print(f"Done. Updated {result.get('updated_papers', 0)} papers.")
+    engine.close()
 
 
 def main():
@@ -685,6 +720,17 @@ def main():
     export_parser.add_argument("format", choices=["json", "csv", "bibtex"], help="Export format (json, csv, bibtex)")
     export_parser.add_argument("--output", "-o", required=True, help="Path to output file")
 
+    # refresh-github-metadata
+    refresh_gh_parser = subparsers.add_parser(
+        "refresh-github-metadata",
+        help="Refresh GitHub repository metadata (stars, last commit, language)"
+    )
+    refresh_gh_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force refresh even if updated within the last 24 hours"
+    )
+
     args = parser.parse_args()
 
     # Setup logging
@@ -717,6 +763,7 @@ def main():
         "doctor": cmd_doctor,
         "import": cmd_import,
         "export": cmd_export,
+        "refresh-github-metadata": cmd_refresh_github_metadata,
     }
 
     commands[args.command](args, config)

@@ -207,6 +207,16 @@ class PaperDatabase:
                 relationship TEXT NOT NULL CHECK(relationship IN ('follow', 'collaborator')),
                 UNIQUE(name, relationship)
             );
+
+            CREATE TABLE IF NOT EXISTS repo_metadata (
+                arxiv_id TEXT PRIMARY KEY,
+                repo_url TEXT NOT NULL,
+                stars INTEGER DEFAULT 0,
+                last_commit TEXT,
+                language TEXT,
+                fetched_at TEXT NOT NULL,
+                FOREIGN KEY (arxiv_id) REFERENCES papers(arxiv_id) ON DELETE CASCADE
+            );
         """)
         self.conn.commit()
 
@@ -297,6 +307,19 @@ class PaperDatabase:
                 UNIQUE(name, relationship)
             );
             CREATE INDEX IF NOT EXISTS idx_tracked_authors_name ON tracked_authors(name);
+        """)
+        self.conn.commit()
+
+        self.conn.executescript("""
+            CREATE TABLE IF NOT EXISTS repo_metadata (
+                arxiv_id TEXT PRIMARY KEY,
+                repo_url TEXT NOT NULL,
+                stars INTEGER DEFAULT 0,
+                last_commit TEXT,
+                language TEXT,
+                fetched_at TEXT NOT NULL,
+                FOREIGN KEY (arxiv_id) REFERENCES papers(arxiv_id) ON DELETE CASCADE
+            );
         """)
         self.conn.commit()
 
@@ -2063,6 +2086,59 @@ class PaperDatabase:
                 self.auto_tag_paper_authors(paper["arxiv_id"], authors)
         except sqlite3.Error as e:
             logger.error(f"Failed to auto-tag existing papers by authors: {e}")
+
+    def update_repo_metadata(
+        self,
+        arxiv_id: str,
+        repo_url: str,
+        stars: int = 0,
+        last_commit: Optional[str] = None,
+        language: Optional[str] = None,
+    ) -> bool:
+        """Add or update repository metadata for a paper."""
+        try:
+            self.conn.execute(
+                """INSERT INTO repo_metadata (arxiv_id, repo_url, stars, last_commit, language, fetched_at)
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(arxiv_id) DO UPDATE SET
+                       repo_url=excluded.repo_url,
+                       stars=excluded.stars,
+                       last_commit=excluded.last_commit,
+                       language=excluded.language,
+                       fetched_at=excluded.fetched_at""",
+                (
+                    arxiv_id,
+                    repo_url,
+                    stars,
+                    last_commit,
+                    language,
+                    datetime.utcnow().isoformat(),
+                ),
+            )
+            self.conn.commit()
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Failed to update repository metadata for paper {arxiv_id}: {e}")
+            return False
+
+    def get_repo_metadata(self, arxiv_id: str) -> Optional[dict]:
+        """Get repository metadata for a paper."""
+        try:
+            row = self.conn.execute(
+                "SELECT repo_url, stars, last_commit, language, fetched_at FROM repo_metadata WHERE arxiv_id = ?",
+                (arxiv_id,),
+            ).fetchone()
+            if row:
+                return {
+                    "repo_url": row["repo_url"],
+                    "stars": row["stars"],
+                    "last_commit": row["last_commit"],
+                    "language": row["language"],
+                    "fetched_at": row["fetched_at"],
+                }
+        except sqlite3.Error as e:
+            logger.error(f"Failed to get repository metadata for paper {arxiv_id}: {e}")
+        return None
 
     def close(self) -> None:
         """Close the database connection."""

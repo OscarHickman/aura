@@ -215,6 +215,12 @@ class RecommendationEngine:
         count = self.db.add_papers_batch(new_papers, embeddings, summaries)
         self.db.log_fetch(count, self.categories)
 
+        # Extract and save GitHub repository metadata
+        try:
+            self._extract_and_save_github_metadata(new_papers)
+        except Exception as e:
+            logger.error(f"Failed to extract or save GitHub metadata during batch fetch: {e}")
+
         if count > 0:
             try:
                 arxiv_ids = [p["arxiv_id"] for p in new_papers]
@@ -260,6 +266,10 @@ class RecommendationEngine:
         summary = summaries[0] if summaries else None
 
         self.db.add_papers_batch([paper], embeddings, [summary] if summary else None)
+        try:
+            self._extract_and_save_github_metadata([paper])
+        except Exception as e:
+            logger.error(f"Failed to extract or save GitHub metadata during single fetch: {e}")
         if len(embeddings) > 0:
             try:
                 self.vector_store.add_paper(arxiv_id, embeddings[0])
@@ -1040,6 +1050,74 @@ class RecommendationEngine:
                     self.db.add_tag(paper["arxiv_id"], tag, source="auto")
             except Exception as e:
                 logger.error(f"Failed to extract metadata for paper {paper.get('arxiv_id')}: {e}")
+
+    def _extract_and_save_github_metadata(self, papers: list[dict]) -> None:
+        """Extract GitHub URLs from paper abstracts and fetch/save their repository metadata."""
+        from aura.github import extract_github_url, fetch_github_metadata
+        for paper in papers:
+            if paper.get("has_code"):
+                repo_url = extract_github_url(paper.get("abstract", ""))
+                if repo_url:
+                    meta = fetch_github_metadata(repo_url)
+                    if meta:
+                        self.db.update_repo_metadata(
+                            arxiv_id=paper["arxiv_id"],
+                            repo_url=repo_url,
+                            stars=meta.get("stars", 0),
+                            last_commit=meta.get("last_commit"),
+                            language=meta.get("language"),
+                        )
+
+    def refresh_github_metadata(self, force: bool = False) -> dict[str, int]:
+        """Refresh repository metadata for all papers that have a repository.
+
+        Skips repositories updated in the last 24 hours unless force=True.
+        """
+        import os
+        import time
+        from datetime import datetime, timedelta
+        from aura.github import extract_github_url, fetch_github_metadata
+
+        # Get all papers where has_code = 1
+        cursor = self.db.conn.execute("SELECT arxiv_id, abstract, title FROM papers WHERE has_code = 1")
+        papers = cursor.fetchall()
+        
+        updated_count = 0
+        now = datetime.utcnow()
+        
+        for paper in papers:
+            arxiv_id = paper["arxiv_id"]
+            abstract = paper["abstract"]
+            
+            repo_url = extract_github_url(abstract)
+            if repo_url:
+                if not force:
+                    existing_meta = self.db.get_repo_metadata(arxiv_id)
+                    if existing_meta:
+                        try:
+                            fetched_at = datetime.fromisoformat(existing_meta["fetched_at"])
+                            if now - fetched_at < timedelta(hours=24):
+                                continue
+                        except Exception:
+                            pass
+                
+                meta = fetch_github_metadata(repo_url)
+                if meta:
+                    success = self.db.update_repo_metadata(
+                        arxiv_id=arxiv_id,
+                        repo_url=repo_url,
+                        stars=meta.get("stars", 0),
+                        last_commit=meta.get("last_commit"),
+                        language=meta.get("language"),
+                    )
+                    if success:
+                        updated_count += 1
+            
+            # Sleep slightly to respect GitHub API if unauthenticated
+            if not os.environ.get("GITHUB_TOKEN"):
+                time.sleep(1)
+                
+        return {"updated_papers": updated_count}
 
     def close(self):
         """Clean up resources."""
