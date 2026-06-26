@@ -154,6 +154,37 @@ class TestAuthorScoring(unittest.TestCase):
         self.assertEqual(p2_rec["network_bonus"], 0.0)
         self.assertGreater(p1_rec["score"], p2_rec["score"])
 
+    @patch("aura.recommender.PreferenceModel")
+    @patch("aura.recommender.embed_papers_batch")
+    def test_collaborator_pinning_and_boost(self, mock_embed, mock_model):
+        mock_model_instance = Mock()
+        mock_model_instance.predict_batch.return_value = (np.array([0.5, 0.5, 0.5]), np.array([0.0, 0.0, 0.0]))
+        mock_model_instance.predict.return_value = np.array([0.5, 0.5, 0.5])
+        mock_model.return_value = mock_model_instance
+        mock_embed.return_value = [np.zeros(384, dtype=np.float32), np.zeros(384, dtype=np.float32), np.zeros(384, dtype=np.float32)]
+
+        self.db.add_tracked_author("Jane Collaborator", relationship="collaborator")
+        self.db.add_tracked_author("John Followed", relationship="follow")
+
+        p1 = make_paper("2401.00001", authors=["John Followed"])
+        p2 = make_paper("2401.00002", authors=["Jane Collaborator"])
+        p3 = make_paper("2401.00003", authors=["Albert Einstein"])
+        
+        self.db.add_papers_batch([p1, p2, p3], [np.zeros(384, dtype=np.float32), np.zeros(384, dtype=np.float32), np.zeros(384, dtype=np.float32)])
+
+        self.engine.collaborator_boost = 0.25
+
+        recs = self.engine.get_recommendations(user_id=1, limit=10)
+        
+        p2_rec = next(p for p in recs if p["arxiv_id"] == "2401.00002")
+        self.assertEqual(p2_rec["network_bonus"], 0.25)
+        
+        p1_rec = next(p for p in recs if p["arxiv_id"] == "2401.00001")
+        self.assertEqual(p1_rec["network_bonus"], 0.15)
+
+        self.assertEqual(recs[0]["arxiv_id"], "2401.00002")
+
+
 class TestAuthorTrackingWebRoutes(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

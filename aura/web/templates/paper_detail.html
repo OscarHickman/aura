@@ -44,7 +44,12 @@
                             {% endif %}
                             {% if paper.from_collaborator %}
                             <span class="badge bg-info text-dark ms-2" style="font-size: 0.9rem;" title="From a collaborator or research group member">
-                                <i class="bi bi-people-fill"></i> Collaborator
+                                <i class="bi bi-people-fill"></i> From your group
+                            </span>
+                            {% endif %}
+                            {% if paper.cites_user_work %}
+                            <span class="badge bg-success ms-2" style="font-size: 0.9rem;" title="This paper cites your registered work">
+                                <i class="bi bi-chat-heart-fill"></i> Cites your work
                             </span>
                             {% endif %}
                             {% if paper.refereed %}
@@ -52,6 +57,15 @@
                                 <i class="bi bi-patch-check-fill"></i> REFEREED
                             </span>
                             {% endif %}
+                            {% for t in paper.tags %}
+                                {% for code in simulation_codes %}
+                                    {% if t | lower == code | lower %}
+                                    <span class="badge border border-info text-info bg-transparent ms-2" style="border-color: #0d6efd !important; color: #0d6efd !important; font-size: 0.9rem;" title="Simulation / Code: {{ code }}">
+                                        <i class="bi bi-cpu"></i> {{ code }}
+                                    </span>
+                                    {% endif %}
+                                {% endfor %}
+                            {% endfor %}
                         </h1>
                         <p class="text-muted mb-2">
                             <strong>Published:</strong> {{ paper.published[:10] }} &bull; 
@@ -246,8 +260,13 @@
             </div>
             <div class="card-body">
                 <div id="add-note-form" class="mb-3 d-none">
+                    <div class="mb-2 d-flex gap-2">
+                        <button class="btn btn-sm btn-outline-secondary" onclick="insertStudyTemplate()">
+                            <i class="bi bi-layout-text-sidebar"></i> Use Study Template
+                        </button>
+                    </div>
                     <div class="mb-2">
-                        <textarea class="form-control bg-dark text-light border-secondary" id="note-content" rows="3" placeholder="Write your note here..."></textarea>
+                        <textarea class="form-control bg-dark text-light border-secondary" id="note-content" rows="6" placeholder="Write your note here..."></textarea>
                     </div>
                     <div class="d-flex gap-2 justify-content-end">
                         <button class="btn btn-sm btn-outline-secondary" onclick="hideAddNoteForm()">Cancel</button>
@@ -806,6 +825,16 @@ async function removeFromCollection(colId, arxivId, btn) {
 }
 
 // Notes Section Functions
+const STUDY_TEMPLATE = `## Background\n\n\n## Methods\n\n\n## Results\n\n\n## Significance\n\n`;
+
+function insertStudyTemplate() {
+    const ta = document.getElementById('note-content');
+    if (!ta.value.trim()) {
+        ta.value = STUDY_TEMPLATE;
+    }
+    ta.focus();
+}
+
 function showAddNoteForm() {
     document.getElementById('add-note-form').classList.remove('d-none');
     document.getElementById('note-content').focus();

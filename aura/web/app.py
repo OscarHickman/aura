@@ -5,7 +5,7 @@ import os
 import secrets
 import uuid
 
-from flask import Flask, jsonify, redirect, render_template, request, g, url_for, flash
+from flask import Flask, Response, jsonify, redirect, render_template, request, g, url_for, flash
 from flask_login import (
     LoginManager,
     UserMixin,
@@ -226,7 +226,14 @@ def create_app(config_path: str | None = None) -> Flask:
         embedding_model=config.get("embedding_model", "all-MiniLM-L6-v2"),
         rss_urls=config.get("rss_feeds", []),
         sources_config=config.get("sources", {}),
+        simulation_codes=config.get("simulation_codes", []),
     )
+
+    @app.context_processor
+    def inject_simulation_codes():
+        return {
+            "simulation_codes": app.config.get("AI_PAPERS", {}).get("simulation_codes", [])
+        }
 
     # Flask-Login setup
     global login_manager
@@ -361,8 +368,10 @@ def _register_routes(app: Flask) -> None:
     @app.route("/")
     @login_required
     def index():
-        stats = engine.get_stats(user_id=_get_current_user_id())
-        return render_template("index.html", stats=stats)
+        uid = _get_current_user_id()
+        stats = engine.get_stats(user_id=uid)
+        upcoming_events = engine.db.get_events(user_id=uid, upcoming_days=30)
+        return render_template("index.html", stats=stats, upcoming_events=upcoming_events)
 
     @app.route("/topics")
     @login_required
@@ -452,10 +461,15 @@ def _register_routes(app: Flask) -> None:
         # Get all tracked authors
         from unittest.mock import Mock
         tracked_authors_list = []
+        citing_set = set()
         if engine:
             res = engine.db.get_tracked_authors()
             if isinstance(res, list) and not isinstance(res, Mock):
                 tracked_authors_list = res
+            if paper_list:
+                citing_res = engine.db.get_papers_citing_user_work([p["arxiv_id"] for p in paper_list], uid)
+                if isinstance(citing_res, set) and not isinstance(citing_res, Mock):
+                    citing_set = citing_res
         followed_set = {a["name"].lower().strip() for a in tracked_authors_list if a["relationship"] == "follow"}
         collab_set = {a["name"].lower().strip() for a in tracked_authors_list if a["relationship"] == "collaborator"}
 
@@ -465,6 +479,7 @@ def _register_routes(app: Flask) -> None:
             p["tags"] = engine.db.get_paper_tags(p["arxiv_id"], user_id=uid)
             p["collections"] = engine.db.get_paper_collections(p["arxiv_id"], user_id=uid)
             p["in_reading_list"] = engine.db.is_in_reading_list(p["arxiv_id"], user_id=uid)
+            p["cites_user_work"] = p["arxiv_id"] in citing_set if not isinstance(citing_set, Mock) else False
             
             p["from_followed_author"] = False
             p["from_collaborator"] = False
@@ -518,6 +533,7 @@ def _register_routes(app: Flask) -> None:
         paper["collections"] = engine.db.get_paper_collections(arxiv_id, user_id=uid) if engine else []
         paper["notes"] = engine.db.get_paper_notes(arxiv_id, user_id=uid) if engine else []
         paper["in_reading_list"] = engine.db.is_in_reading_list(arxiv_id, user_id=uid) if engine else False
+        paper["cites_user_work"] = engine.db.check_if_paper_cites_user_work(arxiv_id, uid) if engine else False
 
         from unittest.mock import Mock
         tracked_authors_list = []
@@ -605,11 +621,18 @@ def _register_routes(app: Flask) -> None:
             reading_papers = engine.db.get_reading_list(user_id=uid, only_read=True)
         else:
             reading_papers = engine.db.get_reading_list(user_id=uid, only_unread=True)
+        citing_set = set()
+        from unittest.mock import Mock
+        if engine and reading_papers:
+            citing_res = engine.db.get_papers_citing_user_work([p["arxiv_id"] for p in reading_papers], uid)
+            if isinstance(citing_res, set) and not isinstance(citing_res, Mock):
+                citing_set = citing_res
         for p in reading_papers:
             p["rating"] = engine.db.get_latest_rating(p["arxiv_id"], user_id=uid)
             p["tags"] = engine.db.get_paper_tags(p["arxiv_id"], user_id=uid)
             p["collections"] = engine.db.get_paper_collections(p["arxiv_id"], user_id=uid)
             p["in_reading_list"] = True
+            p["cites_user_work"] = p["arxiv_id"] in citing_set if not isinstance(citing_set, Mock) else False
         return render_template("reading_list.html", papers=reading_papers, filter_type=filter_type)
 
     @app.route("/api/reading-list", methods=["POST"])
@@ -642,6 +665,68 @@ def _register_routes(app: Flask) -> None:
         if not success:
             return jsonify({"error": "failed to mark as read"}), 500
         return jsonify({"status": "ok"})
+
+    @app.route("/my-papers")
+    @login_required
+    def my_papers():
+        if not engine:
+            return "Engine not initialized", 500
+        uid = _get_current_user_id()
+        papers = engine.db.get_my_papers(user_id=uid)
+        return render_template("my_papers.html", papers=papers)
+
+    @app.route("/my-papers/add", methods=["POST"])
+    @login_required
+    def add_my_paper():
+        if not engine:
+            return "Engine not initialized", 500
+        uid = _get_current_user_id()
+        title = request.form.get("title", "").strip()
+        arxiv_id = request.form.get("arxiv_id", "").strip() or None
+        doi = request.form.get("doi", "").strip() or None
+        
+        if not title:
+            flash("Paper title is required.", "danger")
+            return redirect(url_for("my_papers"))
+            
+        if not arxiv_id and not doi:
+            flash("Either ArXiv ID or DOI must be provided.", "danger")
+            return redirect(url_for("my_papers"))
+            
+        success = engine.db.add_my_paper(title=title, arxiv_id=arxiv_id, doi=doi, user_id=uid)
+        if success:
+            row = None
+            if arxiv_id:
+                row = engine.db.conn.execute(
+                    "SELECT id FROM my_papers WHERE arxiv_id = ? AND user_id = ?",
+                    (arxiv_id, uid)
+                ).fetchone()
+            elif doi:
+                row = engine.db.conn.execute(
+                    "SELECT id FROM my_papers WHERE doi = ? AND user_id = ?",
+                    (doi, uid)
+                ).fetchone()
+            
+            if row:
+                engine.refresh_single_my_paper_citations(row["id"], uid)
+            flash(f"Successfully registered your paper '{title}'.", "success")
+        else:
+            flash("Failed to register paper. It may already be registered.", "danger")
+            
+        return redirect(url_for("my_papers"))
+
+    @app.route("/my-papers/delete/<int:paper_id>", methods=["POST"])
+    @login_required
+    def delete_my_paper(paper_id):
+        if not engine:
+            return "Engine not initialized", 500
+        uid = _get_current_user_id()
+        success = engine.db.delete_my_paper(paper_id, user_id=uid)
+        if success:
+            flash("Successfully removed paper registration.", "success")
+        else:
+            flash("Failed to remove paper registration.", "danger")
+        return redirect(url_for("my_papers"))
 
     @app.route("/api/explain/<path:arxiv_id>", methods=["GET"])
     @login_required
@@ -738,6 +823,71 @@ def _register_routes(app: Flask) -> None:
         if not success:
             return jsonify({"error": "failed to delete note"}), 500
         return jsonify({"status": "ok"})
+
+    @app.route("/notes")
+    @login_required
+    def notes_dashboard():
+        uid = _get_current_user_id()
+        all_notes = engine.db.get_all_notes(user_id=uid) if engine else []
+        papers_with_notes: dict[str, dict] = {}
+        for note in all_notes:
+            arxiv_id = note["arxiv_id"]
+            if arxiv_id not in papers_with_notes:
+                papers_with_notes[arxiv_id] = {
+                    "arxiv_id": arxiv_id,
+                    "title": note.get("title", arxiv_id),
+                    "authors": note.get("authors", []),
+                    "published": note.get("published", ""),
+                    "notes": [],
+                }
+            papers_with_notes[arxiv_id]["notes"].append(note)
+        return render_template("notes_dashboard.html", papers=list(papers_with_notes.values()))
+
+    @app.route("/api/collections/<int:collection_id>/export-notes")
+    @login_required
+    def export_collection_notes(collection_id):
+        uid = _get_current_user_id()
+        collection = engine.db.get_collection(collection_id) if engine else None
+        if not collection:
+            return jsonify({"error": "collection not found"}), 404
+        notes = engine.db.get_notes_for_collection(collection_id, user_id=uid) if engine else []
+
+        lines: list[str] = [f"# Study Notes: {collection['name']}\n"]
+        seen: set[str] = set()
+        for note in notes:
+            arxiv_id = note["arxiv_id"]
+            if arxiv_id not in seen:
+                seen.add(arxiv_id)
+                authors_raw = note.get("authors") or []
+                if isinstance(authors_raw, str):
+                    import json as _json
+                    try:
+                        authors_raw = _json.loads(authors_raw)
+                    except Exception:
+                        authors_raw = [authors_raw]
+                author_str = " and ".join(authors_raw)
+                year = (note.get("published") or "")[:4] or "unknown"
+                cite_key = f"{arxiv_id.replace('.', '_').replace('/', '_')}_{year}"
+                bibtex = (
+                    f"@article{{{cite_key},\n"
+                    f"  title = {{{note.get('title', '')}}},\n"
+                    f"  author = {{{author_str}}},\n"
+                    f"  year = {{{year}}},\n"
+                    f"  eprint = {{{arxiv_id}}},\n"
+                    f"  archivePrefix = {{arXiv}},\n"
+                    f"}}"
+                )
+                lines.append(f"\n---\n\n## {note.get('title', arxiv_id)}\n\n```bibtex\n{bibtex}\n```\n")
+            lines.append(f"\n{note['content']}\n")
+
+        md_content = "\n".join(lines)
+        collection_slug = collection["name"].lower().replace(" ", "_")
+        filename = f"notes_{collection_slug}.md"
+        return Response(
+            md_content,
+            mimetype="text/markdown",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
 
     @app.route("/api/tags", methods=["GET"])
     @login_required
@@ -1434,7 +1584,93 @@ def _register_routes(app: Flask) -> None:
         uid = _get_current_user_id()
         stats_data = engine.get_stats(user_id=uid)
         trends_data = get_trends_data(engine.data_dir, engine.embedding_model)
-        return render_template("trends.html", trends=trends_data, stats=stats_data)
+        alerts = engine.db.get_active_velocity_alerts(hours_back=48)
+        from unittest.mock import Mock
+        if isinstance(alerts, Mock):
+            alerts = []
+        upcoming_events = engine.db.get_events(user_id=uid, upcoming_days=90)
+        return render_template(
+            "trends.html",
+            trends=trends_data,
+            stats=stats_data,
+            alerts=alerts,
+            upcoming_events=upcoming_events,
+        )
+
+    @app.route("/settings/calendar", methods=["GET", "POST"])
+    @login_required
+    def settings_calendar():
+        if not engine:
+            return "Engine not initialised", 500
+        uid = _get_current_user_id()
+
+        if request.method == "POST":
+            action = request.form.get("action", "add")
+            name = request.form.get("name", "").strip()
+            date = request.form.get("date", "").strip()
+            etype = request.form.get("type", "conference")
+            notes = request.form.get("notes", "").strip()
+
+            if etype not in ("conference", "proposal", "other"):
+                etype = "conference"
+
+            if action == "add":
+                if not name or not date:
+                    flash("Name and date are required.", "danger")
+                else:
+                    new_id = engine.db.add_event(uid, name, date, etype, notes)
+                    if new_id:
+                        flash(f"Event \"{name}\" added.", "success")
+                    else:
+                        flash("Failed to add event.", "danger")
+
+            return redirect(url_for("settings_calendar"))
+
+        events = engine.db.get_events(user_id=uid)
+        stats_data = engine.get_stats(user_id=uid)
+        return render_template(
+            "settings_calendar.html",
+            events=events,
+            stats=stats_data,
+        )
+
+    @app.route("/settings/calendar/<int:event_id>/edit", methods=["POST"])
+    @login_required
+    def settings_calendar_edit(event_id):
+        if not engine:
+            return "Engine not initialised", 500
+        uid = _get_current_user_id()
+
+        name = request.form.get("name", "").strip()
+        date = request.form.get("date", "").strip()
+        etype = request.form.get("type", "conference")
+        notes = request.form.get("notes", "").strip()
+
+        if not name or not date:
+            flash("Name and date are required.", "danger")
+        elif etype not in ("conference", "proposal", "other"):
+            flash("Invalid event type.", "danger")
+        else:
+            ok = engine.db.update_event(event_id, uid, name, date, etype, notes)
+            if ok:
+                flash(f"Event updated.", "success")
+            else:
+                flash("Failed to update event.", "danger")
+
+        return redirect(url_for("settings_calendar"))
+
+    @app.route("/settings/calendar/<int:event_id>/delete", methods=["POST"])
+    @login_required
+    def settings_calendar_delete(event_id):
+        if not engine:
+            return "Engine not initialised", 500
+        uid = _get_current_user_id()
+        ok = engine.db.delete_event(event_id, uid)
+        if ok:
+            flash("Event deleted.", "success")
+        else:
+            flash("Failed to delete event.", "danger")
+        return redirect(url_for("settings_calendar"))
 
     @app.route("/unsubscribe/<token>")
     def unsubscribe(token):

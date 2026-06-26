@@ -22,12 +22,45 @@ class TestEmailDigest(unittest.TestCase):
             }
         ]
         trends = {"Machine learning": "AI models are improving."}
-        text, html = email_digest._build_email_content(papers, trends=trends, app_name="AURA")
+        alerts = [{"keyword": "sbi", "paper_count": 6, "created_at": "2026-06-26T12:00:00Z"}]
+        citing_papers = [
+            {
+                "title": "Citing Paper A",
+                "authors": ["Author B"],
+                "url": "http://arxiv.org/abs/2",
+                "summary": "This cites paper A.",
+            }
+        ]
+        group_papers = [
+            {
+                "title": "Group Paper A",
+                "authors": ["Author C"],
+                "url": "http://arxiv.org/abs/3",
+                "summary": "This is from the group.",
+            }
+        ]
+        text, html = email_digest._build_email_content(
+            papers, trends=trends, app_name="AURA", alerts=alerts,
+            citing_papers=citing_papers, group_papers=group_papers
+        )
         self.assertIn("Paper A", text)
         self.assertIn("Good summary", text)
         self.assertIn("Machine Learning", text)
         self.assertIn("AI models are improving", text)
+        self.assertIn("!!! SPIKE ALERTS !!!", text)
+        self.assertIn("sbi mentioned in 6 papers", text)
+        self.assertIn("Citing Paper A", text)
+        self.assertIn("This cites paper A", text)
+        self.assertIn("Group Paper A", text)
+        self.assertIn("This is from the group", text)
         self.assertIn("Paper A", html)
+        self.assertIn("Spike Alert", html)
+        self.assertIn("sbi", html)
+        self.assertIn("6", html)
+        self.assertIn("Citing Paper A", html)
+        self.assertIn("This cites paper A", html)
+        self.assertIn("Group Paper A", html)
+        self.assertIn("This is from the group", html)
 
     @patch("aura.email_digest.generate_monthly_trends")
     @patch("aura.email_digest._send_smtp_email")

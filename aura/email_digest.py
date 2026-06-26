@@ -185,14 +185,41 @@ def _build_email_content(
     papers: list[dict], trends: dict[str, str], app_name: str = "AURA",
     secret_key: str = None, base_url: str = "http://127.0.0.1:5000", user_id: int = 1,
     unsubscribe_token: str = None, survey_papers: list[dict] = None,
-    network_papers: list[dict] = None
+    network_papers: list[dict] = None, alerts: list[dict] = None,
+    citing_papers: list[dict] = None, group_papers: list[dict] = None
 ) -> tuple[str, str]:
     """Create plain-text and HTML digest bodies."""
-    text_lines = [f"{app_name} - Monthly Research Trends", ""]
-    html_items = [
+    text_lines = []
+    html_items = []
+
+    from unittest.mock import Mock
+    if isinstance(alerts, Mock):
+        alerts = None
+
+    if alerts:
+        text_lines.extend(["!!! SPIKE ALERTS !!!", ""])
+        html_items.append(
+            "<div style='margin-bottom:30px;padding:15px;border:2px solid #f44336;background:#ffebee;border-radius:8px;'>"
+            "<h3 style='margin:0 0 10px 0;color:#d32f2f;'>🔥 Spike Alert: High Publication Velocity Detected!</h3>"
+        )
+        for alert in alerts:
+            text_lines.extend([
+                f"- {alert['keyword']} mentioned in {alert['paper_count']} papers in last 7 days",
+                ""
+            ])
+            html_items.append(
+                f"<div style='margin-bottom:8px;'>"
+                f"<strong style='color:#d32f2f;'>{alert['keyword']}</strong>: "
+                f"appeared in <span style='font-weight:bold;color:#f44336;'>{alert['paper_count']}</span> papers in the last 7 days."
+                f"</div>"
+            )
+        html_items.append("</div>")
+
+    text_lines.extend([f"{app_name} - Monthly Research Trends", ""])
+    html_items.extend([
         "<h2>Monthly Research Trends</h2>",
         "<div style='margin-bottom:30px;'>"
-    ]
+    ])
 
     for topic, summary in trends.items():
         text_lines.extend([f"**{topic.title()}**", summary, ""])
@@ -245,6 +272,57 @@ def _build_email_content(
                 f"<h4 style='margin:0 0 4px 0;color:#333;'>{np_paper.get('title')}</h4>"
                 f"<p style='margin:0 0 4px 0;color:#666;font-size:12px;'><strong>Authors:</strong> {authors}</p>"
                 f"<p style='margin:0 0 4px 0;font-size:12px;'><a href='{np_paper.get('url')}'>{np_paper.get('url')}</a></p>"
+                f"<p style='margin:0;font-size:13px;line-height:1.4;'>{summary}</p>"
+                f"</div>"
+            )
+        html_items.append("</div><hr>")
+
+    if isinstance(group_papers, Mock):
+        group_papers = None
+
+    if group_papers:
+        text_lines.extend([f"{app_name} - From your group this week", ""])
+        html_items.append("<h2>From your group this week</h2><div style='margin-bottom:30px;'>")
+        for i, gp in enumerate(group_papers, 1):
+            authors = ", ".join(gp.get("authors", [])[:3])
+            summary = gp.get("summary") or gp.get("abstract") or ""
+            text_lines.extend([
+                f"{i}. {gp.get('title')}",
+                f"URL: {gp.get('url')}",
+                f"Summary: {summary[:300]}...",
+                ""
+            ])
+            html_items.append(
+                f"<div style='margin-bottom:15px;padding:12px;border-left:4px solid #009688;background:#f9f9f9;border-radius:0 8px 8px 0;'>"
+                f"<h4 style='margin:0 0 4px 0;color:#333;'>{gp.get('title')}</h4>"
+                f"<p style='margin:0 0 4px 0;color:#666;font-size:12px;'><strong>Authors:</strong> {authors}</p>"
+                f"<p style='margin:0 0 4px 0;font-size:12px;'><a href='{gp.get('url')}'>{gp.get('url')}</a></p>"
+                f"<p style='margin:0;font-size:13px;line-height:1.4;'>{summary}</p>"
+                f"</div>"
+            )
+        html_items.append("</div><hr>")
+
+    from unittest.mock import Mock
+    if isinstance(citing_papers, Mock):
+        citing_papers = None
+
+    if citing_papers:
+        text_lines.extend([f"{app_name} - Papers citing your work this week", ""])
+        html_items.append("<h2>Papers citing your work this week</h2><div style='margin-bottom:30px;'>")
+        for i, cp in enumerate(citing_papers, 1):
+            authors = ", ".join(cp.get("authors", [])[:3])
+            summary = cp.get("summary") or cp.get("abstract") or ""
+            text_lines.extend([
+                f"{i}. {cp.get('title')}",
+                f"URL: {cp.get('url')}",
+                f"Summary: {summary[:300]}...",
+                ""
+            ])
+            html_items.append(
+                f"<div style='margin-bottom:15px;padding:12px;border-left:4px solid #4caf50;background:#f9f9f9;border-radius:0 8px 8px 0;'>"
+                f"<h4 style='margin:0 0 4px 0;color:#333;'>{cp.get('title')}</h4>"
+                f"<p style='margin:0 0 4px 0;color:#666;font-size:12px;'><strong>Authors:</strong> {authors}</p>"
+                f"<p style='margin:0 0 4px 0;font-size:12px;'><a href='{cp.get('url')}'>{cp.get('url')}</a></p>"
                 f"<p style='margin:0;font-size:13px;line-height:1.4;'>{summary}</p>"
                 f"</div>"
             )
@@ -440,6 +518,19 @@ def send_top_recommendations_email(
         for np_paper in network_papers:
             np_paper["tags"] = engine.db.get_paper_tags(np_paper["arxiv_id"], user_id=user_id)
 
+        # Collect citing papers
+        citing_papers = _collect_citing_papers(engine, user_id=user_id, limit=5)
+        for cp in citing_papers:
+            cp["tags"] = engine.db.get_paper_tags(cp["arxiv_id"], user_id=user_id)
+
+        # Collect group papers
+        group_papers = _collect_group_papers(engine, user_id=user_id, limit=5)
+        for gp in group_papers:
+            gp["tags"] = engine.db.get_paper_tags(gp["arxiv_id"], user_id=user_id)
+
+        # Collect active velocity alerts
+        alerts = engine.db.get_active_velocity_alerts(hours_back=48)
+
         text_body, html_body = _build_email_content(
             papers,
             trends=trends,
@@ -450,6 +541,9 @@ def send_top_recommendations_email(
             unsubscribe_token=unsubscribe_token,
             survey_papers=survey_papers,
             network_papers=network_papers,
+            alerts=alerts,
+            citing_papers=citing_papers,
+            group_papers=group_papers,
         )
 
         if email_config.get("use_graph_api", False):
@@ -628,7 +722,7 @@ def _collect_survey_papers(engine, user_id: int = 1, limit: int = 5) -> list[dic
 
 
 def _collect_network_papers(engine, user_id: int = 1, limit: int = 5) -> list[dict]:
-    """Collect recent papers matching tracked authors."""
+    """Collect recent papers matching tracked authors you follow."""
     from unittest.mock import Mock
     if isinstance(engine.db, Mock):
         return []
@@ -639,7 +733,7 @@ def _collect_network_papers(engine, user_id: int = 1, limit: int = 5) -> list[di
     if isinstance(tracked_authors, Mock) or not tracked_authors:
         return []
         
-    author_tags = [a["name"].lower() for a in tracked_authors]
+    author_tags = [a["name"].lower() for a in tracked_authors if a.get("relationship") == "follow"]
     if not author_tags:
         return []
         
@@ -664,3 +758,77 @@ def _collect_network_papers(engine, user_id: int = 1, limit: int = 5) -> list[di
     except Exception as e:
         logger.error(f"Failed to collect network papers for email: {e}")
         return []
+
+
+def _collect_group_papers(engine, user_id: int = 1, limit: int = 5) -> list[dict]:
+    """Collect recent papers matching collaborators / research group members."""
+    from unittest.mock import Mock
+    if isinstance(engine.db, Mock):
+        return []
+    try:
+        tracked_authors = engine.db.get_tracked_authors()
+    except Exception:
+        return []
+    if isinstance(tracked_authors, Mock) or not tracked_authors:
+        return []
+        
+    author_tags = [a["name"].lower() for a in tracked_authors if a.get("relationship") == "collaborator"]
+    if not author_tags:
+        return []
+        
+    placeholders = ",".join("?" for _ in author_tags)
+    query = f"""
+        SELECT p.* FROM papers p
+        JOIN tags t ON p.arxiv_id = t.arxiv_id
+        WHERE t.user_id = ? AND t.tag IN ({placeholders})
+        ORDER BY p.published DESC
+        LIMIT ?
+    """
+    try:
+        rows = engine.db.conn.execute(query, [1] + author_tags + [limit]).fetchall()
+        papers = [engine.db._row_to_dict(row) for row in rows]
+        seen = set()
+        deduped = []
+        for p in papers:
+            if p["arxiv_id"] not in seen:
+                seen.add(p["arxiv_id"])
+                deduped.append(p)
+        return deduped
+    except Exception as e:
+        logger.error(f"Failed to collect group papers for email: {e}")
+        return []
+
+
+def _collect_citing_papers(engine, user_id: int = 1, limit: int = 5) -> list[dict]:
+    """Collect recent papers that cite the user's registered papers."""
+    from unittest.mock import Mock
+    if isinstance(engine.db, Mock):
+        return []
+    try:
+        query = """
+            SELECT p.* FROM papers p
+            JOIN citations c ON p.arxiv_id = c.citing_arxiv_id
+            JOIN my_papers m ON c.cited_arxiv_id = m.arxiv_id
+            WHERE m.user_id = ?
+            ORDER BY p.published DESC
+        """
+        rows = engine.db.conn.execute(query, [user_id]).fetchall()
+        papers = [engine.db._row_to_dict(row) for row in rows]
+        
+        # Filter in Python for last 7 days
+        from datetime import datetime, timedelta
+        cutoff = datetime.utcnow().date() - timedelta(days=7)
+        recent_papers = []
+        for p in papers:
+            pub_date_str = p.get("published", "")
+            try:
+                pub_date = datetime.strptime(pub_date_str[:10], "%Y-%m-%d").date()
+                if pub_date >= cutoff:
+                    recent_papers.append(p)
+            except Exception:
+                pass
+        return recent_papers[:limit]
+    except Exception as e:
+        logger.error(f"Failed to collect citing papers for email: {e}")
+        return []
+

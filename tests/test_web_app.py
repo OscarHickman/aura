@@ -68,6 +68,8 @@ class TestWebApp(unittest.TestCase):
         self.engine.db.get_ratings_history.return_value = []
         self.engine.db.get_papers_by_authors.return_value = []
         self.engine.db.is_in_reading_list.return_value = False
+        self.engine.db.get_events.return_value = []
+        self.engine.db.get_all_notes.return_value = []
         self.engine.get_similar_papers.return_value = []
         self.engine.db.get_task_status.return_value = {"status": "SUCCESS", "progress": 10, "total": 10}
         self.engine.db.search_papers.return_value = [
@@ -446,6 +448,55 @@ class TestWebApp(unittest.TestCase):
         self.assertIn(b"test note", resp.data)
         self.assertIn(b"Personal Notes", resp.data)
 
+    def test_notes_dashboard(self):
+        self.engine.db.get_all_notes.return_value = [
+            {
+                "id": 1,
+                "arxiv_id": "2401.00001",
+                "content": "Dashboard note",
+                "created_at": "2026-01-01T00:00:00",
+                "updated_at": "2026-01-02T00:00:00",
+                "title": "A Great Astro Paper",
+                "authors": ["Ada"],
+                "published": "2026-01-01",
+                "categories": ["astro-ph.CO"],
+            }
+        ]
+        resp = self.client.get("/notes")
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b"Study Notes", resp.data)
+        self.assertIn(b"Dashboard note", resp.data)
+        self.assertIn(b"A Great Astro Paper", resp.data)
+
+    def test_export_collection_notes(self):
+        self.engine.db.get_collection.return_value = {"id": 1, "name": "My Collection"}
+        self.engine.db.get_notes_for_collection.return_value = [
+            {
+                "id": 1,
+                "arxiv_id": "2401.00001",
+                "content": "Great methods section.",
+                "created_at": "2026-01-01T00:00:00",
+                "updated_at": "2026-01-01T00:00:00",
+                "title": "A Great Astro Paper",
+                "authors": ["Ada"],
+                "published": "2026-01-01",
+                "categories": ["astro-ph.CO"],
+            }
+        ]
+        resp = self.client.get("/api/collections/1/export-notes")
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.mimetype, "text/markdown")
+        content = resp.data.decode("utf-8")
+        self.assertIn("Study Notes: My Collection", content)
+        self.assertIn("A Great Astro Paper", content)
+        self.assertIn("Great methods section.", content)
+        self.assertIn("@article{", content)
+        self.assertIn("notes_my_collection.md", resp.headers["Content-Disposition"])
+
+    def test_export_collection_notes_not_found(self):
+        self.engine.db.get_collection.return_value = None
+        resp = self.client.get("/api/collections/999/export-notes")
+        self.assertEqual(resp.status_code, 404)
 
     def test_reading_list_api_and_ui_routes(self):
         # 1. API: list reading list
@@ -780,6 +831,58 @@ class TestWebApp(unittest.TestCase):
         # Access /papers?tag=desi to test filtering by a survey tag
         resp_filter = self.client.get("/papers?tag=desi")
         self.assertEqual(resp_filter.status_code, 200)
+
+    def test_my_papers_routes_and_badges(self):
+        # 1. Mock database methods on self.engine.db
+        self.engine.db.get_my_papers.return_value = [
+            {
+                "id": 12,
+                "arxiv_id": "2401.12345",
+                "doi": "10.1088/12345",
+                "title": "My Test Paper",
+                "created_at": "2026-06-26T12:00:00"
+            }
+        ]
+        self.engine.db.add_my_paper.return_value = True
+        self.engine.db.delete_my_paper.return_value = True
+        
+        # Mock connection and cursor/fetchone to return a dummy row
+        from unittest.mock import MagicMock
+        dummy_row = MagicMock()
+        dummy_row.__getitem__.side_effect = lambda key: 12 if key == "id" else None
+        self.engine.db.conn.execute.return_value.fetchone.return_value = dummy_row
+        
+        # Patch refresh_single_my_paper_citations to do nothing
+        with patch.object(self.engine, "refresh_single_my_paper_citations") as mock_refresh:
+            # Test GET /my-papers
+            resp = self.client.get("/my-papers")
+            self.assertEqual(resp.status_code, 200)
+            self.assertIn(b"My Test Paper", resp.data)
+            self.assertIn(b"2401.12345", resp.data)
+            
+            # Test POST /my-papers/add
+            resp_add = self.client.post("/my-papers/add", data={
+                "title": "New Paper",
+                "arxiv_id": "2401.54321",
+                "doi": ""
+            }, follow_redirects=True)
+            self.assertEqual(resp_add.status_code, 200)
+            self.assertIn(b"Successfully registered your paper", resp_add.data)
+            mock_refresh.assert_called_once()
+            
+            # Test POST /my-papers/delete/<id>
+            resp_del = self.client.post("/my-papers/delete/12", follow_redirects=True)
+            self.assertEqual(resp_del.status_code, 200)
+            self.assertIn(b"Successfully removed paper registration", resp_del.data)
+
+        # 2. Test paper card badging for "Cites your work"
+        # Mock get_papers_citing_user_work to return a set containing the mocked paper's arxiv_id
+        self.engine.db.get_papers_citing_user_work.return_value = {"2401.00001"}
+        
+        # Access papers page (contains paper 2401.00001)
+        resp_papers = self.client.get("/papers")
+        self.assertEqual(resp_papers.status_code, 200)
+        self.assertIn(b"Cites your work", resp_papers.data)
 
 
 if __name__ == "__main__":

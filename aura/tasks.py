@@ -317,6 +317,10 @@ def refresh_ads_metadata_task(self):
             
             engine.db.update_task_progress(task_id, progress=min(i + batch_size, total_papers), total=total_papers)
             
+        # Refresh citation relationships for my_papers
+        logger.info(f"Task {task_id}: Refreshing my_papers citations from ADS...")
+        engine.refresh_my_papers_citations()
+            
         engine.db.complete_task(task_id, status="SUCCESS", result={"updated_papers": updated_count})
         return {"updated_papers": updated_count}
         

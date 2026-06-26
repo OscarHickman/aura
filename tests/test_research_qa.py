@@ -134,7 +134,9 @@ class TestRecommenderAndWebResearchQA(unittest.TestCase):
         self.db.get_public_collections.return_value = []
         self.db.get_all_users.return_value = [self._test_user]
         self.db.get_fetch_log.return_value = []
-        
+        self.db.get_events.return_value = []
+        self.db.get_all_notes.return_value = []
+
         self.db.get_stats.return_value = {
             "total_papers": 1,
             "total_rated": 5,

@@ -812,6 +812,86 @@ class ADSSource(PaperSource):
 
         return updated_papers
 
+    def fetch_citations_for_identifier(self, identifier: str) -> list[dict]:
+        """Fetch papers from ADS that cite a given identifier (arxiv_id, doi, or bibcode)."""
+        if not self.api_key:
+            logger.warning("NASA ADS API key not configured. Skipping citation fetch.")
+            return []
+
+        # Formulate query
+        if identifier.startswith("10."):
+            # DOI
+            query = f'citations(doi:"{identifier}")'
+        elif identifier.startswith("ads:") or len(identifier) == 19:
+            bib = identifier.split(":", 1)[1] if identifier.startswith("ads:") else identifier
+            query = f'citations(bibcode:"{bib}")'
+        else:
+            arxiv = identifier
+            if arxiv.lower().startswith("arxiv:"):
+                arxiv = arxiv.split(":", 1)[1]
+            query = f'citations(identifier:"arXiv:{arxiv}")'
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}"
+        }
+        params = {
+            "q": query,
+            "fl": "identifier,bibcode,title,abstract,author,pubdate,citation_count,read_count,property,arxiv_class",
+            "rows": 200,
+            "sort": "date desc"
+        }
+
+        logger.info(f"Fetching citing papers from NASA ADS: query='{query}'")
+        papers = []
+        try:
+            resp = requests.get(self.ADS_API_URL, params=params, headers=headers, timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
+            docs = data.get("response", {}).get("docs", [])
+            for doc in docs:
+                paper = self._parse_entry(doc)
+                if paper:
+                    papers.append(paper)
+        except requests.RequestException as e:
+            logger.error(f"NASA ADS API citation fetch failed: {e}")
+        return papers
+
+    def fetch_paper_by_identifier(self, identifier: str) -> Optional[dict]:
+        """Fetch metadata for a single paper by arxiv_id, doi, or bibcode from ADS."""
+        if not self.api_key:
+            return None
+        
+        if identifier.startswith("10."):
+            query = f'doi:"{identifier}"'
+        elif identifier.startswith("ads:") or len(identifier) == 19:
+            bib = identifier.split(":", 1)[1] if identifier.startswith("ads:") else identifier
+            query = f'bibcode:"{bib}"'
+        else:
+            arxiv = identifier
+            if arxiv.lower().startswith("arxiv:"):
+                arxiv = arxiv.split(":", 1)[1]
+            query = f'identifier:"arXiv:{arxiv}"'
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}"
+        }
+        params = {
+            "q": query,
+            "fl": "identifier,bibcode,title,abstract,author,pubdate,citation_count,read_count,property,arxiv_class",
+            "rows": 1,
+        }
+
+        try:
+            resp = requests.get(self.ADS_API_URL, params=params, headers=headers, timeout=15)
+            resp.raise_for_status()
+            data = resp.json()
+            docs = data.get("response", {}).get("docs", [])
+            if docs:
+                return self._parse_entry(docs[0])
+        except Exception as e:
+            logger.error(f"Failed to fetch paper by identifier {identifier}: {e}")
+        return None
+
 
 # Register core sources statically
 PaperSourceRegistry.register("arxiv", ArxivSource)

@@ -13,6 +13,24 @@ categories:
 #  - cs.LG        # Machine Learning (Computer Science)
 #  - stat.ML      # Machine Learning (Statistics)
 
+# Simulation and computational cosmology codes/libraries to track and auto-tag
+simulation_codes:
+  - IllustrisTNG
+  - CAMELS
+  - EAGLE
+  - Millennium
+  - GADGET
+  - RAMSES
+  - GALFORM
+  - CAMB
+  - CLASS
+  - Cobaya
+  - emcee
+  - MultiNest
+  - PolyChord
+  - JAX
+  - sbi
+
 # Where to store the database, model weights, etc.
 data_dir: data
 
@@ -49,3 +67,14 @@ scheduler:
   enabled: false
   fetch_hour: 6        # Hour (UTC) to auto-fetch (6 AM UTC)
   fetch_minute: 0
+
+# Velocity alert settings
+velocity_alerts:
+  enabled: true
+  threshold: 5         # Alert when a keyword appears in >5 papers in a rolling 7-day window
+  keywords:
+    - IllustrisTNG
+    - CAMELS
+    - EAGLE
+    - sbi
+    - JAX

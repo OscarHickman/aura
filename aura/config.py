@@ -37,6 +37,12 @@ def get_validated_config(config_path: str = "config.yaml") -> dict:
     # 1. Apply defaults if not present
     if "categories" not in config:
         config["categories"] = ["astro-ph.CO", "astro-ph.GA"]
+    if "simulation_codes" not in config:
+        config["simulation_codes"] = [
+            "IllustrisTNG", "CAMELS", "EAGLE", "Millennium", "GADGET",
+            "RAMSES", "GALFORM", "CAMB", "CLASS", "Cobaya", "emcee",
+            "MultiNest", "PolyChord", "JAX", "sbi"
+        ]
     if "data_dir" not in config:
         config["data_dir"] = "data"
     if "embedding_model" not in config:
@@ -72,6 +78,15 @@ def get_validated_config(config_path: str = "config.yaml") -> dict:
     # Vector store defaults
     vs = config.setdefault("vector_store", {})
     vs.setdefault("provider", "numpy")
+
+    # Velocity alerts defaults
+    va = config.setdefault("velocity_alerts", {})
+    va.setdefault("enabled", True)
+    va.setdefault("threshold", 5)
+    if "keywords" not in va:
+        va["keywords"] = list(config.get("simulation_codes", []))
+
+    config.setdefault("collaborator_boost", 0.20)
 
     # 2. Merge Legacy and Env configurations
     email = config.setdefault("email", {})

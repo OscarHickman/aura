@@ -15,11 +15,16 @@ logger = logging.getLogger(__name__)
 class PaperDatabase:
     """SQLite database for papers, embeddings, and user feedback."""
 
-    def __init__(self, db_path: str | Path):
+    def __init__(self, db_path: str | Path, simulation_codes: list[str] | None = None):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
+        self.simulation_codes = simulation_codes or [
+            "IllustrisTNG", "CAMELS", "EAGLE", "Millennium", "GADGET",
+            "RAMSES", "GALFORM", "CAMB", "CLASS", "Cobaya", "emcee",
+            "MultiNest", "PolyChord", "JAX", "sbi"
+        ]
         self._create_tables()
 
     def _create_tables(self) -> None:
@@ -217,7 +222,49 @@ class PaperDatabase:
                 fetched_at TEXT NOT NULL,
                 FOREIGN KEY (arxiv_id) REFERENCES papers(arxiv_id) ON DELETE CASCADE
             );
+
+            CREATE TABLE IF NOT EXISTS weekly_velocity (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tag TEXT NOT NULL,
+                week_start TEXT NOT NULL,
+                paper_count INTEGER NOT NULL,
+                UNIQUE(tag, week_start)
+            );
+
+            CREATE TABLE IF NOT EXISTS velocity_alerts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                keyword TEXT NOT NULL,
+                paper_count INTEGER NOT NULL,
+                window_start TEXT NOT NULL,
+                window_end TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                UNIQUE(keyword, created_at)
+            );
+
+            CREATE TABLE IF NOT EXISTS my_papers (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL DEFAULT 1,
+                arxiv_id TEXT,
+                doi TEXT,
+                title TEXT,
+                created_at TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_my_papers_user_arxiv ON my_papers(user_id, arxiv_id) WHERE arxiv_id IS NOT NULL;
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_my_papers_user_doi ON my_papers(user_id, doi) WHERE doi IS NOT NULL;
+
+            CREATE TABLE IF NOT EXISTS events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL DEFAULT 1,
+                name TEXT NOT NULL,
+                date TEXT NOT NULL,
+                type TEXT NOT NULL DEFAULT 'conference',
+                notes TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_events_user_id ON events(user_id);
+            CREATE INDEX IF NOT EXISTS idx_events_date ON events(date);
         """)
+
         self.conn.commit()
 
         # Phase 2: run column migrations before creating indexes that reference new columns
@@ -358,6 +405,29 @@ class PaperDatabase:
         # Seed default surveys
         self._seed_surveys()
 
+        # Create events table (Phase 13.3)
+        self.conn.executescript("""
+            CREATE TABLE IF NOT EXISTS events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL DEFAULT 1,
+                name TEXT NOT NULL,
+                date TEXT NOT NULL,
+                type TEXT NOT NULL DEFAULT 'conference',
+                notes TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_events_user_id ON events(user_id);
+            CREATE INDEX IF NOT EXISTS idx_events_date ON events(date);
+        """)
+        self.conn.commit()
+
+        # Seed default events
+        self._seed_events()
+
+        # Auto-tag any existing papers for simulations
+        self.auto_tag_all_existing_papers_simulations()
+
+
     def _add_column_if_missing(self, table: str, column: str, definition: str) -> None:
         """Add a column to a table if it does not already exist."""
         cols = [row[1] for row in self.conn.execute(f"PRAGMA table_info({table})")]
@@ -477,6 +547,8 @@ class PaperDatabase:
             is_new = cursor.rowcount > 0
             if is_new:
                 self.auto_tag_paper_surveys(paper["arxiv_id"], paper["title"], paper["abstract"])
+                self.auto_tag_paper_simulations(paper["arxiv_id"], paper["title"], paper["abstract"])
+                self.update_weekly_velocity_history()
             return is_new
         except sqlite3.Error as e:
             logger.error(f"Failed to add paper {paper.get('arxiv_id')}: {e}")
@@ -528,6 +600,7 @@ class PaperDatabase:
                         )
                         # We also auto tag new surveys if the categories changed, just in case
                         self.auto_tag_paper_surveys(paper["arxiv_id"], paper["title"], paper["abstract"])
+                        self.auto_tag_paper_simulations(paper["arxiv_id"], paper["title"], paper["abstract"])
                     continue
 
                 cursor = self.conn.execute(
@@ -554,11 +627,14 @@ class PaperDatabase:
                 )
                 if cursor.rowcount > 0:
                     self.auto_tag_paper_surveys(paper["arxiv_id"], paper["title"], paper["abstract"])
+                    self.auto_tag_paper_simulations(paper["arxiv_id"], paper["title"], paper["abstract"])
                     self.auto_tag_paper_authors(paper["arxiv_id"], paper["authors"])
                     count += 1
             except sqlite3.Error as e:
                 logger.error(f"Failed to add paper {paper.get('arxiv_id')}: {e}")
         self.conn.commit()
+        if count > 0:
+            self.update_weekly_velocity_history()
         return count
 
     def update_embedding(self, arxiv_id: str, embedding: np.ndarray):
@@ -1101,7 +1177,11 @@ class PaperDatabase:
     def get_paper_tags(self, arxiv_id: str, user_id: int = 1) -> list[str]:
         """Get all tags a user has applied to a specific paper."""
         rows = self.conn.execute(
-            "SELECT tag FROM tags WHERE user_id = ? AND arxiv_id = ? ORDER BY tag ASC",
+            """
+            SELECT DISTINCT tag FROM tags 
+            WHERE ((user_id = ?) OR (user_id = 1 AND source != 'user')) AND arxiv_id = ? 
+            ORDER BY tag ASC
+            """,
             (user_id, arxiv_id),
         ).fetchall()
         return [row["tag"] for row in rows]
@@ -1109,7 +1189,11 @@ class PaperDatabase:
     def get_all_tags(self, user_id: int = 1) -> list[str]:
         """Get all unique tags created by a user."""
         rows = self.conn.execute(
-            "SELECT DISTINCT tag FROM tags WHERE user_id = ? ORDER BY tag ASC",
+            """
+            SELECT DISTINCT tag FROM tags 
+            WHERE user_id = ? OR (user_id = 1 AND source != 'user')
+            ORDER BY tag ASC
+            """,
             (user_id,),
         ).fetchall()
         return [row["tag"] for row in rows]
@@ -1122,7 +1206,7 @@ class PaperDatabase:
             """
             SELECT p.* FROM papers p
             INNER JOIN tags t ON p.arxiv_id = t.arxiv_id
-            WHERE t.tag = ? AND t.user_id = ?
+            WHERE t.tag = ? AND (t.user_id = ? OR (t.user_id = 1 AND t.source != 'user'))
             ORDER BY p.published DESC
             LIMIT ? OFFSET ?
             """,
@@ -1367,6 +1451,37 @@ class PaperDatabase:
         rows = self.conn.execute(
             "SELECT * FROM notes WHERE user_id = ? AND arxiv_id = ? ORDER BY created_at DESC",
             (user_id, arxiv_id),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_all_notes(self, user_id: int = 1) -> list[dict]:
+        """Return all notes with associated paper metadata, ordered by most recently updated."""
+        rows = self.conn.execute(
+            """
+            SELECT n.id, n.arxiv_id, n.content, n.created_at, n.updated_at,
+                   p.title, p.authors, p.published, p.categories
+            FROM notes n
+            JOIN papers p ON n.arxiv_id = p.arxiv_id
+            WHERE n.user_id = ?
+            ORDER BY n.updated_at DESC
+            """,
+            (user_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def get_notes_for_collection(self, collection_id: int, user_id: int = 1) -> list[dict]:
+        """Return all notes for papers in a collection, with paper metadata."""
+        rows = self.conn.execute(
+            """
+            SELECT n.id, n.arxiv_id, n.content, n.created_at, n.updated_at,
+                   p.title, p.authors, p.published, p.categories
+            FROM notes n
+            JOIN papers p ON n.arxiv_id = p.arxiv_id
+            JOIN collection_papers cp ON cp.arxiv_id = n.arxiv_id
+            WHERE n.user_id = ? AND cp.collection_id = ?
+            ORDER BY p.published DESC, n.updated_at DESC
+            """,
+            (user_id, collection_id),
         ).fetchall()
         return [dict(row) for row in rows]
 
@@ -1915,6 +2030,128 @@ class PaperDatabase:
         for paper in papers:
             self.auto_tag_paper_surveys(paper["arxiv_id"], paper["title"], paper["abstract"])
 
+    # ------------------------------------------------------------------
+    # Events (Phase 13.3 — Conference & Proposal Deadline Calendar)
+    # ------------------------------------------------------------------
+
+    def _seed_events(self) -> None:
+        """Seed default cosmology conferences and recurring proposal windows if none exist for user 1."""
+        existing = self.conn.execute(
+            "SELECT COUNT(*) FROM events WHERE user_id = 1"
+        ).fetchone()[0]
+        if existing > 0:
+            return
+
+        from datetime import date, timedelta
+
+        this_year = date.today().year
+        next_year = this_year + 1
+
+        default_events = [
+            # ── Annual cosmology conferences ──────────────────────────────
+            ("American Astronomical Society (AAS) Winter Meeting", f"{next_year}-01-12", "conference"),
+            ("COSMO (International Cosmology Conference)", f"{this_year}-09-08", "conference"),
+            ("Texas Symposium on Relativistic Astrophysics", f"{this_year}-12-08", "conference"),
+            ("IAU General Assembly", f"{next_year}-08-02", "conference"),
+            ("European Astronomical Society (EAS) Annual Meeting", f"{next_year}-06-23", "conference"),
+            ("DESI Collaboration Meeting", f"{this_year}-10-14", "conference"),
+            ("Euclid Consortium Meeting", f"{this_year}-11-04", "conference"),
+            ("CMB-S4 Collaboration Workshop", f"{this_year}-09-22", "conference"),
+            # ── Recurring ESO proposal windows ───────────────────────────
+            ("ESO Period Proposal Deadline (Period A)", f"{this_year}-09-30", "proposal"),
+            ("ESO Period Proposal Deadline (Period B)", f"{next_year}-03-31", "proposal"),
+            # ── HST proposal window ───────────────────────────────────────
+            ("HST Cycle Proposal Deadline", f"{next_year}-04-07", "proposal"),
+            # ── JWST proposal windows ─────────────────────────────────────
+            ("JWST Cycle GO Proposal Deadline", f"{next_year}-01-17", "proposal"),
+        ]
+
+        now = datetime.utcnow().isoformat()
+        for name, date_str, etype in default_events:
+            try:
+                self.conn.execute(
+                    "INSERT OR IGNORE INTO events (user_id, name, date, type, created_at) VALUES (1, ?, ?, ?, ?)",
+                    (name, date_str, etype, now),
+                )
+            except Exception:
+                pass
+        self.conn.commit()
+
+    def get_events(self, user_id: int = 1, upcoming_days: int | None = None) -> list[dict]:
+        """Return events for a user, optionally limited to the next N days."""
+        try:
+            if upcoming_days is not None:
+                from datetime import date, timedelta
+                today = date.today().isoformat()
+                cutoff = (date.today() + timedelta(days=upcoming_days)).isoformat()
+                rows = self.conn.execute(
+                    "SELECT id, name, date, type, notes FROM events "
+                    "WHERE user_id = ? AND date >= ? AND date <= ? ORDER BY date ASC",
+                    (user_id, today, cutoff),
+                ).fetchall()
+            else:
+                rows = self.conn.execute(
+                    "SELECT id, name, date, type, notes FROM events "
+                    "WHERE user_id = ? ORDER BY date ASC",
+                    (user_id,),
+                ).fetchall()
+            return [dict(r) for r in rows]
+        except sqlite3.Error as e:
+            logger.error(f"Failed to get events: {e}")
+            return []
+
+    def get_event(self, event_id: int, user_id: int = 1) -> dict | None:
+        """Return a single event by id."""
+        try:
+            row = self.conn.execute(
+                "SELECT id, name, date, type, notes FROM events WHERE id = ? AND user_id = ?",
+                (event_id, user_id),
+            ).fetchone()
+            return dict(row) if row else None
+        except sqlite3.Error as e:
+            logger.error(f"Failed to get event {event_id}: {e}")
+            return None
+
+    def add_event(self, user_id: int, name: str, date: str, etype: str, notes: str = "") -> int | None:
+        """Insert a new event and return its id."""
+        try:
+            now = datetime.utcnow().isoformat()
+            cursor = self.conn.execute(
+                "INSERT INTO events (user_id, name, date, type, notes, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (user_id, name, date, etype, notes or None, now),
+            )
+            self.conn.commit()
+            return cursor.lastrowid
+        except sqlite3.Error as e:
+            logger.error(f"Failed to add event: {e}")
+            return None
+
+    def update_event(self, event_id: int, user_id: int, name: str, date: str, etype: str, notes: str = "") -> bool:
+        """Update an existing event. Returns True on success."""
+        try:
+            self.conn.execute(
+                "UPDATE events SET name = ?, date = ?, type = ?, notes = ? WHERE id = ? AND user_id = ?",
+                (name, date, etype, notes or None, event_id, user_id),
+            )
+            self.conn.commit()
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Failed to update event {event_id}: {e}")
+            return False
+
+    def delete_event(self, event_id: int, user_id: int) -> bool:
+        """Delete an event. Returns True on success."""
+        try:
+            self.conn.execute(
+                "DELETE FROM events WHERE id = ? AND user_id = ?",
+                (event_id, user_id),
+            )
+            self.conn.commit()
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Failed to delete event {event_id}: {e}")
+            return False
+
     def get_surveys(self) -> list[dict]:
         """Get all tracked surveys."""
         try:
@@ -1984,6 +2221,270 @@ class PaperDatabase:
                     break
             if matched:
                 self.add_tag(arxiv_id, name, source="survey")
+
+    def auto_tag_paper_simulations(self, arxiv_id: str, title: str, abstract: str) -> None:
+        """Auto-tag a paper if it mentions any listed simulation codes/libraries."""
+        title_lower = title.lower()
+        abstract_lower = abstract.lower()
+        import re
+        for code in self.simulation_codes:
+            pattern = r"\b" + re.escape(code.lower()) + r"\b"
+            if re.search(pattern, title_lower) or re.search(pattern, abstract_lower):
+                self.add_tag(arxiv_id, code, source="simulation")
+
+    def auto_tag_all_existing_papers_simulations(self) -> None:
+        """Find any paper that matches a simulation code keyword and tag it."""
+        try:
+            papers = self.conn.execute("SELECT arxiv_id, title, abstract FROM papers").fetchall()
+            for paper in papers:
+                self.auto_tag_paper_simulations(paper["arxiv_id"], paper["title"], paper["abstract"])
+        except sqlite3.Error as e:
+            logger.error(f"Failed to auto-tag existing papers for simulations: {e}")
+
+    def update_weekly_velocity_history(self) -> None:
+        """Calculate and store weekly paper count per simulation code/tag."""
+        from datetime import timedelta
+        try:
+            # Find all simulation tags and their papers
+            cursor = self.conn.execute(
+                """
+                SELECT t.tag, p.published FROM tags t
+                JOIN papers p ON t.arxiv_id = p.arxiv_id
+                WHERE t.source = 'simulation'
+                """
+            )
+            rows = cursor.fetchall()
+            
+            # Group by tag and week start
+            counts = {}
+            for row in rows:
+                tag = row["tag"]
+                published = row["published"]
+                try:
+                    # Get Monday of the publication week
+                    dt = datetime.fromisoformat(published.replace("Z", "+00:00")).date()
+                    week_start = (dt - timedelta(days=dt.weekday())).isoformat()
+                    key = (tag, week_start)
+                    counts[key] = counts.get(key, 0) + 1
+                except Exception:
+                    continue
+                    
+            # Insert or replace in weekly_velocity table
+            for (tag, week_start), count in counts.items():
+                self.conn.execute(
+                    """
+                    INSERT OR REPLACE INTO weekly_velocity (tag, week_start, paper_count)
+                    VALUES (?, ?, ?)
+                    """,
+                    (tag, week_start, count)
+                )
+            self.conn.commit()
+        except sqlite3.Error as e:
+            logger.error(f"Failed to update weekly velocity history: {e}")
+
+    def check_velocity_alerts(self, threshold: int = 5, keywords: list[str] | None = None) -> list[dict]:
+        """Check if any tracked keyword has appeared in > threshold papers in the last 7 days.
+        
+        If so, creates a velocity alert in the database and returns the list of new alerts.
+        """
+        from datetime import timedelta
+        if keywords is None:
+            keywords = self.simulation_codes
+            
+        now = datetime.utcnow()
+        seven_days_ago = (now - timedelta(days=7)).isoformat()
+        
+        # Get all papers in the last 7 days
+        try:
+            cursor = self.conn.execute(
+                "SELECT arxiv_id, title, abstract, published FROM papers WHERE published >= ?",
+                (seven_days_ago,)
+            )
+            papers = cursor.fetchall()
+        except sqlite3.Error as e:
+            logger.error(f"Failed to fetch papers for velocity alerts check: {e}")
+            return []
+        
+        alerts_triggered = []
+        import re
+        for kw in keywords:
+            match_count = 0
+            matching_papers = []
+            kw_lower = kw.lower()
+            pattern = r"\b" + re.escape(kw_lower) + r"\b"
+            
+            for paper in papers:
+                title = paper["title"].lower()
+                abstract = paper["abstract"].lower()
+                if re.search(pattern, title) or re.search(pattern, abstract):
+                    match_count += 1
+                    matching_papers.append(paper)
+                    
+            if match_count > threshold:
+                window_start = seven_days_ago
+                window_end = now.isoformat()
+                
+                try:
+                    # Let's check if an alert for this keyword was already triggered in the last 24 hours to prevent spam
+                    one_day_ago = (now - timedelta(days=1)).isoformat()
+                    existing = self.conn.execute(
+                        "SELECT id FROM velocity_alerts WHERE keyword = ? AND created_at >= ?",
+                        (kw, one_day_ago)
+                    ).fetchone()
+                    
+                    if not existing:
+                        self.conn.execute(
+                            """
+                            INSERT OR IGNORE INTO velocity_alerts (keyword, paper_count, window_start, window_end, created_at)
+                            VALUES (?, ?, ?, ?, ?)
+                            """,
+                            (kw, match_count, window_start, window_end, now.isoformat())
+                        )
+                        self.conn.commit()
+                        
+                        alerts_triggered.append({
+                            "keyword": kw,
+                            "paper_count": match_count,
+                            "window_start": window_start,
+                            "window_end": window_end,
+                            "created_at": now.isoformat()
+                        })
+                except sqlite3.Error as e:
+                    logger.error(f"Failed to save velocity alert: {e}")
+                    
+        return alerts_triggered
+
+    def get_active_velocity_alerts(self, hours_back: int = 48) -> list[dict]:
+        """Get recent velocity alerts triggered in the last N hours."""
+        from datetime import timedelta
+        now = datetime.utcnow()
+        cutoff = (now - timedelta(hours=hours_back)).isoformat()
+        try:
+            rows = self.conn.execute(
+                "SELECT keyword, paper_count, window_start, window_end, created_at FROM velocity_alerts WHERE created_at >= ? ORDER BY created_at DESC",
+                (cutoff,)
+            ).fetchall()
+            return [dict(row) for row in rows]
+        except sqlite3.Error as e:
+            logger.error(f"Failed to fetch active alerts: {e}")
+            return []
+
+    def add_my_paper(self, title: str, arxiv_id: Optional[str] = None, doi: Optional[str] = None, user_id: int = 1) -> bool:
+        """Register a user's own paper by arXiv ID or DOI."""
+        if not arxiv_id and not doi:
+            return False
+        clean_arxiv = arxiv_id.strip() if arxiv_id else None
+        clean_doi = doi.strip() if doi else None
+        clean_title = title.strip()
+        try:
+            self.conn.execute(
+                """
+                INSERT INTO my_papers (user_id, arxiv_id, doi, title, created_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (user_id, clean_arxiv, clean_doi, clean_title, datetime.utcnow().isoformat())
+            )
+            self.conn.commit()
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Failed to add my_paper: {e}")
+            return False
+
+    def get_my_papers(self, user_id: int = 1) -> list[dict]:
+        """Get all papers registered by the user."""
+        try:
+            rows = self.conn.execute(
+                "SELECT id, arxiv_id, doi, title, created_at FROM my_papers WHERE user_id = ? ORDER BY created_at DESC",
+                (user_id,)
+            ).fetchall()
+            return [dict(row) for row in rows]
+        except sqlite3.Error as e:
+            logger.error(f"Failed to get my_papers: {e}")
+            return []
+
+    def delete_my_paper(self, paper_id: int, user_id: int = 1) -> bool:
+        """Delete a registered paper."""
+        try:
+            cursor = self.conn.execute(
+                "DELETE FROM my_papers WHERE id = ? AND user_id = ?",
+                (paper_id, user_id)
+            )
+            self.conn.commit()
+            return cursor.rowcount > 0
+        except sqlite3.Error as e:
+            logger.error(f"Failed to delete my_paper {paper_id}: {e}")
+            return False
+
+    def get_all_my_papers(self) -> list[dict]:
+        """Get all registered papers across all users."""
+        try:
+            rows = self.conn.execute(
+                "SELECT id, user_id, arxiv_id, doi, title, created_at FROM my_papers ORDER BY created_at DESC"
+            ).fetchall()
+            return [dict(row) for row in rows]
+        except sqlite3.Error as e:
+            logger.error(f"Failed to get all my_papers: {e}")
+            return []
+
+    def update_my_paper(self, paper_id: int, arxiv_id: Optional[str] = None, title: Optional[str] = None) -> bool:
+        """Update registered paper's arxiv_id or title."""
+        try:
+            if arxiv_id and title:
+                self.conn.execute(
+                    "UPDATE my_papers SET arxiv_id = ?, title = ? WHERE id = ?",
+                    (arxiv_id, title, paper_id)
+                )
+            elif arxiv_id:
+                self.conn.execute(
+                    "UPDATE my_papers SET arxiv_id = ? WHERE id = ?",
+                    (arxiv_id, paper_id)
+                )
+            elif title:
+                self.conn.execute(
+                    "UPDATE my_papers SET title = ? WHERE id = ?",
+                    (title, paper_id)
+                )
+            self.conn.commit()
+            return True
+        except sqlite3.Error as e:
+            logger.error(f"Failed to update my_paper {paper_id}: {e}")
+            return False
+
+    def check_if_paper_cites_user_work(self, arxiv_id: str, user_id: int) -> bool:
+        """Check if a specific paper cites any of the user's registered papers."""
+        try:
+            row = self.conn.execute(
+                """
+                SELECT 1 FROM citations c
+                JOIN my_papers m ON c.cited_arxiv_id = m.arxiv_id
+                WHERE c.citing_arxiv_id = ? AND m.user_id = ?
+                LIMIT 1
+                """,
+                (arxiv_id, user_id)
+            ).fetchone()
+            return row is not None
+        except sqlite3.Error as e:
+            logger.error(f"Failed to check if paper {arxiv_id} cites user work: {e}")
+            return False
+
+    def get_papers_citing_user_work(self, arxiv_ids: list[str], user_id: int) -> set[str]:
+        """Return the subset of arxiv_ids that cite any of the user's registered papers."""
+        if not arxiv_ids:
+            return set()
+        placeholders = ",".join("?" for _ in arxiv_ids)
+        try:
+            rows = self.conn.execute(
+                f"""
+                SELECT DISTINCT c.citing_arxiv_id FROM citations c
+                JOIN my_papers m ON c.cited_arxiv_id = m.arxiv_id
+                WHERE c.citing_arxiv_id IN ({placeholders}) AND m.user_id = ?
+                """,
+                arxiv_ids + [user_id]
+            ).fetchall()
+            return {row["citing_arxiv_id"] for row in rows}
+        except sqlite3.Error as e:
+            logger.error(f"Failed to get papers citing user work in batch: {e}")
+            return set()
 
     def get_tracked_authors(self) -> list[dict]:
         """Get all tracked authors."""

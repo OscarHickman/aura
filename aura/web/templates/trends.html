@@ -9,6 +9,34 @@
     </div>
 </div>
 
+<!-- Rolling 7-Day Velocity Alerts -->
+{% if alerts %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card border-danger bg-danger bg-opacity-10 animate-pulse">
+            <div class="card-header border-danger bg-danger bg-opacity-20 d-flex align-items-center gap-2">
+                <h5 class="mb-0 text-danger"><i class="bi bi-fire"></i> Spike Alert: High Publication Velocity Detected!</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    {% for alert in alerts %}
+                    <div class="col-md-6 col-lg-4 mb-2">
+                        <div class="p-3 bg-dark bg-opacity-50 border border-secondary rounded">
+                            <h6 class="text-danger mb-2"><i class="bi bi-cpu"></i> {{ alert.keyword }}</h6>
+                            <p class="mb-1 text-light small">
+                                Mentioned in <span class="badge bg-danger fs-6">{{ alert.paper_count }}</span> papers within a rolling 7-day window.
+                            </p>
+                            <small class="text-muted small">Detected at: {{ alert.created_at[:16] | replace('T', ' ') }} UTC</small>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <!-- Spike Alerts Section -->
 <div class="row mb-4">
     <div class="col-12">

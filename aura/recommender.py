@@ -25,6 +25,7 @@ class RecommendationEngine:
         sources: list[PaperSource] | None = None,
         rss_urls: list[str] | None = None,
         sources_config: dict[str, bool] | None = None,
+        simulation_codes: list[str] | None = None,
     ):
         self.data_dir = Path(data_dir)
         self.data_dir.mkdir(parents=True, exist_ok=True)
@@ -51,8 +52,34 @@ class RecommendationEngine:
                     except Exception as e:
                         logger.error(f"Failed to instantiate paper source '{name}': {e}")
 
+        self.collaborator_boost = 0.20
+        if simulation_codes is None:
+            try:
+                import os
+                from aura.config import get_validated_config
+                config_path = os.environ.get("AI_PAPERS_CONFIG", "config.yaml")
+                cfg = get_validated_config(config_path)
+                simulation_codes = cfg.get("simulation_codes")
+                self.collaborator_boost = cfg.get("collaborator_boost", 0.20)
+            except Exception:
+                pass
+        else:
+            try:
+                import os
+                from aura.config import get_validated_config
+                config_path = os.environ.get("AI_PAPERS_CONFIG", "config.yaml")
+                cfg = get_validated_config(config_path)
+                self.collaborator_boost = cfg.get("collaborator_boost", 0.20)
+            except Exception:
+                pass
+        self.simulation_codes = simulation_codes or [
+            "IllustrisTNG", "CAMELS", "EAGLE", "Millennium", "GADGET",
+            "RAMSES", "GALFORM", "CAMB", "CLASS", "Cobaya", "emcee",
+            "MultiNest", "PolyChord", "JAX", "sbi"
+        ]
+
         # Initialize components
-        self.db = PaperDatabase(self.data_dir / "papers.db")
+        self.db = PaperDatabase(self.data_dir / "papers.db", simulation_codes=self.simulation_codes)
 
         self._embedding_dim = get_embedding_dim(embedding_model)
         # Legacy default model (user_id=1 / single-user deployments)
@@ -234,8 +261,15 @@ class RecommendationEngine:
                 from .notifications import notify_high_scoring_papers
                 cfg = get_validated_config()
                 notify_high_scoring_papers(self, new_papers, cfg)
+                
+                # Check velocity alerts if enabled
+                va_config = cfg.get("velocity_alerts", {})
+                if va_config.get("enabled", True):
+                    threshold = va_config.get("threshold", 5)
+                    keywords = va_config.get("keywords", self.simulation_codes)
+                    self.db.check_velocity_alerts(threshold=threshold, keywords=keywords)
             except Exception as e:
-                logger.error(f"Failed to dispatch integration notifications: {e}")
+                logger.error(f"Failed to dispatch notifications or check velocity alerts: {e}")
 
         if generate_summaries and papers_needing_summary:
             self.generate_missing_summaries(
@@ -592,8 +626,8 @@ class RecommendationEngine:
             if "followed_author" in paper_net_tags:
                 network_bonus += 0.15
             if "collaborator" in paper_net_tags:
-                network_bonus += 0.20
-            network_bonus = min(0.25, network_bonus)
+                network_bonus += self.collaborator_boost
+            network_bonus = min(0.30, network_bonus)
 
             # Combine scores
             paper["score"] = round(
@@ -631,9 +665,10 @@ class RecommendationEngine:
                         paper["reason_liked_paper"] = liked_papers_emb[best_idx][0]["title"]
                         paper["reason_liked_sim"] = round(float(sims[best_idx]), 4)
 
-        # Sort by composite score, then by date (newest first)
+        # Sort by: is_collaborator, then composite score, then date (newest first)
         scorable_papers.sort(
             key=lambda p: (
+                1 if "collaborator" in network_tags_by_paper.get(p["arxiv_id"], []) else 0,
                 p["score"],
                 p.get("published", ""),
             ),
@@ -1034,6 +1069,74 @@ class RecommendationEngine:
         citing = self.db.get_papers_citing(arxiv_id)
         cited = self.db.get_papers_cited_by(arxiv_id)
         return citing, cited
+
+    def refresh_single_my_paper_citations(self, my_paper_id: int, user_id: int) -> None:
+        """Synchronously refresh citation relationships for a single registered paper from ADS."""
+        try:
+            from aura.fetcher import ADSSource
+            ads_source = ADSSource()
+            if not ads_source.api_key:
+                logger.warning("NASA ADS API key not configured. Skipping single my_paper citation refresh.")
+                return
+
+            rows = self.db.conn.execute(
+                "SELECT id, arxiv_id, doi, title FROM my_papers WHERE id = ? AND user_id = ?",
+                (my_paper_id, user_id)
+            ).fetchall()
+            if not rows:
+                return
+
+            mp = dict(rows[0])
+            arxiv_id = mp.get("arxiv_id")
+            doi = mp.get("doi")
+
+            # Resolve arxiv_id if missing
+            if not arxiv_id and doi:
+                resolved = ads_source.fetch_paper_by_identifier(doi)
+                if resolved:
+                    arxiv_id = resolved["arxiv_id"]
+                    self.db.update_my_paper(my_paper_id, arxiv_id=arxiv_id, title=resolved.get("title"))
+                    logger.info(f"Resolved arxiv_id={arxiv_id} for my_paper {my_paper_id} (DOI={doi})")
+
+            target_identifier = arxiv_id or doi
+            if target_identifier:
+                citing_list = ads_source.fetch_citations_for_identifier(target_identifier)
+                if citing_list:
+                    cited_id = arxiv_id or f"ads:{target_identifier}"
+                    links = []
+                    for cp in citing_list:
+                        c_arxiv = cp.get("arxiv_id")
+                        if c_arxiv:
+                            links.append((c_arxiv, cited_id))
+                    if links:
+                        self.db.add_citations_batch(links)
+                        logger.info(f"Updated {len(links)} citation relationships for my_paper {target_identifier}")
+        except Exception as e:
+            logger.error(f"Failed to refresh single my_paper citations for paper {my_paper_id}: {e}")
+
+    def refresh_my_papers_citations(self, user_id: Optional[int] = None) -> None:
+        """Refresh citation relationships for all my_papers (or a specific user's my_papers) from ADS."""
+        try:
+            from aura.fetcher import ADSSource
+            ads_source = ADSSource()
+            if not ads_source.api_key:
+                logger.warning("NASA ADS API key not configured. Skipping my_papers citation refresh.")
+                return
+
+            if user_id is not None:
+                my_papers = self.db.get_my_papers(user_id=user_id)
+            else:
+                my_papers = self.db.get_all_my_papers()
+
+            if not my_papers:
+                return
+
+            for mp in my_papers:
+                mp_id = mp["id"]
+                mp_user_id = mp.get("user_id", user_id or 1)
+                self.refresh_single_my_paper_citations(mp_id, mp_user_id)
+        except Exception as e:
+            logger.error(f"Failed to refresh my_papers citations: {e}")
 
     def _extract_and_save_metadata(self, papers: list[dict]) -> None:
         """Run LLM metadata extraction and save tags."""

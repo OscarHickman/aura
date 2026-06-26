@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Study Notes - AURA{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1><i class="bi bi-journal-text"></i> Study Notes</h1>
+    <span class="badge bg-secondary fs-6">{{ papers|length }} papers</span>
+</div>
+
+{% if papers %}
+<div class="accordion" id="notesAccordion">
+    {% for paper in papers %}
+    <div class="accordion-item mb-2 border rounded">
+        <h2 class="accordion-header">
+            <button class="accordion-button {% if not loop.first %}collapsed{% endif %} fw-semibold"
+                    type="button"
+                    data-bs-toggle="collapse"
+                    data-bs-target="#collapse-{{ loop.index }}"
+                    aria-expanded="{{ 'true' if loop.first else 'false' }}">
+                <span class="me-2 text-muted small">{{ paper.published[:10] if paper.published else '' }}</span>
+                {{ paper.title }}
+                <span class="badge bg-secondary ms-2">{{ paper.notes|length }}</span>
+            </button>
+        </h2>
+        <div id="collapse-{{ loop.index }}"
+             class="accordion-collapse collapse {% if loop.first %}show{% endif %}">
+            <div class="accordion-body">
+                <div class="mb-2 text-muted small">
+                    {% if paper.authors %}
+                        {% if paper.authors is string %}
+                            {{ paper.authors }}
+                        {% else %}
+                            {{ paper.authors | join(', ') }}
+                        {% endif %}
+                    {% endif %}
+                    &mdash;
+                    <a href="/papers/{{ paper.arxiv_id }}" class="text-decoration-none">
+                        View paper <i class="bi bi-box-arrow-up-right"></i>
+                    </a>
+                </div>
+                {% for note in paper.notes %}
+                <div class="card mb-2">
+                    <div class="card-body py-2">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <p class="mb-1" style="white-space: pre-wrap;">{{ note.content }}</p>
+                            <small class="text-muted ms-3 text-nowrap">
+                                {{ note.updated_at[:10] if note.updated_at else '' }}
+                            </small>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<div class="text-center text-muted py-5">
+    <i class="bi bi-journal-x fs-1 d-block mb-3"></i>
+    <h5>No study notes yet</h5>
+    <p class="mb-3">Open any paper and add notes in the <strong>Personal Notes</strong> section.</p>
+    <a href="/papers" class="btn btn-outline-primary">Browse Papers</a>
+</div>
+{% endif %}
+{% endblock %}

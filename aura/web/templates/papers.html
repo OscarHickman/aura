@@ -37,6 +37,12 @@
                         <i class="bi bi-file-earmark-arrow-up me-2"></i>RIS (.ris)
                     </a>
                 </li>
+                <li><hr class="dropdown-divider"></li>
+                <li>
+                    <a class="dropdown-item" href="/api/collections/{{ selected_collection_id }}/export-notes">
+                        <i class="bi bi-journal-text me-2"></i>Study Notes (.md)
+                    </a>
+                </li>
             </ul>
         </div>
         <div class="btn-group">
@@ -199,6 +205,30 @@
             </div>
         </div>
 
+        <!-- Simulations & Codes Sidebar -->
+        <div class="card mb-3">
+            <div class="card-header bg-dark border-secondary py-2">
+                <h6 class="mb-0 text-light small"><i class="bi bi-cpu-fill"></i> Simulations & Codes</h6>
+            </div>
+            <div class="card-body p-2">
+                <div class="d-flex flex-wrap gap-2">
+                    {% set has_sim = false %}
+                    {% for code in simulation_codes %}
+                        {% set code_lower = code | lower %}
+                        {% if code_lower in all_tags %}
+                            {% set has_sim = true %}
+                            <a href="/papers?tag={{ code_lower }}" class="badge {% if selected_tag == code_lower %}bg-primary text-white{% else %}bg-dark border border-secondary text-primary-emphasis{% endif %} text-decoration-none" title="Filter by {{ code }}">
+                                {{ code }}
+                            </a>
+                        {% endif %}
+                    {% endfor %}
+                    {% if not has_sim %}
+                    <p class="text-muted small mb-0">No simulation or code tags found.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
         <!-- Methods Sidebar -->
         <div class="card mb-3">
             <div class="card-header bg-dark border-secondary py-2">
@@ -274,7 +304,12 @@
                                 {% endif %}
                                 {% if paper.from_collaborator %}
                                 <span class="badge bg-info text-dark ms-1" title="From a collaborator or research group member">
-                                    <i class="bi bi-people-fill"></i> Collaborator
+                                    <i class="bi bi-people-fill"></i> From your group
+                                </span>
+                                {% endif %}
+                                {% if paper.cites_user_work %}
+                                <span class="badge bg-success ms-1" title="This paper cites your registered work">
+                                    <i class="bi bi-chat-heart-fill"></i> Cites your work
                                 </span>
                                 {% endif %}
                                 {% if paper.freshness_bonus is defined and paper.freshness_bonus > 0.05 %}
@@ -305,6 +340,15 @@
                                     <i class="bi bi-database"></i> DATA
                                 </span>
                                 {% endif %}
+                                {% for t in paper.tags %}
+                                    {% for code in simulation_codes %}
+                                        {% if t | lower == code | lower %}
+                                        <span class="badge border border-info text-info bg-transparent ms-1" title="Simulation / Code: {{ code }}" style="border-color: #0d6efd !important; color: #0d6efd !important;">
+                                            <i class="bi bi-cpu"></i> {{ code }}
+                                        </span>
+                                        {% endif %}
+                                    {% endfor %}
+                                {% endfor %}
                                 {% if paper.score is defined and paper.score > 0 and filter_type != 'search' %}
                                 <span class="badge score-badge ms-2
                                     {% if paper.score >= 0.8 %}bg-success

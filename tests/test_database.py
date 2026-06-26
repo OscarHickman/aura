@@ -393,6 +393,120 @@ class TestPaperDatabase(unittest.TestCase):
         stored2 = self.db.get_paper("2401.cross2")
         self.assertEqual(sorted(stored2["categories"]), sorted(["astro-ph.CO", "stat.ML"]))
 
+    def test_simulation_code_auto_tagging(self):
+        # 1. Custom simulation_codes list in constructor
+        custom_db = PaperDatabase(
+            Path(self.tmp.name) / "papers_sim.db",
+            simulation_codes=["Gadget", "CAMB", "JAX"]
+        )
+        
+        # 2. Paper mentioning Gadget in abstract and CAMB in title
+        p = make_paper("2401.sim1")
+        p["title"] = "Fast CAMB calculations of power spectra"
+        p["abstract"] = "We run a cosmological simulation with GADGET."
+        custom_db.add_paper(p)
+        
+        # 3. Retrieve tags for user 1 (should automatically include gadget and camb)
+        tags_user1 = custom_db.get_paper_tags("2401.sim1", user_id=1)
+        self.assertIn("gadget", tags_user1)
+        self.assertIn("camb", tags_user1)
+        self.assertNotIn("jax", tags_user1)
+        
+        # 4. Retrieve tags for user 2 (should also see simulation tags because they are auto-tags)
+        tags_user2 = custom_db.get_paper_tags("2401.sim1", user_id=2)
+        self.assertIn("gadget", tags_user2)
+        self.assertIn("camb", tags_user2)
+        
+        # 5. Check all tags
+        all_tags = custom_db.get_all_tags(user_id=2)
+        self.assertIn("gadget", all_tags)
+        self.assertIn("camb", all_tags)
+        
+        # 6. Retrieve papers by tag for user 2
+        papers = custom_db.get_papers_by_tag("gadget", user_id=2)
+        self.assertEqual(len(papers), 1)
+        self.assertEqual(papers[0]["arxiv_id"], "2401.sim1")
+
+    def test_velocity_alerts_and_weekly_history(self):
+        from datetime import datetime, timedelta
+        # 1. Custom simulation_codes and db setup
+        custom_db = PaperDatabase(
+            Path(self.tmp.name) / "papers_vel.db",
+            simulation_codes=["IllustrisTNG", "CAMELS", "sbi"]
+        )
+        
+        # 2. Add 6 papers mentioning "sbi" published in the last 2 days
+        now = datetime.utcnow()
+        for i in range(6):
+            p = make_paper(f"2401.sbi{i}")
+            p["title"] = f"Cosmological SBI analysis part {i}"
+            p["abstract"] = "Using simulation-based inference methods for cosmology."
+            p["published"] = now.isoformat()
+            custom_db.add_paper(p)
+            
+        # 3. Weekly velocity history should have YYYY-MM-DD week_start
+        rows = custom_db.conn.execute("SELECT tag, week_start, paper_count FROM weekly_velocity").fetchall()
+        self.assertTrue(len(rows) > 0)
+        sbi_rows = [r for r in rows if r["tag"] == "sbi"]
+        self.assertTrue(len(sbi_rows) > 0)
+        self.assertEqual(sbi_rows[0]["paper_count"], 6)
+        
+        # 4. Check for velocity alerts: we set threshold to 5, sbi has 6 papers so it should trigger
+        alerts = custom_db.check_velocity_alerts(threshold=5, keywords=["IllustrisTNG", "CAMELS", "sbi"])
+        self.assertEqual(len(alerts), 1)
+        self.assertEqual(alerts[0]["keyword"], "sbi")
+        self.assertEqual(alerts[0]["paper_count"], 6)
+        
+        # 5. Fetch active velocity alerts
+        active_alerts = custom_db.get_active_velocity_alerts(hours_back=48)
+        self.assertEqual(len(active_alerts), 1)
+        self.assertEqual(active_alerts[0]["keyword"], "sbi")
+        self.assertEqual(active_alerts[0]["paper_count"], 6)
+
+    def test_my_papers_operations(self):
+        # 1. Add paper to my_papers
+        success = self.db.add_my_paper(title="My Cosmological Paper", arxiv_id="2401.12345", doi="10.1088/12345", user_id=1)
+        self.assertTrue(success)
+        
+        # 2. Get registered papers
+        papers = self.db.get_my_papers(user_id=1)
+        self.assertEqual(len(papers), 1)
+        self.assertEqual(papers[0]["title"], "My Cosmological Paper")
+        self.assertEqual(papers[0]["arxiv_id"], "2401.12345")
+        
+        # 3. Get all registered papers (across users)
+        all_papers = self.db.get_all_my_papers()
+        self.assertEqual(len(all_papers), 1)
+        
+        # 4. Update paper (e.g., set new arxiv_id or title)
+        update_success = self.db.update_my_paper(papers[0]["id"], arxiv_id="2401.54321", title="My New Title")
+        self.assertTrue(update_success)
+        
+        papers_updated = self.db.get_my_papers(user_id=1)
+        self.assertEqual(papers_updated[0]["arxiv_id"], "2401.54321")
+        self.assertEqual(papers_updated[0]["title"], "My New Title")
+        
+        # 5. Check if a paper cites user's work
+        # Add citation relation: "2401.99999" cites our paper "2401.54321"
+        self.db.add_citations_batch([("2401.99999", "2401.54321")])
+        
+        cites = self.db.check_if_paper_cites_user_work("2401.99999", user_id=1)
+        self.assertTrue(cites)
+        
+        no_cites = self.db.check_if_paper_cites_user_work("2401.00000", user_id=1)
+        self.assertFalse(no_cites)
+        
+        # Batch check
+        citing_batch = self.db.get_papers_citing_user_work(["2401.99999", "2401.00000"], user_id=1)
+        self.assertEqual(citing_batch, {"2401.99999"})
+        
+        # 6. Delete paper
+        delete_success = self.db.delete_my_paper(papers[0]["id"], user_id=1)
+        self.assertTrue(delete_success)
+        
+        papers_deleted = self.db.get_my_papers(user_id=1)
+        self.assertEqual(len(papers_deleted), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
