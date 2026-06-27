@@ -33,26 +33,26 @@
         <div class="row">
             {% for paper in papers %}
             <div class="col-12 mb-3">
-                <div class="card bg-dark border-secondary h-100">
+                <div class="card paper-card glass-panel h-100 p-2">
                     <div class="card-body">
                         <div class="d-flex justify-content-between align-items-start gap-3">
                             <div>
-                                <h5 class="card-title mb-2 text-light">{{ paper.title }}</h5>
-                                <p class="mb-1 small text-muted">
+                                <h5 class="card-title mb-2 text-light fw-semibold">{{ paper.title }}</h5>
+                                <p class="mb-2 small text-muted">
                                     {% if paper.arxiv_id %}
-                                    <strong>ArXiv ID:</strong> <a href="https://arxiv.org/abs/{{ paper.arxiv_id }}" target="_blank" class="text-decoration-none text-info">{{ paper.arxiv_id }} <i class="bi bi-box-arrow-up-right small"></i></a>
+                                    <strong class="text-light-emphasis">ArXiv ID:</strong> <a href="https://arxiv.org/abs/{{ paper.arxiv_id }}" target="_blank" class="text-decoration-none text-info fw-medium">{{ paper.arxiv_id }} <i class="bi bi-box-arrow-up-right small"></i></a>
                                     {% endif %}
                                     {% if paper.arxiv_id and paper.doi %}&bull;{% endif %}
                                     {% if paper.doi %}
-                                    <strong>DOI:</strong> <a href="https://doi.org/{{ paper.doi }}" target="_blank" class="text-decoration-none text-info">{{ paper.doi }} <i class="bi bi-box-arrow-up-right small"></i></a>
+                                    <strong class="text-light-emphasis">DOI:</strong> <a href="https://doi.org/{{ paper.doi }}" target="_blank" class="text-decoration-none text-info fw-medium">{{ paper.doi }} <i class="bi bi-box-arrow-up-right small"></i></a>
                                     {% endif %}
                                 </p>
-                                <small class="text-muted small">Registered on: {{ paper.created_at[:10] }}</small>
+                                <small class="text-muted"><i class="bi bi-calendar-check me-1"></i>Registered on: {{ paper.created_at[:10] }}</small>
                             </div>
                             <form action="/my-papers/delete/{{ paper.id }}" method="POST" onsubmit="return confirm('Remove registration for this paper?');">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <button type="submit" class="btn btn-sm btn-outline-danger" title="Remove Registration">
-                                    <i class="bi bi-trash"></i> Remove
+                                    <i class="bi bi-trash me-1"></i> Remove
                                 </button>
                             </form>
                         </div>
@@ -64,34 +64,33 @@
         {% endif %}
     </div>
 
-    <!-- Sidebar: Add Paper Form -->
     <div class="col-lg-4 col-12 order-lg-2 order-1 mb-4">
-        <div class="card bg-dark border-secondary">
-            <div class="card-header bg-dark border-secondary py-3">
-                <h5 class="mb-0 text-light"><i class="bi bi-plus-circle text-success"></i> Register New Paper</h5>
+        <div class="card glass-panel border-secondary shadow-sm">
+            <div class="card-header bg-transparent border-secondary py-3">
+                <h5 class="mb-0 text-light fw-semibold"><i class="bi bi-plus-circle text-success me-1"></i> Register New Paper</h5>
             </div>
-            <div class="card-body">
+            <div class="card-body p-4">
                 <form action="/my-papers/add" method="POST">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     
                     <div class="mb-3">
-                        <label for="title" class="form-label text-light-emphasis small">Paper Title</label>
-                        <input type="text" class="form-control bg-dark border-secondary text-light" id="title" name="title" required placeholder="e.g. Cosmology with JAX emulators">
+                        <label for="title" class="form-label text-light-emphasis small fw-medium">Paper Title</label>
+                        <input type="text" class="form-control bg-dark bg-opacity-50 border-secondary text-light" id="title" name="title" required placeholder="e.g. Cosmology with JAX emulators">
                     </div>
                     
                     <div class="mb-3">
-                        <label for="arxiv_id" class="form-label text-light-emphasis small">ArXiv ID (Optional)</label>
-                        <input type="text" class="form-control bg-dark border-secondary text-light" id="arxiv_id" name="arxiv_id" placeholder="e.g. 2401.00001">
+                        <label for="arxiv_id" class="form-label text-light-emphasis small fw-medium">ArXiv ID (Optional)</label>
+                        <input type="text" class="form-control bg-dark bg-opacity-50 border-secondary text-light" id="arxiv_id" name="arxiv_id" placeholder="e.g. 2401.00001">
                         <div class="form-text text-muted" style="font-size: 0.75rem;">Required for citation backfilling.</div>
                     </div>
                     
                     <div class="mb-3">
-                        <label for="doi" class="form-label text-light-emphasis small">DOI (Optional)</label>
-                        <input type="text" class="form-control bg-dark border-secondary text-light" id="doi" name="doi" placeholder="e.g. 10.1088/1475-7516/2026/01/001">
+                        <label for="doi" class="form-label text-light-emphasis small fw-medium">DOI (Optional)</label>
+                        <input type="text" class="form-control bg-dark bg-opacity-50 border-secondary text-light" id="doi" name="doi" placeholder="e.g. 10.1088/1475-7516/2026/01/001">
                     </div>
                     
-                    <button type="submit" class="btn btn-primary w-100">
-                        <i class="bi bi-check-lg"></i> Register Paper
+                    <button type="submit" class="btn btn-primary w-100 py-2">
+                        <i class="bi bi-check-lg me-1"></i> Register Paper
                     </button>
                 </form>
             </div>

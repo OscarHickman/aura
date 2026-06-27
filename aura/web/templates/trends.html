@@ -13,7 +13,7 @@
 {% if alerts %}
 <div class="row mb-4">
     <div class="col-12">
-        <div class="card border-danger bg-danger bg-opacity-10 animate-pulse">
+        <div class="card border-danger bg-danger bg-opacity-10 pulse-glow-danger">
             <div class="card-header border-danger bg-danger bg-opacity-20 d-flex align-items-center gap-2">
                 <h5 class="mb-0 text-danger"><i class="bi bi-fire"></i> Spike Alert: High Publication Velocity Detected!</h5>
             </div>
@@ -48,20 +48,46 @@
         {% endfor %}
         
         {% if spikes %}
-            <div class="card border-warning bg-warning bg-opacity-10 mb-3 animate-pulse">
+            <div class="card border-warning bg-warning bg-opacity-10 mb-3 pulse-glow-warning">
                 <div class="card-header border-warning bg-warning bg-opacity-20 d-flex align-items-center gap-2">
                     <h5 class="mb-0 text-warning"><i class="bi bi-exclamation-triangle-fill"></i> Significant Topic Spikes Detected</h5>
                 </div>
                 <div class="card-body">
-                    <ul class="mb-0 text-light-emphasis">
+                    <div class="row g-3">
                         {% for topic in spikes %}
-                        <li class="mb-2">
-                            <strong>{{ topic.topic }}</strong>: 
-                            This topic has spiked to <span class="badge bg-danger fs-6">{{ topic.current_count }}</span> papers this week, 
-                            exceeding the historical average of <span class="badge bg-secondary fs-6">{{ topic.baseline_mean }}</span> papers/week.
-                        </li>
+                        <div class="col-md-6">
+                            <div class="p-3 bg-dark bg-opacity-40 border border-warning border-opacity-25 rounded d-flex align-items-start gap-3">
+                                <div class="bg-warning bg-opacity-10 text-warning rounded-circle p-2 d-flex align-items-center justify-content-center" style="width: 42px; height: 42px; flex-shrink: 0;">
+                                    <i class="bi bi-lightning-charge-fill fs-5"></i>
+                                </div>
+                                <div class="flex-grow-1">
+                                    <h6 class="text-warning fw-bold mb-1">{{ topic.topic }}</h6>
+                                    <p class="text-muted small mb-2">Significant publication spike detected this week.</p>
+                                    <div class="d-flex align-items-center gap-3 flex-wrap">
+                                        <div>
+                                            <span class="small text-muted d-block" style="font-size: 0.75rem;">This Week</span>
+                                            <span class="badge bg-danger fs-6">{{ topic.current_count }} papers</span>
+                                        </div>
+                                        <div class="border-start border-secondary ps-3">
+                                            <span class="small text-muted d-block" style="font-size: 0.75rem;">Historical Avg</span>
+                                            <span class="badge bg-secondary fs-6">{{ topic.baseline_mean }}/wk</span>
+                                        </div>
+                                        <div class="border-start border-secondary ps-3">
+                                            <span class="small text-muted d-block" style="font-size: 0.75rem;">Ratio</span>
+                                            <span class="badge bg-warning text-dark fw-bold fs-6">
+                                                {% if topic.baseline_mean > 0 %}
+                                                    {{ "%.1f" | format(topic.current_count / topic.baseline_mean) }}x
+                                                {% else %}
+                                                    N/A
+                                                {% endif %}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                         {% endfor %}
-                    </ul>
+                    </div>
                 </div>
             </div>
         {% else %}

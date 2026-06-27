@@ -20,16 +20,16 @@
 
     {% for paper in papers %}
     <div class="col-12 mb-3">
-        <div class="card paper-card h-100 bg-dark border-secondary">
+        <div class="card paper-card glass-panel h-100 p-2">
             <div class="card-body">
-                <div class="d-flex justify-content-between align-items-start mb-2">
+                <div class="d-flex justify-content-between align-items-start mb-2 gap-3">
                     <h5 class="card-title mb-0">
-                        <a href="/papers/{{ paper.arxiv_id }}" class="text-light text-decoration-none">{{ paper.title | safe }}</a>
+                        <a href="/papers/{{ paper.arxiv_id }}" class="text-light text-decoration-none fw-semibold">{{ paper.title | safe }}</a>
                     </h5>
                     <div class="d-flex gap-2">
                         {% if filter_type == 'unread' %}
-                        <button class="btn btn-sm btn-success" onclick="markAsRead('{{ paper.arxiv_id }}', this)" title="Mark as read">
-                            <i class="bi bi-check-lg"></i> Done
+                        <button class="btn btn-sm btn-success px-3" onclick="markAsRead('{{ paper.arxiv_id }}', this)" title="Mark as read">
+                            <i class="bi bi-check-lg me-1"></i> Done
                         </button>
                         {% endif %}
                         <button class="btn btn-sm btn-outline-danger" onclick="removeFromReadingList('{{ paper.arxiv_id }}', this)" title="Remove from list">
@@ -38,21 +38,21 @@
                     </div>
                 </div>
 
-                <p class="text-muted small mb-2">
-                    {{ paper.authors[:3] | join(", ") }}{% if paper.authors | length > 3 %} et al.{% endif %} &bull; {{ paper.published[:10] }}
+                <p class="text-muted small mb-3">
+                    <span class="text-light-emphasis">{{ paper.authors[:3] | join(", ") }}{% if paper.authors | length > 3 %} et al.{% endif %}</span> &bull; <i class="bi bi-calendar-event me-1"></i>{{ paper.published[:10] }}
                 </p>
 
-                <p class="card-text small text-light-emphasis mb-3">
-                    {{ paper.abstract[:200] }}...
+                <p class="card-text small text-light-emphasis mb-3 text-opacity-75">
+                    {{ paper.abstract[:280] }}...
                 </p>
 
-                <div class="d-flex justify-content-between align-items-center">
+                <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
                     <div class="d-flex gap-1 flex-wrap">
                         {% for cat in paper.categories[:3] %}
                         <span class="badge bg-dark border border-secondary small">{{ cat }}</span>
                         {% endfor %}
                     </div>
-                    <small class="text-muted">Added: {{ paper.added_at[:10] }}</small>
+                    <small class="text-muted"><i class="bi bi-clock me-1"></i>Added: {{ paper.added_at[:10] }}</small>
                 </div>
             </div>
         </div>

@@ -289,122 +289,123 @@
 
         <div class="paper-list row" id="papers-container">
             {% for paper in papers %}
-    <div class="col-12 card mb-3 paper-card" id="paper-{{ paper.arxiv_id | replace('/', '-') | replace('.', '-') }}" data-arxiv-id="{{ paper.arxiv_id }}">
-        <div class="card-body">
-            <div class="d-flex justify-content-between align-items-start">
-                <div class="flex-grow-1">
-                    <div class="d-flex align-items-start gap-2 mb-2">
-                        <div class="flex-grow-1">
-                            <h5 class="card-title mb-1">
-                                <a href="/papers/{{ paper.arxiv_id }}" class="text-decoration-none text-light">{{ paper.title | safe }}</a>
-                                {% if paper.from_followed_author %}
-                                <span class="badge bg-primary ms-1" title="From an author you follow">
-                                    <i class="bi bi-person-check-fill"></i> From authors you follow
-                                </span>
-                                {% endif %}
-                                {% if paper.from_collaborator %}
-                                <span class="badge bg-info text-dark ms-1" title="From a collaborator or research group member">
-                                    <i class="bi bi-people-fill"></i> From your group
-                                </span>
-                                {% endif %}
-                                {% if paper.cites_user_work %}
-                                <span class="badge bg-success ms-1" title="This paper cites your registered work">
-                                    <i class="bi bi-chat-heart-fill"></i> Cites your work
-                                </span>
-                                {% endif %}
-                                {% if paper.freshness_bonus is defined and paper.freshness_bonus > 0.05 %}
-                                <span class="badge bg-danger ms-2"><i class="bi bi-fire"></i> NEW</span>
-                                {% endif %}
-                                {% if paper.refereed %}
-                                <span class="badge border border-success text-success bg-transparent ms-1" style="border-color: #2ec4b6 !important; color: #2ec4b6 !important;" title="Refereed publication (peer-reviewed)">
-                                    <i class="bi bi-patch-check-fill"></i> REFEREED
-                                </span>
-                                {% endif %}
-                                {% if paper.citation_count is defined and paper.citation_count > 0 %}
-                                <span class="badge bg-secondary ms-1" title="Citations">
-                                    <i class="bi bi-chat-quote"></i> {{ paper.citation_count }}
-                                </span>
-                                {% endif %}
-                                {% if paper.read_count is defined and paper.read_count > 0 %}
-                                <span class="badge bg-secondary ms-1" style="background-color: #4a5568 !important;" title="Reads on NASA ADS">
-                                    <i class="bi bi-eye"></i> {{ paper.read_count }}
-                                </span>
-                                {% endif %}
-                                {% if paper.has_code %}
-                                <span class="badge bg-primary ms-1" title="Code repository detected">
-                                    <i class="bi bi-code-slash"></i> CODE
-                                </span>
-                                {% endif %}
-                                {% if paper.has_data %}
-                                <span class="badge bg-info ms-1 text-dark" title="Data repository detected">
-                                    <i class="bi bi-database"></i> DATA
-                                </span>
-                                {% endif %}
-                                {% for t in paper.tags %}
-                                    {% for code in simulation_codes %}
-                                        {% if t | lower == code | lower %}
-                                        <span class="badge border border-info text-info bg-transparent ms-1" title="Simulation / Code: {{ code }}" style="border-color: #0d6efd !important; color: #0d6efd !important;">
-                                            <i class="bi bi-cpu"></i> {{ code }}
-                                        </span>
-                                        {% endif %}
-                                    {% endfor %}
-                                {% endfor %}
-                                {% if paper.score is defined and paper.score > 0 and filter_type != 'search' %}
-                                <span class="badge score-badge ms-2
-                                    {% if paper.score >= 0.8 %}bg-success
-                                    {% elif paper.score >= 0.5 %}bg-warning text-dark
-                                    {% else %}bg-secondary
-                                    {% endif %}" title="Base: {{ '%.2f' | format(paper.model_score) }}, Freshness: +{{ '%.2f' | format(paper.freshness_bonus) }}, Summary: +{{ '%.2f' | format(paper.summary_bonus) }}{% if paper.citation_bonus %}, Citations: +{{ '%.2f' | format(paper.citation_bonus) }}{% endif %}{% if paper.read_bonus %}, Reads: +{{ '%.2f' | format(paper.read_bonus) }}{% endif %}{% if paper.refereed_bonus %}, Refereed: +{{ '%.2f' | format(paper.refereed_bonus) }}{% endif %}">
-                                    {{ "%.0f" | format(paper.score * 100) }}% Match
-                                </span>
-                                {% endif %}
-                            </h5>
-                            {% if filter_type == 'unrated' %}
-                            <div class="mb-1 mt-2">
-                                {% if paper.reason_liked_paper %}
-                                <span class="badge bg-info-subtle text-info-emphasis" title="Similarity: {{ '%.2f' | format(paper.reason_liked_sim) }}">
-                                    <i class="bi bi-lightbulb"></i> Because you liked: {{ paper.reason_liked_paper[:60] }}...
-                                </span>
-                                {% endif %}
-                            </div>
+    <div class="col-12 mb-3" id="paper-{{ paper.arxiv_id | replace('/', '-') | replace('.', '-') }}" data-arxiv-id="{{ paper.arxiv_id }}">
+        <div class="card paper-card h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start" style="min-width: 0; width: 100%;">
+                    <div class="flex-grow-1" style="min-width: 0;">
+                        <h5 class="card-title mb-1">
+                            <a href="/papers/{{ paper.arxiv_id }}" class="text-decoration-none text-light">{{ paper.title | safe }}</a>
+                        </h5>
+                        <div class="d-flex flex-wrap gap-1 mt-2">
+                            {% if paper.from_followed_author %}
+                            <span class="badge bg-primary" title="From an author you follow">
+                                <i class="bi bi-person-check-fill"></i> From authors you follow
+                            </span>
                             {% endif %}
-                            </div>
-                            </div>
-                        <div class="rating-stars d-flex gap-1 align-items-center flex-wrap">
-                            <div class="star-rating">
-                                {% for i in range(1, 6) %}
-                                <button class="btn btn-sm py-0 px-1 border-0 btn-rate-star {% if paper.rating and paper.rating >= i %}text-warning{% else %}text-secondary{% endif %}"
-                                        data-rating="{{ i }}"
-                                        onclick="ratePaper('{{ paper.arxiv_id }}', {{ i }}, this)"
-                                        title="Rate {{ i }} star{% if i > 1 %}s{% endif %}">
-                                    <i class="bi bi-star-fill"></i>
-                                </button>
+                            {% if paper.from_collaborator %}
+                            <span class="badge bg-info text-dark" title="From a collaborator or research group member">
+                                <i class="bi bi-people-fill"></i> From your group
+                            </span>
+                            {% endif %}
+                            {% if paper.cites_user_work %}
+                            <span class="badge bg-success" title="This paper cites your registered work">
+                                <i class="bi bi-chat-heart-fill"></i> Cites your work
+                            </span>
+                            {% endif %}
+                            {% if paper.freshness_bonus is defined and paper.freshness_bonus > 0.05 %}
+                            <span class="badge bg-danger"><i class="bi bi-fire"></i> NEW</span>
+                            {% endif %}
+                            {% if paper.refereed %}
+                            <span class="badge border border-success text-success bg-transparent" style="border-color: #2ec4b6 !important; color: #2ec4b6 !important;" title="Refereed publication (peer-reviewed)">
+                                <i class="bi bi-patch-check-fill"></i> REFEREED
+                            </span>
+                            {% endif %}
+                            {% if paper.citation_count is defined and paper.citation_count > 0 %}
+                            <span class="badge bg-secondary" title="Citations">
+                                <i class="bi bi-chat-quote"></i> {{ paper.citation_count }}
+                            </span>
+                            {% endif %}
+                            {% if paper.read_count is defined and paper.read_count > 0 %}
+                            <span class="badge bg-secondary" style="background-color: #4a5568 !important;" title="Reads on NASA ADS">
+                                <i class="bi bi-eye"></i> {{ paper.read_count }}
+                            </span>
+                            {% endif %}
+                            {% if paper.has_code %}
+                            <span class="badge bg-primary" title="Code repository detected">
+                                <i class="bi bi-code-slash"></i> CODE
+                            </span>
+                            {% endif %}
+                            {% if paper.has_data %}
+                            <span class="badge bg-info text-dark" title="Data repository detected">
+                                <i class="bi bi-database"></i> DATA
+                            </span>
+                            {% endif %}
+                            {% for t in paper.tags %}
+                                {% for code in simulation_codes %}
+                                    {% if t | lower == code | lower %}
+                                    <span class="badge border border-info text-info bg-transparent" title="Simulation / Code: {{ code }}" style="border-color: #0d6efd !important; color: #0d6efd !important;">
+                                        <i class="bi bi-cpu"></i> {{ code }}
+                                    </span>
+                                    {% endif %}
                                 {% endfor %}
-                            </div>
-                            <button class="btn btn-sm btn-outline-secondary ms-1 btn-rate-skip {% if paper.rating == -1 %}active{% endif %}"
-                                    onclick="ratePaper('{{ paper.arxiv_id }}', -1, this)"
-                                    title="Skip this paper">
-                                <i class="bi bi-skip-forward"></i>
-                            </button>
-
-                            <!-- Reading List Button -->
-                            {% if paper.in_reading_list %}
-                            <button class="btn btn-sm btn-info active" 
-                                    onclick="removeFromReadingList('{{ paper.arxiv_id }}', this)"
-                                    title="Remove from reading list">
-                                <i class="bi bi-bookmark-fill"></i>
-                            </button>
-                            {% else %}
-                            <button class="btn btn-sm btn-outline-info" 
-                                    onclick="addToReadingList('{{ paper.arxiv_id }}', this)"
-                                    title="Save for later">
-                                <i class="bi bi-bookmark"></i>
-                            </button>
+                            {% endfor %}
+                            {% if paper.score is defined and paper.score > 0 and filter_type != 'search' %}
+                            <span class="badge score-badge ms-0
+                                {% if paper.score >= 0.8 %}bg-success
+                                {% elif paper.score >= 0.5 %}bg-warning text-dark
+                                {% else %}bg-secondary
+                                {% endif %}" title="Base: {{ '%.2f' | format(paper.model_score) }}, Freshness: +{{ '%.2f' | format(paper.freshness_bonus) }}, Summary: +{{ '%.2f' | format(paper.summary_bonus) }}{% if paper.citation_bonus %}, Citations: +{{ '%.2f' | format(paper.citation_bonus) }}{% endif %}{% if paper.read_bonus %}, Reads: +{{ '%.2f' | format(paper.read_bonus) }}{% endif %}{% if paper.refereed_bonus %}, Refereed: +{{ '%.2f' | format(paper.refereed_bonus) }}{% endif %}">
+                                {{ "%.0f" | format(paper.score * 100) }}% Match
+                            </span>
                             {% endif %}
                         </div>
-
+                        {% if filter_type == 'unrated' %}
+                        <div class="mb-1 mt-2">
+                            {% if paper.reason_liked_paper %}
+                            <span class="badge bg-info-subtle text-info-emphasis" title="Similarity: {{ '%.2f' | format(paper.reason_liked_sim) }}">
+                                <i class="bi bi-lightbulb"></i> Because you liked: {{ paper.reason_liked_paper[:60] }}...
+                            </span>
+                            {% endif %}
+                        </div>
+                        {% endif %}
                     </div>
+                    <div class="rating-stars d-flex gap-1 align-items-center flex-wrap ms-3" style="flex-shrink: 0;">
+                        <div class="star-rating">
+                            {% for i in range(1, 6) %}
+                            <button class="btn btn-sm py-0 px-1 border-0 btn-rate-star {% if paper.rating and paper.rating >= i %}text-warning{% else %}text-secondary{% endif %}"
+                                    data-rating="{{ i }}"
+                                    onclick="ratePaper('{{ paper.arxiv_id }}', {{ i }}, this)"
+                                    title="Rate {{ i }} star{% if i > 1 %}s{% endif %}">
+                                <i class="bi bi-star-fill"></i>
+                            </button>
+                            {% endfor %}
+                        </div>
+                        <button class="btn btn-sm btn-outline-secondary ms-1 btn-rate-skip {% if paper.rating == -1 %}active{% endif %}"
+                                onclick="ratePaper('{{ paper.arxiv_id }}', -1, this)"
+                                title="Skip this paper">
+                            <i class="bi bi-skip-forward"></i>
+                        </button>
 
+                        <!-- Reading List Button -->
+                        {% if paper.in_reading_list %}
+                        <button class="btn btn-sm btn-info active" 
+                                onclick="removeFromReadingList('{{ paper.arxiv_id }}', this)"
+                                title="Remove from reading list">
+                            <i class="bi bi-bookmark-fill"></i>
+                        </button>
+                        {% else %}
+                        <button class="btn btn-sm btn-outline-info" 
+                                onclick="addToReadingList('{{ paper.arxiv_id }}', this)"
+                                title="Save for later">
+                            <i class="bi bi-bookmark"></i>
+                        </button>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Rest of card content (vertical layout, sibling to header row) -->
+                <div class="mt-3">
                     <p class="text-muted mb-2">
                         <small>
                             <strong>{{ paper.authors[:3] | join(", ") }}</strong>
@@ -464,7 +465,7 @@
                     <p class="card-text abstract-text formatted-text text-muted small">{{ paper.abstract[:300] }}{% if paper.abstract | length > 300 %} <a href="#" class="text-decoration-none">read more</a>{% endif %}</p>
                     {% endif %}
 
-                    <div class="d-flex flex-wrap gap-2 align-items-center">
+                    <div class="d-flex flex-wrap gap-2 align-items-center mt-3">
                         {% for cat in paper.categories[:4] %}
                         <span class="badge bg-dark border border-secondary small">{{ cat }}</span>
                         {% endfor %}
@@ -478,6 +479,7 @@
                 </div>
             </div>
         </div>
+    </div>
     </div>
     {% endfor %}
 </div>

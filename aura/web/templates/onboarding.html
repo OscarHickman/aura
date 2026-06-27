@@ -8,11 +8,11 @@
             <h1 class="display-4 mb-3"><i class="bi bi-stars text-primary"></i> Welcome to AURA</h1>
             <p class="lead text-muted">To personalize your paper recommendations, we need to learn your interests.</p>
             
-            <div class="card bg-dark-subtle border-secondary mt-4">
-                <div class="card-body">
-                    <h5 class="card-title">Please rate <strong class="text-warning">{{ 5 - total_rated }}</strong> more papers to unlock your personalized dashboard.</h5>
-                    <div class="progress mt-3" style="height: 10px;">
-                        <div class="progress-bar bg-success" role="progressbar" style="width: {{ (total_rated / 5) * 100 }}%" aria-valuenow="{{ total_rated }}" aria-valuemin="0" aria-valuemax="5"></div>
+            <div class="card glass-panel border-warning border-opacity-50 mt-4 pulse-glow-warning">
+                <div class="card-body p-4">
+                    <h5 class="card-title mb-3">Please rate <strong class="text-warning">{{ 5 - total_rated }}</strong> more papers to unlock your personalized dashboard.</h5>
+                    <div class="progress" style="height: 12px;">
+                        <div class="progress-bar" role="progressbar" style="width: {{ (total_rated / 5) * 100 }}%" aria-valuenow="{{ total_rated }}" aria-valuemin="0" aria-valuemax="5"></div>
                     </div>
                     <small class="text-muted mt-2 d-block">{{ total_rated }} / 5 papers rated</small>
                 </div>
