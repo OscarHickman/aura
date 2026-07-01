@@ -1467,7 +1467,21 @@ class PaperDatabase:
             """,
             (user_id,),
         ).fetchall()
-        return [dict(row) for row in rows]
+        result = []
+        for row in rows:
+            d = dict(row)
+            if d.get("authors"):
+                try:
+                    d["authors"] = json.loads(d["authors"])
+                except Exception:
+                    d["authors"] = [d["authors"]] if isinstance(d["authors"], str) else []
+            if d.get("categories"):
+                try:
+                    d["categories"] = json.loads(d["categories"])
+                except Exception:
+                    d["categories"] = [d["categories"]] if isinstance(d["categories"], str) else []
+            result.append(d)
+        return result
 
     def get_notes_for_collection(self, collection_id: int, user_id: int = 1) -> list[dict]:
         """Return all notes for papers in a collection, with paper metadata."""
@@ -1483,7 +1497,21 @@ class PaperDatabase:
             """,
             (user_id, collection_id),
         ).fetchall()
-        return [dict(row) for row in rows]
+        result = []
+        for row in rows:
+            d = dict(row)
+            if d.get("authors"):
+                try:
+                    d["authors"] = json.loads(d["authors"])
+                except Exception:
+                    d["authors"] = [d["authors"]] if isinstance(d["authors"], str) else []
+            if d.get("categories"):
+                try:
+                    d["categories"] = json.loads(d["categories"])
+                except Exception:
+                    d["categories"] = [d["categories"]] if isinstance(d["categories"], str) else []
+            result.append(d)
+        return result
 
     def add_to_reading_list(self, arxiv_id: str, user_id: int = 1) -> bool:
         """Add a paper to a user's reading list."""
