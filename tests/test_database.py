@@ -428,7 +428,7 @@ class TestPaperDatabase(unittest.TestCase):
         self.assertEqual(papers[0]["arxiv_id"], "2401.sim1")
 
     def test_velocity_alerts_and_weekly_history(self):
-        from datetime import datetime, timedelta
+        from datetime import datetime
         # 1. Custom simulation_codes and db setup
         custom_db = PaperDatabase(
             Path(self.tmp.name) / "papers_vel.db",

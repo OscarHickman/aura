@@ -2070,7 +2070,7 @@ class PaperDatabase:
         if existing > 0:
             return
 
-        from datetime import date, timedelta
+        from datetime import date
 
         this_year = date.today().year
         next_year = this_year + 1

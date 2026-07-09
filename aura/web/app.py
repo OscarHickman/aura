@@ -1653,7 +1653,7 @@ def _register_routes(app: Flask) -> None:
         else:
             ok = engine.db.update_event(event_id, uid, name, date, etype, notes)
             if ok:
-                flash(f"Event updated.", "success")
+                flash("Event updated.", "success")
             else:
                 flash("Failed to update event.", "danger")
 
