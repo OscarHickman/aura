@@ -1,13 +1,44 @@
-version: "3.8"
-
 services:
-  aura:
-    build: ..
-    image: aura:latest
-    ports:
-      - "80:5000"
+  app:
+    image: ${IMAGE:-ghcr.io/oscarhickman/aura}:${TAG:-latest}
+    container_name: aura_app
     restart: unless-stopped
+    ports:
+      - "5000:5000"
+    networks:
+      - default
+      - webproxy
     environment:
       - AI_PAPERS_CONFIG=/app/config.yaml
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
     volumes:
-      - ../user_credentials:/app/user_credentials:ro
+      - ./config.yaml:/app/config.yaml:ro
+      - ./data:/app/data
+      - ./user_credentials:/app/user_credentials
+    depends_on:
+      - redis
+      - qdrant
+    labels:
+      caddy: ":80"
+      caddy.route: "/aura/*"
+      caddy.route.0_uri: "strip_prefix /aura"
+      caddy.route.1_reverse_proxy: "{{upstreams 5000}}"
+
+  redis:
+    image: redis:7-alpine
+    container_name: aura_redis
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: aura_qdrant
+    restart: unless-stopped
+    volumes:
+      - ./qdrant_storage:/qdrant/storage
+
+networks:
+  webproxy:
+    external: true
