@@ -1,8 +1,8 @@
 name: Build and Deploy
 
 on:
-  push:
-    branches: [ main ]
+  release:
+    types: [published]
   workflow_dispatch:
 
 permissions:
@@ -12,6 +12,9 @@ permissions:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    env:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
     steps:
       - uses: actions/checkout@v4
 
@@ -29,7 +32,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Login to Docker Hub
-        if: ${{ secrets.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
+        if: ${{ env.DOCKERHUB_USERNAME != '' && env.DOCKERHUB_TOKEN != '' }}
         uses: docker/login-action@v2
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -43,6 +46,9 @@ jobs:
         id: image-tags
         run: |
           TAGS="ghcr.io/${{ env.REPO }}:latest,ghcr.io/${{ env.REPO }}:${{ github.sha }}"
+          if [ -n "${{ github.event.release.tag_name }}" ]; then
+            TAGS="${TAGS},ghcr.io/${{ env.REPO }}:${{ github.event.release.tag_name }}"
+          fi
           if [ "${{ secrets.DOCKERHUB_USERNAME }}" != "" ]; then
             TAGS="${TAGS},${{ secrets.DOCKERHUB_USERNAME }}/aura:latest,${{ secrets.DOCKERHUB_USERNAME }}/aura:${{ github.sha }}"
           fi
@@ -62,21 +68,32 @@ jobs:
       DEPLOY_SSH_HOST: ${{ secrets.DEPLOY_SSH_HOST }}
       DEPLOY_SSH_USER: ${{ secrets.DEPLOY_SSH_USER }}
       SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
     steps:
+      - name: Connect to Tailscale
+        if: ${{ env.TAILSCALE_AUTHKEY != '' }}
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TAILSCALE_AUTHKEY }}
+
       - name: Remote deploy via SSH
         if: ${{ env.DEPLOY_SSH_HOST != '' && env.DEPLOY_SSH_USER != '' && env.SSH_PRIVATE_KEY != '' }}
-
         uses: appleboy/ssh-action@v0.1.6
         with:
           host: ${{ secrets.DEPLOY_SSH_HOST }}
           username: ${{ secrets.DEPLOY_SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.DEPLOY_SSH_PORT || '22' }}
+          envs: GH_TOKEN
           script: |
+            set -e
             REPO=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-            docker pull ghcr.io/$REPO:latest
-            if [ "$(docker ps -q -f name=aura_app)" != "" ]; then
-              docker stop aura_app || true
-              docker rm aura_app || true
-            fi
-            docker run -d --restart unless-stopped -p 80:5000 --name aura_app ghcr.io/$REPO:latest
+            TAG="${{ github.event.release.tag_name }}"
+            TAG="${TAG:-latest}"
+            echo "$GH_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+            mkdir -p ~/docker/aura
+            { echo "IMAGE=ghcr.io/$REPO"; echo "TAG=$TAG"; } > ~/docker/aura/.env
+            cd ~/docker/aura
+            docker compose pull
+            docker compose up -d
