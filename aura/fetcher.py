@@ -664,7 +664,7 @@ class ADSSource(PaperSource):
         headers = {
             "Authorization": f"Bearer {self.api_key}"
         }
-        params = {
+        params: dict[str, Any] = {
             "q": query,
             "fl": "identifier,bibcode,title,abstract,author,pubdate,citation_count,read_count,property,arxiv_class",
             "rows": min(max_results, 100),
@@ -787,7 +787,7 @@ class ADSSource(PaperSource):
         headers = {
             "Authorization": f"Bearer {self.api_key}"
         }
-        params = {
+        params: dict[str, Any] = {
             "q": query,
             "fl": "identifier,bibcode,title,abstract,author,pubdate,citation_count,read_count,property,arxiv_class",
             "rows": len(terms),
@@ -834,7 +834,7 @@ class ADSSource(PaperSource):
         headers = {
             "Authorization": f"Bearer {self.api_key}"
         }
-        params = {
+        params: dict[str, Any] = {
             "q": query,
             "fl": "identifier,bibcode,title,abstract,author,pubdate,citation_count,read_count,property,arxiv_class",
             "rows": 200,
@@ -875,7 +875,7 @@ class ADSSource(PaperSource):
         headers = {
             "Authorization": f"Bearer {self.api_key}"
         }
-        params = {
+        params: dict[str, Any] = {
             "q": query,
             "fl": "identifier,bibcode,title,abstract,author,pubdate,citation_count,read_count,property,arxiv_class",
             "rows": 1,

@@ -490,7 +490,7 @@ def generate_full_summary(
                     max_tokens=1000,
                     temperature=0.3,
                 )
-                return message.choices[0].message.content.strip()
+                return (message.choices[0].message.content or "").strip()
 
             elif p == "google":
                 resolved_key = _resolve_api_key(api_key, "GOOGLE_API_KEY", "google")
@@ -708,7 +708,7 @@ def execute_llm(
                             max_tokens=max_tokens,
                             temperature=temperature,
                         )
-                        return message.choices[0].message.content.strip()
+                        return (message.choices[0].message.content or "").strip()
                     except Exception:
                         continue
                         
@@ -840,7 +840,7 @@ def extract_cosmology_metadata(title: str, abstract: str) -> dict:
     prompt = build_extraction_prompt(title, abstract)
     response = execute_llm(prompt, max_tokens=200, temperature=0.0)
     
-    result = {"observables": [], "datasets": [], "methods": []}
+    result: dict[str, list[str]] = {"observables": [], "datasets": [], "methods": []}
     if not response:
         return result
         

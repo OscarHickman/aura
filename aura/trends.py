@@ -57,7 +57,7 @@ def load_topics(data_dir: str | Path) -> dict[str, list[str]]:
             return data
         elif isinstance(data, list):
             # Migrate old flat list to grouped dictionary
-            migrated = {sec: [] for sec in DEFAULT_TOPICS}
+            migrated: dict[str, list[str]] = {sec: [] for sec in DEFAULT_TOPICS}
             for topic in data:
                 categorized = False
                 for sec, topics in DEFAULT_TOPICS.items():
@@ -421,7 +421,7 @@ def get_trends_data(
     paper_embs = np.stack([emb for _, emb, _ in recent_papers])
 
     # 5. Populate the grid of counts
-    matching_grid = [[[] for _ in range(num_weeks)] for _ in range(len(topics))]
+    matching_grid: list[list[list[dict]]] = [[[] for _ in range(num_weeks)] for _ in range(len(topics))]
 
     for t_idx, topic in enumerate(topics):
         topic_emb = topic_embeddings[t_idx]

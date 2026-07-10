@@ -24,7 +24,7 @@ class PaperPreferenceNet(nn.Module):
 
     def __init__(self, embedding_dim: int = 384, hidden_dims: list[int] = [128, 64, 32], dropout: float = 0.2):
         super().__init__()
-        layers = []
+        layers: list[nn.Module] = []
         prev_dim = embedding_dim
         for i, dim in enumerate(hidden_dims):
             layers.append(nn.Linear(prev_dim, dim))

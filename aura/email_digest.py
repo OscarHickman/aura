@@ -183,10 +183,10 @@ def _collect_top_papers_with_summaries(
 
 def _build_email_content(
     papers: list[dict], trends: dict[str, str], app_name: str = "AURA",
-    secret_key: str = None, base_url: str = "http://127.0.0.1:5000", user_id: int = 1,
-    unsubscribe_token: str = None, survey_papers: list[dict] = None,
-    network_papers: list[dict] = None, alerts: list[dict] = None,
-    citing_papers: list[dict] = None, group_papers: list[dict] = None
+    secret_key: Optional[str] = None, base_url: str = "http://127.0.0.1:5000", user_id: int = 1,
+    unsubscribe_token: Optional[str] = None, survey_papers: Optional[list[dict]] = None,
+    network_papers: Optional[list[dict]] = None, alerts: Optional[list[dict]] = None,
+    citing_papers: Optional[list[dict]] = None, group_papers: Optional[list[dict]] = None
 ) -> tuple[str, str]:
     """Create plain-text and HTML digest bodies."""
     text_lines = []
@@ -496,7 +496,11 @@ def send_top_recommendations_email(
         if not secret_key_val:
             try:
                 from flask import current_app
-                secret_key_val = current_app.secret_key
+                app_secret_key = current_app.secret_key
+                if isinstance(app_secret_key, bytes):
+                    secret_key_val = app_secret_key.decode("utf-8")
+                else:
+                    secret_key_val = app_secret_key
             except Exception:
                 pass
                 

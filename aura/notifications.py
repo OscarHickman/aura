@@ -17,7 +17,7 @@ def send_slack_notification(webhook_url: str, paper: Dict[str, Any], score: floa
         if len(summary) > 300:
             summary = summary[:297] + "..."
 
-        payload = {
+        payload: Dict[str, Any] = {
             "blocks": [
                 {
                     "type": "section",
@@ -46,7 +46,7 @@ def send_discord_notification(webhook_url: str, paper: Dict[str, Any], score: fl
         if len(summary) > 300:
             summary = summary[:297] + "..."
 
-        payload = {
+        payload: Dict[str, Any] = {
             "content": f"🔥 **New high-scoring paper matched!** (Score: **{score_percent}%**)\n\n**[{title}]({url})**\n*Authors*: {authors}\n\n{summary}"
         }
         resp = requests.post(webhook_url, json=payload, timeout=10)
@@ -90,7 +90,7 @@ def send_slack_digest(webhook_url: str, papers: List[Dict[str, Any]]) -> bool:
                 }
             })
             
-        payload = {"blocks": blocks}
+        payload: Dict[str, Any] = {"blocks": blocks}
         resp = requests.post(webhook_url, json=payload, timeout=10)
         resp.raise_for_status()
         return True

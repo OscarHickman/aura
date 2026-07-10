@@ -66,7 +66,7 @@ class QdrantVectorStore(VectorStore):
         self.api_key = api_key
         self.collection_name = collection_name
         self.embedding_dim = embedding_dim
-        self.client = None
+        self.client: Optional[Any] = None
         self._connect()
         
     def _connect(self) -> None:

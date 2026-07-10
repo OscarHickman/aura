@@ -3,7 +3,10 @@
 import logging
 import numpy as np
 from pathlib import Path
-from typing import cast, Optional
+from typing import cast, Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .vector_store import VectorStore
 
 from .database import PaperDatabase
 from .embedder import embed_papers_batch, get_embedding_dim
@@ -46,7 +49,8 @@ class RecommendationEngine:
                 if sc.get(name, default_enable):
                     try:
                         if name == "rss":
-                            self.sources.append(source_class(feed_urls=rss_urls))
+                            from .fetcher import RSSSource
+                            self.sources.append(cast(type[RSSSource], source_class)(feed_urls=rss_urls))
                         else:
                             self.sources.append(source_class())
                     except Exception as e:
@@ -103,6 +107,7 @@ class RecommendationEngine:
             from .vector_store import NumpyVectorStore, QdrantVectorStore
             cfg = get_validated_config()
             vs_conf = cfg.get("vector_store", {})
+            self.vector_store: "VectorStore"
             if vs_conf.get("provider") == "qdrant" and vs_conf.get("url"):
                 self.vector_store = QdrantVectorStore(
                     url=vs_conf["url"],
@@ -527,7 +532,7 @@ class RecommendationEngine:
         liked_references_map = self.db.get_liked_references_counts(liked_arxiv_ids)
 
         # Get auto-tags for liked papers to establish user preference
-        liked_tag_counts = {}
+        liked_tag_counts: dict[str, int] = {}
         try:
             liked_papers_tags_rows = self.db.conn.execute(
                 """
@@ -542,8 +547,8 @@ class RecommendationEngine:
             logger.warning(f"Failed to fetch liked tag history for recommendations: {e}")
 
         # Batch load auto-tags for candidate papers
-        auto_tags_by_paper = {}
-        network_tags_by_paper = {}
+        auto_tags_by_paper: dict[str, list[str]] = {}
+        network_tags_by_paper: dict[str, list[str]] = {}
         if scorable_papers:
             placeholders = ",".join("?" for _ in scorable_papers)
             query_tags = f"""

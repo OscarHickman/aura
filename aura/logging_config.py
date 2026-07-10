@@ -2,11 +2,12 @@ import contextvars
 import logging
 import os
 from collections import deque
+from typing import Optional
 from pythonjsonlogger import jsonlogger
 import sentry_sdk
 
 # Context variable to hold request_id
-request_id_var = contextvars.ContextVar("request_id", default=None)
+request_id_var: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("request_id", default=None)
 
 class CustomJsonFormatter(jsonlogger.JsonFormatter):
     """Custom JSON formatter to inject request_id and custom metadata."""

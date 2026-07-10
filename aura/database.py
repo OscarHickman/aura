@@ -2284,7 +2284,7 @@ class PaperDatabase:
             rows = cursor.fetchall()
             
             # Group by tag and week start
-            counts = {}
+            counts: dict[tuple[str, str], int] = {}
             for row in rows:
                 tag = row["tag"]
                 published = row["published"]
