@@ -4,7 +4,7 @@ import unittest
 from argparse import Namespace
 from contextlib import redirect_stdout
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, mock_open, patch
 
 import run
 
@@ -104,26 +104,27 @@ class TestRunModule(unittest.TestCase):
     @patch("sys.version_info")
     @patch("pathlib.Path.exists")
     @patch("sqlite3.connect")
-    def test_cmd_doctor(self, mock_connect, mock_exists, mock_version):
+    @patch("builtins.open", new_callable=mock_open, read_data="{}")
+    def test_cmd_doctor(self, mock_file, mock_connect, mock_exists, mock_version):
         # We need mock_version to look like version_info >= (3, 10)
         mock_version.__ge__.return_value = True
         mock_version.split.return_value = ["3.11.0"]
-        
+
         # mock exists for config, LLM key, data dir, database, email config
         mock_exists.return_value = True
-        
+
         # mock sqlite connection
         mock_conn = Mock()
         mock_connect.return_value = mock_conn
 
         args = Namespace(config="config.yaml")
         config = {"data_dir": "data", "llm_provider": "openai"}
-        
+
         with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
             out = io.StringIO()
             with redirect_stdout(out):
                 run.cmd_doctor(args, config)
-            
+
             output = out.getvalue()
             self.assertIn("Checking AURA health status...", output)
             self.assertIn("All checks passed!", output)
