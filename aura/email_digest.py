@@ -236,7 +236,7 @@ def _build_email_content(
         html_items.append("<h2>From the surveys</h2><div style='margin-bottom:30px;'>")
         for i, sp in enumerate(survey_papers, 1):
             authors = ", ".join(sp.get("authors", [])[:3])
-            summary = sp.get("summary", sp.get("abstract", ""))
+            summary = sp.get("summary") or sp.get("abstract") or ""
             sp_tags = [t.upper() for t in sp.get("tags", [])]
             tag_label = f" [{', '.join(sp_tags)}]" if sp_tags else ""
             text_lines.extend([

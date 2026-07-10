@@ -62,6 +62,31 @@ class TestEmailDigest(unittest.TestCase):
         self.assertIn("Group Paper A", html)
         self.assertIn("This is from the group", html)
 
+    def test_build_email_content_survey_paper_with_none_summary_falls_back_to_abstract(self):
+        papers = [
+            {
+                "title": "Paper A",
+                "authors": ["Ada"],
+                "score": 0.93,
+                "url": "http://arxiv.org/abs/1",
+                "summary": "Good summary",
+            }
+        ]
+        survey_papers = [
+            {
+                "title": "Survey Paper A",
+                "authors": ["Author D"],
+                "url": "http://arxiv.org/abs/4",
+                "summary": None,
+                "abstract": "Fallback abstract text.",
+            }
+        ]
+        text, html = email_digest._build_email_content(
+            papers, trends={}, app_name="AURA", survey_papers=survey_papers
+        )
+        self.assertIn("Fallback abstract text", text)
+        self.assertIn("Fallback abstract text", html)
+
     @patch("aura.email_digest.generate_monthly_trends")
     @patch("aura.email_digest._send_smtp_email")
     @patch("aura.email_digest.RecommendationEngine")
