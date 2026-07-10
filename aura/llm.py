@@ -500,7 +500,7 @@ def generate_full_summary(
                     "https://generativelanguage.googleapis.com/v1beta/"
                     f"models/gemini-2.0-flash:generateContent?key={resolved_key}"
                 )
-                payload = {
+                payload: dict[str, Any] = {
                     "contents": [{"parts": [{"text": prompt}]}],
                     "generationConfig": {"temperature": 0.3, "maxOutputTokens": 1000},
                 }
@@ -602,7 +602,7 @@ def stream_ask_paper(
                     "https://generativelanguage.googleapis.com/v1beta/"
                     f"models/gemini-2.0-flash:streamGenerateContent?key={resolved_key}"
                 )
-                payload = {
+                payload: dict[str, Any] = {
                     "contents": [{"parts": [{"text": prompt}]}],
                     "generationConfig": {"temperature": 0.3, "maxOutputTokens": 1000},
                 }
