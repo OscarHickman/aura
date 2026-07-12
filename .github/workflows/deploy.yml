@@ -1,8 +1,9 @@
 name: Build and Deploy
 
 on:
-  release:
-    types: [published]
+  push:
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 permissions:
@@ -46,8 +47,8 @@ jobs:
         id: image-tags
         run: |
           TAGS="ghcr.io/${{ env.REPO }}:latest,ghcr.io/${{ env.REPO }}:${{ github.sha }}"
-          if [ -n "${{ github.event.release.tag_name }}" ]; then
-            TAGS="${TAGS},ghcr.io/${{ env.REPO }}:${{ github.event.release.tag_name }}"
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            TAGS="${TAGS},ghcr.io/${{ env.REPO }}:${{ github.ref_name }}"
           fi
           if [ "${{ secrets.DOCKERHUB_USERNAME }}" != "" ]; then
             TAGS="${TAGS},${{ secrets.DOCKERHUB_USERNAME }}/aura:latest,${{ secrets.DOCKERHUB_USERNAME }}/aura:${{ github.sha }}"
@@ -103,8 +104,7 @@ jobs:
           script: |
             set -e
             REPO=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-            TAG="${{ github.event.release.tag_name }}"
-            TAG="${TAG:-latest}"
+            TAG="${{ github.ref_type == 'tag' && github.ref_name || 'latest' }}"
             echo "$GH_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
             mkdir -p ~/docker/aura
             { echo "IMAGE=ghcr.io/$REPO"; echo "TAG=$TAG"; } > ~/docker/aura/.env
