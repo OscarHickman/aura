@@ -1,5 +1,6 @@
 """Build and send email digests from top recommended papers."""
 
+import html as html_lib
 import json
 import logging
 import smtplib
@@ -15,8 +16,21 @@ from .config import get_validated_config
 from .llm import AI_FAIL_SUMMARY
 from .recommender import RecommendationEngine
 from .trends import generate_monthly_trends
+from aura.timeutil import utcnow
 
 logger = logging.getLogger(__name__)
+
+
+def _esc(value: Any) -> str:
+    """HTML-escape a value before interpolating it into digest markup.
+
+    Paper titles, author names, URLs and LLM-written summaries are untrusted
+    input: without escaping, an ``<img>`` or ``<a>`` in a title renders as live
+    HTML in the recipient's mail client.
+    """
+    if value is None:
+        return ""
+    return html_lib.escape(str(value), quote=True)
 
 
 def load_email_config(config_path: Optional[str] = None) -> dict:
@@ -204,12 +218,12 @@ def _build_email_content(
         )
         for alert in alerts:
             text_lines.extend([
-                f"- {alert['keyword']} mentioned in {alert['paper_count']} papers in last 7 days",
+                f"- {_esc(alert['keyword'])} mentioned in {alert['paper_count']} papers in last 7 days",
                 ""
             ])
             html_items.append(
                 f"<div style='margin-bottom:8px;'>"
-                f"<strong style='color:#d32f2f;'>{alert['keyword']}</strong>: "
+                f"<strong style='color:#d32f2f;'>{_esc(alert['keyword'])}</strong>: "
                 f"appeared in <span style='font-weight:bold;color:#f44336;'>{alert['paper_count']}</span> papers in the last 7 days."
                 f"</div>"
             )
@@ -225,8 +239,8 @@ def _build_email_content(
         text_lines.extend([f"**{topic.title()}**", summary, ""])
         html_items.append(
             f"<div style='margin-bottom:15px;'>"
-            f"<h3 style='margin:0 0 4px 0;color:#2c3e50;'>{topic.title()}</h3>"
-            f"<p style='margin:0;color:#444;line-height:1.5;'>{summary}</p>"
+            f"<h3 style='margin:0 0 4px 0;color:#2c3e50;'>{_esc(topic.title())}</h3>"
+            f"<p style='margin:0;color:#444;line-height:1.5;'>{_esc(summary)}</p>"
             f"</div>"
         )
     html_items.append("</div><hr>")
@@ -247,10 +261,10 @@ def _build_email_content(
             ])
             html_items.append(
                 f"<div style='margin-bottom:15px;padding:12px;border-left:4px solid #00bcd4;background:#f9f9f9;border-radius:0 8px 8px 0;'>"
-                f"<h4 style='margin:0 0 4px 0;color:#333;'>{sp.get('title')} <span style='font-size:11px;color:#00bcd4;text-transform:uppercase;'>{tag_label}</span></h4>"
-                f"<p style='margin:0 0 4px 0;color:#666;font-size:12px;'><strong>Authors:</strong> {authors}</p>"
-                f"<p style='margin:0 0 4px 0;font-size:12px;'><a href='{sp.get('url')}'>{sp.get('url')}</a></p>"
-                f"<p style='margin:0;font-size:13px;line-height:1.4;'>{summary}</p>"
+                f"<h4 style='margin:0 0 4px 0;color:#333;'>{_esc(sp.get('title'))} <span style='font-size:11px;color:#00bcd4;text-transform:uppercase;'>{_esc(tag_label)}</span></h4>"
+                f"<p style='margin:0 0 4px 0;color:#666;font-size:12px;'><strong>Authors:</strong> {_esc(authors)}</p>"
+                f"<p style='margin:0 0 4px 0;font-size:12px;'><a href='{_esc(sp.get('url'))}'>{_esc(sp.get('url'))}</a></p>"
+                f"<p style='margin:0;font-size:13px;line-height:1.4;'>{_esc(summary)}</p>"
                 f"</div>"
             )
         html_items.append("</div><hr>")
@@ -262,17 +276,17 @@ def _build_email_content(
             authors = ", ".join(np_paper.get("authors", [])[:3])
             summary = np_paper.get("summary") or np_paper.get("abstract") or ""
             text_lines.extend([
-                f"{i}. {np_paper.get('title')}",
-                f"URL: {np_paper.get('url')}",
+                f"{i}. {_esc(np_paper.get('title'))}",
+                f"URL: {_esc(np_paper.get('url'))}",
                 f"Summary: {summary[:300]}...",
                 ""
             ])
             html_items.append(
                 f"<div style='margin-bottom:15px;padding:12px;border-left:4px solid #3f51b5;background:#f9f9f9;border-radius:0 8px 8px 0;'>"
-                f"<h4 style='margin:0 0 4px 0;color:#333;'>{np_paper.get('title')}</h4>"
-                f"<p style='margin:0 0 4px 0;color:#666;font-size:12px;'><strong>Authors:</strong> {authors}</p>"
-                f"<p style='margin:0 0 4px 0;font-size:12px;'><a href='{np_paper.get('url')}'>{np_paper.get('url')}</a></p>"
-                f"<p style='margin:0;font-size:13px;line-height:1.4;'>{summary}</p>"
+                f"<h4 style='margin:0 0 4px 0;color:#333;'>{_esc(np_paper.get('title'))}</h4>"
+                f"<p style='margin:0 0 4px 0;color:#666;font-size:12px;'><strong>Authors:</strong> {_esc(authors)}</p>"
+                f"<p style='margin:0 0 4px 0;font-size:12px;'><a href='{_esc(np_paper.get('url'))}'>{_esc(np_paper.get('url'))}</a></p>"
+                f"<p style='margin:0;font-size:13px;line-height:1.4;'>{_esc(summary)}</p>"
                 f"</div>"
             )
         html_items.append("</div><hr>")
@@ -287,17 +301,17 @@ def _build_email_content(
             authors = ", ".join(gp.get("authors", [])[:3])
             summary = gp.get("summary") or gp.get("abstract") or ""
             text_lines.extend([
-                f"{i}. {gp.get('title')}",
-                f"URL: {gp.get('url')}",
+                f"{i}. {_esc(gp.get('title'))}",
+                f"URL: {_esc(gp.get('url'))}",
                 f"Summary: {summary[:300]}...",
                 ""
             ])
             html_items.append(
                 f"<div style='margin-bottom:15px;padding:12px;border-left:4px solid #009688;background:#f9f9f9;border-radius:0 8px 8px 0;'>"
-                f"<h4 style='margin:0 0 4px 0;color:#333;'>{gp.get('title')}</h4>"
-                f"<p style='margin:0 0 4px 0;color:#666;font-size:12px;'><strong>Authors:</strong> {authors}</p>"
-                f"<p style='margin:0 0 4px 0;font-size:12px;'><a href='{gp.get('url')}'>{gp.get('url')}</a></p>"
-                f"<p style='margin:0;font-size:13px;line-height:1.4;'>{summary}</p>"
+                f"<h4 style='margin:0 0 4px 0;color:#333;'>{_esc(gp.get('title'))}</h4>"
+                f"<p style='margin:0 0 4px 0;color:#666;font-size:12px;'><strong>Authors:</strong> {_esc(authors)}</p>"
+                f"<p style='margin:0 0 4px 0;font-size:12px;'><a href='{_esc(gp.get('url'))}'>{_esc(gp.get('url'))}</a></p>"
+                f"<p style='margin:0;font-size:13px;line-height:1.4;'>{_esc(summary)}</p>"
                 f"</div>"
             )
         html_items.append("</div><hr>")
@@ -313,17 +327,17 @@ def _build_email_content(
             authors = ", ".join(cp.get("authors", [])[:3])
             summary = cp.get("summary") or cp.get("abstract") or ""
             text_lines.extend([
-                f"{i}. {cp.get('title')}",
-                f"URL: {cp.get('url')}",
+                f"{i}. {_esc(cp.get('title'))}",
+                f"URL: {_esc(cp.get('url'))}",
                 f"Summary: {summary[:300]}...",
                 ""
             ])
             html_items.append(
                 f"<div style='margin-bottom:15px;padding:12px;border-left:4px solid #4caf50;background:#f9f9f9;border-radius:0 8px 8px 0;'>"
-                f"<h4 style='margin:0 0 4px 0;color:#333;'>{cp.get('title')}</h4>"
-                f"<p style='margin:0 0 4px 0;color:#666;font-size:12px;'><strong>Authors:</strong> {authors}</p>"
-                f"<p style='margin:0 0 4px 0;font-size:12px;'><a href='{cp.get('url')}'>{cp.get('url')}</a></p>"
-                f"<p style='margin:0;font-size:13px;line-height:1.4;'>{summary}</p>"
+                f"<h4 style='margin:0 0 4px 0;color:#333;'>{_esc(cp.get('title'))}</h4>"
+                f"<p style='margin:0 0 4px 0;color:#666;font-size:12px;'><strong>Authors:</strong> {_esc(authors)}</p>"
+                f"<p style='margin:0 0 4px 0;font-size:12px;'><a href='{_esc(cp.get('url'))}'>{_esc(cp.get('url'))}</a></p>"
+                f"<p style='margin:0;font-size:13px;line-height:1.4;'>{_esc(summary)}</p>"
                 f"</div>"
             )
         html_items.append("</div><hr>")
@@ -377,11 +391,11 @@ def _build_email_content(
             </div>
             """.format(
                 idx=i,
-                title=paper.get("title", "Untitled"),
+                title=_esc(paper.get("title", "Untitled")),
                 score=score,
-                authors=authors,
-                url=url,
-                summary=summary,
+                authors=_esc(authors),
+                url=_esc(url),
+                summary=_esc(summary),
                 rating_links=rating_links_html,
             )
         )
@@ -621,8 +635,8 @@ def send_group_digest_email(
         today = date.today().isoformat()
         subject = f"{subject_prefix} Group Digest: {group['name']} ({today})"
 
-        text_lines = [f"{subject_prefix} - {group['name']} Group Feed Digest", ""]
-        html_items = [f"<h2>{group['name']} Group Feed Digest</h2>"]
+        text_lines = [f"{subject_prefix} - {_esc(group['name'])} Group Feed Digest", ""]
+        html_items = [f"<h2>{_esc(group['name'])} Group Feed Digest</h2>"]
 
         for i, paper in enumerate(hydrated, 1):
             authors = ", ".join(paper.get("authors", [])[:3])
@@ -646,17 +660,17 @@ def send_group_digest_email(
                 </div>
                 """.format(
                     idx=i,
-                    title=paper.get("title", "Untitled"),
+                    title=_esc(paper.get("title", "Untitled")),
                     rating=rating,
-                    authors=authors,
-                    url=url,
-                    summary=summary,
+                    authors=_esc(authors),
+                    url=_esc(url),
+                    summary=_esc(summary),
                 )
             )
 
         html_body = (
             "<html><body>"
-            f"<h2 style='font-family:Arial,sans-serif'>{group['name']} Lab/Group Digest</h2>"
+            f"<h2 style='font-family:Arial,sans-serif'>{_esc(group['name'])} Lab/Group Digest</h2>"
             f"<p style='font-family:Arial,sans-serif'>Here are the latest highly-rated papers shared by members of your group.</p>"
             "<div style='font-family:Arial,sans-serif;font-size:14px'>"
             + "".join(html_items)
@@ -821,7 +835,7 @@ def _collect_citing_papers(engine, user_id: int = 1, limit: int = 5) -> list[dic
         
         # Filter in Python for last 7 days
         from datetime import datetime, timedelta
-        cutoff = datetime.utcnow().date() - timedelta(days=7)
+        cutoff = utcnow().date() - timedelta(days=7)
         recent_papers = []
         for p in papers:
             pub_date_str = p.get("published", "")

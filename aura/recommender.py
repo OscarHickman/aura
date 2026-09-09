@@ -13,6 +13,7 @@ from .embedder import embed_papers_batch, get_embedding_dim
 from .fetcher import PaperSource, ArxivSource, PaperSourceRegistry
 from .llm import generate_summary, get_default_provider, _load_providers_order
 from .model import PreferenceModel
+from aura.timeutil import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -1191,7 +1192,7 @@ class RecommendationEngine:
         papers = cursor.fetchall()
         
         updated_count = 0
-        now = datetime.utcnow()
+        now = utcnow()
         
         for paper in papers:
             arxiv_id = paper["arxiv_id"]

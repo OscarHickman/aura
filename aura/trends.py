@@ -10,6 +10,7 @@ import numpy as np
 from .database import PaperDatabase
 from .embedder import get_model
 from .llm import _load_providers_order, _resolve_api_key
+from aura.timeutil import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -115,14 +116,14 @@ def _generate_generic_text(prompt: str) -> str:
                 api_key = _resolve_api_key(None, "OPENAI_API_KEY", "openai")
                 if not api_key:
                     continue
-                client = OpenAI(api_key=api_key)
-                response = client.chat.completions.create(
+                openai_client = OpenAI(api_key=api_key)
+                openai_response = openai_client.chat.completions.create(
                     model="gpt-4o-mini",
                     messages=[{"role": "user", "content": prompt}],
                     max_tokens=300,
                     temperature=0.5,
                 )
-                return response.choices[0].message.content.strip()
+                return (openai_response.choices[0].message.content or "").strip()
             except Exception as e:
                 logger.warning(f"OpenAI generic text generation failed: {e}")
         elif p == "anthropic":
@@ -186,7 +187,7 @@ def generate_monthly_trends(data_dir: str | Path, embedding_model: str = "all-Mi
     db = PaperDatabase(Path(data_dir) / "papers.db")
     
     # Get all papers from last 30 days
-    cutoff_date = datetime.utcnow() - timedelta(days=30)
+    cutoff_date = utcnow() - timedelta(days=30)
     
     papers_with_emb = db.get_papers_with_embeddings()
     recent_papers = []
@@ -392,7 +393,7 @@ def get_trends_data(
         return {}
 
     # Filter to papers within the timeframe (plus a small buffer)
-    now = datetime.utcnow()
+    now = utcnow()
     total_days = (num_weeks + 2) * 7
     cutoff_date = now - timedelta(days=total_days)
 

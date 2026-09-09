@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import tempfile
 import random
+from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
@@ -19,10 +20,13 @@ import torch.nn as nn
 logger = logging.getLogger(__name__)
 
 
+DEFAULT_HIDDEN_DIMS: tuple[int, ...] = (128, 64, 32)
+
+
 class PaperPreferenceNet(nn.Module):
     """Small feedforward network that predicts paper interest score from embeddings."""
 
-    def __init__(self, embedding_dim: int = 384, hidden_dims: list[int] = [128, 64, 32], dropout: float = 0.2):
+    def __init__(self, embedding_dim: int = 384, hidden_dims: Sequence[int] = DEFAULT_HIDDEN_DIMS, dropout: float = 0.2):
         super().__init__()
         layers: list[nn.Module] = []
         prev_dim = embedding_dim
@@ -53,7 +57,7 @@ class PreferenceModel:
         embedding_dim: int = 384,
         learning_rate: float = 1e-3,
         device: str = "cpu",
-        hidden_dims: list[int] = [128, 64, 32],
+        hidden_dims: Sequence[int] = DEFAULT_HIDDEN_DIMS,
         dropout: float = 0.2,
     ):
         self.model_path = Path(model_path)

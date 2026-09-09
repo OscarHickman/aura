@@ -11,6 +11,7 @@ from abc import ABC, abstractmethod
 import requests
 
 import re
+from aura.timeutil import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -122,7 +123,7 @@ class ArxivSource(PaperSource):
         cat_query = " OR ".join(f"cat:{cat}" for cat in categories)
 
         # Use submittedDate range for recent papers
-        end_date = datetime.utcnow()
+        end_date = utcnow()
         start_date = end_date - timedelta(days=days_back)
         date_from = start_date.strftime("%Y%m%d")
         date_to = end_date.strftime("%Y%m%d")
@@ -393,7 +394,7 @@ class SemanticScholarSource(PaperSource):
             pub_date = entry.get("publicationDate")
             if not pub_date:
                 year = entry.get("year")
-                pub_date = f"{year}-01-01" if year else datetime.utcnow().isoformat()[:10]
+                pub_date = f"{year}-01-01" if year else utcnow().isoformat()[:10]
 
             abstract = entry.get("abstract", "No Abstract")
             has_code, has_data = detect_code_and_data(abstract)
@@ -432,7 +433,7 @@ class BiorxivSource(PaperSource):
         papers: list[dict] = []
         seen_dois = set()
 
-        end_date = datetime.utcnow()
+        end_date = utcnow()
         start_date = end_date - timedelta(days=days_back)
         
         date_from = start_date.strftime("%Y-%m-%d")
@@ -544,7 +545,7 @@ class RSSSource(PaperSource):
         papers: list[dict] = []
         seen_ids = set()
         
-        cutoff_date = datetime.utcnow() - timedelta(days=days_back)
+        cutoff_date = utcnow() - timedelta(days=days_back)
 
         for url in self.feed_urls:
             logger.info(f"Fetching RSS feed: {url}")
@@ -656,7 +657,7 @@ class ADSSource(PaperSource):
         seen_ids = set()
 
         cat_query = " OR ".join(f'"{cat}"' for cat in categories)
-        start_date = datetime.utcnow() - timedelta(days=days_back)
+        start_date = utcnow() - timedelta(days=days_back)
         date_str = start_date.strftime("%Y-%m")
 
         query = f'arxiv_class:({cat_query}) AND pubdate:[{date_str} TO *]'
@@ -717,7 +718,7 @@ class ADSSource(PaperSource):
             if pub_date:
                 pub_date = pub_date.replace("-00", "-01")
             else:
-                pub_date = datetime.utcnow().isoformat()[:10]
+                pub_date = utcnow().isoformat()[:10]
 
             properties = doc.get("property", [])
             is_refereed = 1 if any(p.lower() == "refereed" for p in properties) else 0

@@ -27,6 +27,7 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_wtf.csrf import CSRFProtect
 from flask_talisman import Talisman
+from aura.timeutil import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -172,10 +173,12 @@ def create_app(config_path: str | None = None) -> Flask:
         secret_key = secrets.token_hex(32)
         try:
             os.makedirs("data", exist_ok=True)
-            with open("data/.secret_key", "w") as f:
+            # 0600: the session secret must not be readable by other local users.
+            fd = os.open("data/.secret_key", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "w") as f:
                 f.write(secret_key)
         except Exception:
-            pass
+            logger.warning("Could not persist session secret key to data/.secret_key", exc_info=True)
     app.secret_key = secret_key
 
     # Disable CSRF protection dynamically during testing
@@ -440,8 +443,8 @@ def _register_routes(app: Flask) -> None:
             paper_list = engine.db.get_papers_by_tag(tag, user_id=uid, limit=200)
             filter_type = f"tag: {tag}"
         elif collection_id:
-            paper_list = engine.db.get_collection_papers(collection_id, limit=200)
-            coll = engine.db.get_collection(collection_id)
+            paper_list = engine.db.get_collection_papers(collection_id, limit=200, user_id=uid)
+            coll = engine.db.get_collection(collection_id, user_id=uid)
             coll_name = coll["name"] if coll else "Collection"
             filter_type = f"collection: {coll_name}"
         else:
@@ -862,7 +865,7 @@ def _register_routes(app: Flask) -> None:
     @login_required
     def export_collection_notes(collection_id):
         uid = _get_current_user_id()
-        collection = engine.db.get_collection(collection_id) if engine else None
+        collection = engine.db.get_collection(collection_id, user_id=uid) if engine else None
         if not collection:
             return jsonify({"error": "collection not found"}), 404
         notes = engine.db.get_notes_for_collection(collection_id, user_id=uid) if engine else []
@@ -1070,7 +1073,6 @@ def _register_routes(app: Flask) -> None:
 
         saved_papers = []
         import re
-        from datetime import datetime
         from ..pdf_scanner import scan_pdf_metadata
 
         for f in files:
@@ -1143,7 +1145,7 @@ def _register_routes(app: Flask) -> None:
                             "abstract": scanned["abstract"],
                             "authors": scanned["authors"],
                             "categories": ["pdf-upload"],
-                            "published": datetime.utcnow().strftime("%Y-%m-%d"),
+                            "published": utcnow().strftime("%Y-%m-%d"),
                             "url": pdf_url,
                             "pdf_url": pdf_url,
                             "source": "pdf_upload",
@@ -1404,7 +1406,6 @@ def _register_routes(app: Flask) -> None:
     @login_required
     def view_brief(date):
         """View a specific weekly brief, generating it if it doesn't exist."""
-        from datetime import datetime
         if not re.match(r"^\d{4}-\d{2}-\d{2}$", date):
             return "Invalid date format. Use YYYY-MM-DD.", 400
             
@@ -1417,7 +1418,7 @@ def _register_routes(app: Flask) -> None:
             brief = {
                 "date": date,
                 "content": content,
-                "created_at": datetime.utcnow().isoformat()
+                "created_at": utcnow().isoformat()
             }
         return render_template("brief_detail.html", brief=brief)
 
@@ -1442,7 +1443,7 @@ def _register_routes(app: Flask) -> None:
         success = engine.db.update_collection(collection_id, user_id=uid, is_public=is_public) if engine else False
         if not success:
             return jsonify({"error": "failed to update collection"}), 500
-        coll = engine.db.get_collection(collection_id)
+        coll = engine.db.get_collection(collection_id, user_id=uid)
         return jsonify({"status": "ok", "slug": coll.get("slug") if coll else None})
 
     @app.route("/api/collections/<int:collection_id>/fork", methods=["POST"])

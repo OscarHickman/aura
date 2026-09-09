@@ -1,6 +1,6 @@
 import os
 import logging
-from datetime import datetime, timedelta
+from datetime import timedelta
 import xml.etree.ElementTree as ElementTree
 import requests
 import yaml
@@ -9,6 +9,7 @@ from celery import Celery
 from .recommender import RecommendationEngine
 from .fetcher import ArxivSource, ADSSource
 from .embedder import embed_papers_batch
+from aura.timeutil import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +78,7 @@ def fetch_papers_page_task(self, task_id, categories, max_results, days_back, ge
     try:
         # Build query
         cat_query = " OR ".join(f"cat:{cat}" for cat in categories)
-        end_date = datetime.utcnow()
+        end_date = utcnow()
         start_date = end_date - timedelta(days=days_back)
         date_from = start_date.strftime("%Y%m%d")
         date_to = end_date.strftime("%Y%m%d")
@@ -356,7 +357,7 @@ def refresh_github_metadata_task(self, force=False):
         from datetime import datetime, timedelta
         from aura.github import extract_github_url, fetch_github_metadata
         import time
-        now = datetime.utcnow()
+        now = utcnow()
 
         for idx, paper in enumerate(papers):
             arxiv_id = paper["arxiv_id"]

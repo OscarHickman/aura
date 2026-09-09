@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
+from aura.timeutil import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -539,7 +540,7 @@ class PaperDatabase:
                     paper["published"],
                     paper.get("url", ""),
                     paper.get("pdf_url", ""),
-                    datetime.utcnow().isoformat(),
+                    utcnow().isoformat(),
                     emb_blob,
                     summary,
                     source,
@@ -566,7 +567,7 @@ class PaperDatabase:
         summaries: Optional[list[str]] = None,
     ) -> int:
         """Add multiple papers. Returns count of newly inserted papers."""
-        now = datetime.utcnow().isoformat()
+        now = utcnow().isoformat()
         count = 0
         for i, paper in enumerate(papers):
             emb_blob = (
@@ -764,7 +765,7 @@ class PaperDatabase:
         try:
             self.conn.execute(
                 "INSERT INTO ratings (user_id, arxiv_id, rating, rated_at) VALUES (?, ?, ?, ?)",
-                (user_id, arxiv_id, rating, datetime.utcnow().isoformat()),
+                (user_id, arxiv_id, rating, utcnow().isoformat()),
             )
             self.conn.commit()
             return True
@@ -868,13 +869,13 @@ class PaperDatabase:
         """Log a fetch operation."""
         self.conn.execute(
             "INSERT INTO fetch_log (fetched_at, num_papers, categories) VALUES (?, ?, ?)",
-            (datetime.utcnow().isoformat(), num_papers, json.dumps(categories)),
+            (utcnow().isoformat(), num_papers, json.dumps(categories)),
         )
         self.conn.commit()
 
     def create_task_entry(self, task_id: str, task_type: str, status: str = "PENDING") -> bool:
         """Create a new task entry in the task_history table."""
-        now = datetime.utcnow().isoformat()
+        now = utcnow().isoformat()
         try:
             self.conn.execute(
                 """INSERT OR REPLACE INTO task_history
@@ -890,7 +891,7 @@ class PaperDatabase:
 
     def update_task_progress(self, task_id: str, progress: int, total: int, status: Optional[str] = None) -> bool:
         """Update progress and status of a background task."""
-        now = datetime.utcnow().isoformat()
+        now = utcnow().isoformat()
         try:
             if status:
                 self.conn.execute(
@@ -920,7 +921,7 @@ class PaperDatabase:
         error: Optional[str] = None,
     ) -> bool:
         """Mark task as complete with optional result or error."""
-        now = datetime.utcnow().isoformat()
+        now = utcnow().isoformat()
         res_str = json.dumps(result) if isinstance(result, (dict, list)) else result
         try:
             self.conn.execute(
@@ -1157,7 +1158,7 @@ class PaperDatabase:
         try:
             self.conn.execute(
                 "INSERT OR IGNORE INTO tags (user_id, arxiv_id, tag, source, created_at) VALUES (?, ?, ?, ?, ?)",
-                (user_id, arxiv_id, clean_tag, source, datetime.utcnow().isoformat()),
+                (user_id, arxiv_id, clean_tag, source, utcnow().isoformat()),
             )
             self.conn.commit()
             return True
@@ -1237,7 +1238,7 @@ class PaperDatabase:
         try:
             cursor = self.conn.execute(
                 "INSERT INTO collections (user_id, name, description, is_public, slug, created_at) VALUES (?, ?, ?, ?, ?, ?)",
-                (user_id, clean_name, description, int(is_public), slug, datetime.utcnow().isoformat()),
+                (user_id, clean_name, description, int(is_public), slug, utcnow().isoformat()),
             )
             self.conn.commit()
             return cursor.lastrowid
@@ -1270,7 +1271,7 @@ class PaperDatabase:
         try:
             self.conn.execute(
                 "INSERT OR IGNORE INTO collection_papers (collection_id, arxiv_id, added_at) VALUES (?, ?, ?)",
-                (collection_id, arxiv_id, datetime.utcnow().isoformat()),
+                (collection_id, arxiv_id, utcnow().isoformat()),
             )
             self.conn.commit()
             return True
@@ -1404,16 +1405,27 @@ class PaperDatabase:
             logger.error(f"Failed to update collection {collection_id}: {e}")
             return False
 
-    def get_collection(self, collection_id: int) -> Optional[dict]:
-        """Get metadata for a single collection."""
-        row = self.conn.execute(
-            "SELECT * FROM collections WHERE id = ?", (collection_id,)
-        ).fetchone()
+    def get_collection(self, collection_id: int, user_id: Optional[int] = None) -> Optional[dict]:
+        """Get metadata for a single collection.
+
+        When ``user_id`` is given the collection is only returned if that user
+        owns it. Callers serving public share links pass ``None`` and check
+        ``is_public`` themselves.
+        """
+        if user_id is None:
+            row = self.conn.execute(
+                "SELECT * FROM collections WHERE id = ?", (collection_id,)
+            ).fetchone()
+        else:
+            row = self.conn.execute(
+                "SELECT * FROM collections WHERE id = ? AND user_id = ?",
+                (collection_id, user_id),
+            ).fetchone()
         return dict(row) if row else None
 
     def add_note(self, arxiv_id: str, content: str, user_id: int = 1) -> Optional[int]:
         """Add a note to a paper for a user. Returns the note ID."""
-        now = datetime.utcnow().isoformat()
+        now = utcnow().isoformat()
         try:
             cursor = self.conn.execute(
                 "INSERT INTO notes (user_id, arxiv_id, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
@@ -1427,7 +1439,7 @@ class PaperDatabase:
 
     def update_note(self, note_id: int, content: str, user_id: int = 1) -> bool:
         """Update a user's note. Returns True if updated."""
-        now = datetime.utcnow().isoformat()
+        now = utcnow().isoformat()
         try:
             cursor = self.conn.execute(
                 "UPDATE notes SET content = ?, updated_at = ? WHERE id = ? AND user_id = ?",
@@ -1523,7 +1535,7 @@ class PaperDatabase:
         try:
             self.conn.execute(
                 "INSERT OR IGNORE INTO reading_list (user_id, arxiv_id, added_at) VALUES (?, ?, ?)",
-                (user_id, arxiv_id, datetime.utcnow().isoformat()),
+                (user_id, arxiv_id, utcnow().isoformat()),
             )
             self.conn.commit()
             return True
@@ -1549,7 +1561,7 @@ class PaperDatabase:
         try:
             cursor = self.conn.execute(
                 "UPDATE reading_list SET read_at = ? WHERE user_id = ? AND arxiv_id = ?",
-                (datetime.utcnow().isoformat(), user_id, arxiv_id),
+                (utcnow().isoformat(), user_id, arxiv_id),
             )
             self.conn.commit()
             return cursor.rowcount > 0
@@ -1596,7 +1608,7 @@ class PaperDatabase:
         """Create a new user. Returns the user ID or None on failure."""
         import uuid
         token = uuid.uuid4().hex
-        now = datetime.utcnow().isoformat()
+        now = utcnow().isoformat()
         try:
             cursor = self.conn.execute(
                 "INSERT INTO users (email, password_hash, is_admin, is_active, digest_frequency, unsubscribe_token, created_at) VALUES (?, ?, ?, 1, 'daily', ?, ?)",
@@ -1703,7 +1715,7 @@ class PaperDatabase:
         """Generate and store a new API token. Returns the token string."""
         import secrets
         token = secrets.token_urlsafe(32)
-        now = datetime.utcnow().isoformat()
+        now = utcnow().isoformat()
         try:
             self.conn.execute(
                 "INSERT INTO api_tokens (user_id, token, name, scope, created_at) VALUES (?, ?, ?, ?, ?)",
@@ -1729,7 +1741,7 @@ class PaperDatabase:
         if row:
             self.conn.execute(
                 "UPDATE api_tokens SET last_used_at = ? WHERE id = ?",
-                (datetime.utcnow().isoformat(), row["token_id"]),
+                (utcnow().isoformat(), row["token_id"]),
             )
             self.conn.commit()
         return dict(row) if row else None
@@ -1752,7 +1764,7 @@ class PaperDatabase:
         try:
             cursor = self.conn.execute(
                 "UPDATE api_tokens SET revoked_at = ? WHERE id = ? AND user_id = ?",
-                (datetime.utcnow().isoformat(), token_id, user_id),
+                (utcnow().isoformat(), token_id, user_id),
             )
             self.conn.commit()
             return cursor.rowcount > 0
@@ -1766,7 +1778,7 @@ class PaperDatabase:
 
     def create_group(self, name: str, description: Optional[str] = None) -> Optional[int]:
         """Create a group. Returns the group ID."""
-        now = datetime.utcnow().isoformat()
+        now = utcnow().isoformat()
         try:
             cursor = self.conn.execute(
                 "INSERT INTO groups (name, description, created_at) VALUES (?, ?, ?)",
@@ -1794,7 +1806,7 @@ class PaperDatabase:
 
     def add_group_member(self, group_id: int, user_id: int, role: str = "member") -> bool:
         """Add a member to a group. Returns True if added."""
-        now = datetime.utcnow().isoformat()
+        now = utcnow().isoformat()
         try:
             self.conn.execute(
                 "INSERT OR IGNORE INTO group_members (group_id, user_id, role, joined_at) VALUES (?, ?, ?, ?)",
@@ -1881,19 +1893,36 @@ class PaperDatabase:
         return result
 
     def get_collection_papers(
-        self, collection_id: int, limit: int = 100, offset: int = 0
+        self, collection_id: int, limit: int = 100, offset: int = 0, user_id: Optional[int] = None
     ) -> list[dict]:
-        """Get all papers in a collection."""
-        rows = self.conn.execute(
-            """
-            SELECT p.* FROM papers p
-            INNER JOIN collection_papers cp ON p.arxiv_id = cp.arxiv_id
-            WHERE cp.collection_id = ?
-            ORDER BY cp.added_at DESC
-            LIMIT ? OFFSET ?
-            """,
-            (collection_id, limit, offset),
-        ).fetchall()
+        """Get all papers in a collection.
+
+        When ``user_id`` is given, papers are only returned if that user owns
+        the collection. Callers serving public share links pass ``None``.
+        """
+        if user_id is None:
+            rows = self.conn.execute(
+                """
+                SELECT p.* FROM papers p
+                INNER JOIN collection_papers cp ON p.arxiv_id = cp.arxiv_id
+                WHERE cp.collection_id = ?
+                ORDER BY cp.added_at DESC
+                LIMIT ? OFFSET ?
+                """,
+                (collection_id, limit, offset),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                """
+                SELECT p.* FROM papers p
+                INNER JOIN collection_papers cp ON p.arxiv_id = cp.arxiv_id
+                INNER JOIN collections c ON c.id = cp.collection_id
+                WHERE cp.collection_id = ? AND c.user_id = ?
+                ORDER BY cp.added_at DESC
+                LIMIT ? OFFSET ?
+                """,
+                (collection_id, user_id, limit, offset),
+            ).fetchall()
         return [self._row_to_dict(row) for row in rows]
 
     def get_paper_collections(self, arxiv_id: str, user_id: int = 1) -> list[dict]:
@@ -1958,7 +1987,7 @@ class PaperDatabase:
                 INSERT OR REPLACE INTO full_summaries (arxiv_id, mode, summary, created_at)
                 VALUES (?, ?, ?, ?)
                 """,
-                (arxiv_id, mode, summary, datetime.utcnow().isoformat()),
+                (arxiv_id, mode, summary, utcnow().isoformat()),
             )
             self.conn.commit()
             return True
@@ -1986,7 +2015,7 @@ class PaperDatabase:
                 INSERT OR REPLACE INTO paper_texts (arxiv_id, full_text, created_at)
                 VALUES (?, ?, ?)
                 """,
-                (arxiv_id, full_text, datetime.utcnow().isoformat()),
+                (arxiv_id, full_text, utcnow().isoformat()),
             )
             self.conn.commit()
             return True
@@ -2014,7 +2043,7 @@ class PaperDatabase:
                 INSERT OR REPLACE INTO briefs (date, content, created_at)
                 VALUES (?, ?, ?)
                 """,
-                (date, content, datetime.utcnow().isoformat()),
+                (date, content, utcnow().isoformat()),
             )
             self.conn.commit()
             return True
@@ -2099,7 +2128,7 @@ class PaperDatabase:
             ("JWST Cycle GO Proposal Deadline", f"{next_year}-01-17", "proposal"),
         ]
 
-        now = datetime.utcnow().isoformat()
+        now = utcnow().isoformat()
         for name, date_str, etype in default_events:
             try:
                 self.conn.execute(
@@ -2148,7 +2177,7 @@ class PaperDatabase:
     def add_event(self, user_id: int, name: str, date: str, etype: str, notes: str = "") -> int | None:
         """Insert a new event and return its id."""
         try:
-            now = datetime.utcnow().isoformat()
+            now = utcnow().isoformat()
             cursor = self.conn.execute(
                 "INSERT INTO events (user_id, name, date, type, notes, created_at) VALUES (?, ?, ?, ?, ?, ?)",
                 (user_id, name, date, etype, notes or None, now),
@@ -2324,7 +2353,7 @@ class PaperDatabase:
         if keywords is None:
             keywords = self.simulation_codes
             
-        now = datetime.utcnow()
+        now = utcnow()
         seven_days_ago = (now - timedelta(days=7)).isoformat()
         
         # Get all papers in the last 7 days
@@ -2390,7 +2419,7 @@ class PaperDatabase:
     def get_active_velocity_alerts(self, hours_back: int = 48) -> list[dict]:
         """Get recent velocity alerts triggered in the last N hours."""
         from datetime import timedelta
-        now = datetime.utcnow()
+        now = utcnow()
         cutoff = (now - timedelta(hours=hours_back)).isoformat()
         try:
             rows = self.conn.execute(
@@ -2415,7 +2444,7 @@ class PaperDatabase:
                 INSERT INTO my_papers (user_id, arxiv_id, doi, title, created_at)
                 VALUES (?, ?, ?, ?, ?)
                 """,
-                (user_id, clean_arxiv, clean_doi, clean_title, datetime.utcnow().isoformat())
+                (user_id, clean_arxiv, clean_doi, clean_title, utcnow().isoformat())
             )
             self.conn.commit()
             return True
@@ -2646,7 +2675,7 @@ class PaperDatabase:
                     stars,
                     last_commit,
                     language,
-                    datetime.utcnow().isoformat(),
+                    utcnow().isoformat(),
                 ),
             )
             self.conn.commit()

@@ -470,7 +470,7 @@ class TestWebApp(unittest.TestCase):
         self.engine.db.get_collection.return_value = {"id": 1, "name": "A"}
         resp = self.client.get("/papers?collection_id=1")
         self.assertEqual(resp.status_code, 200)
-        self.engine.db.get_collection_papers.assert_called_with(1, limit=200)
+        self.engine.db.get_collection_papers.assert_called_with(1, limit=200, user_id=1)
 
     def test_notes_api_and_ui_routes(self):
         # 1. API: list notes

@@ -7,6 +7,7 @@ from typing import Optional
 
 from .recommender import RecommendationEngine
 from .trends import _generate_generic_text
+from aura.timeutil import utcnow
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +19,7 @@ def get_weekly_recommendations(engine: RecommendationEngine, limit: int = 5) -> 
     to ensure we have content to generate a brief.
     """
     papers = engine.get_recommendations(limit=200, unrated_only=False)
-    now = datetime.utcnow()
+    now = utcnow()
     cutoff = now - timedelta(days=7)
     
     weekly_papers = []

@@ -517,14 +517,14 @@ def generate_full_summary(
                 resolved_key = _resolve_api_key(api_key, "OPENAI_API_KEY", "openai")
                 if not resolved_key:
                     continue
-                client = OpenAI(api_key=resolved_key)
-                response = client.chat.completions.create(
+                openai_client = OpenAI(api_key=resolved_key)
+                openai_response = openai_client.chat.completions.create(
                     model="gpt-3.5-turbo",
                     messages=[{"role": "user", "content": prompt}],
                     max_tokens=1000,
                     temperature=0.3,
                 )
-                return response.choices[0].message.content.strip()
+                return (openai_response.choices[0].message.content or "").strip()
 
             elif p == "anthropic":
                 import anthropic
@@ -635,8 +635,8 @@ def stream_ask_paper(
                 resolved_key = _resolve_api_key(api_key, "OPENAI_API_KEY", "openai")
                 if not resolved_key:
                     continue
-                client = OpenAI(api_key=resolved_key)
-                stream = client.chat.completions.create(
+                openai_client = OpenAI(api_key=resolved_key)
+                openai_stream = openai_client.chat.completions.create(
                     model="gpt-3.5-turbo",
                     messages=[{"role": "user", "content": prompt}],
                     max_tokens=1000,
@@ -644,8 +644,8 @@ def stream_ask_paper(
                     stream=True,
                 )
                 has_yielded = False
-                for chunk in stream:
-                    content = chunk.choices[0].delta.content
+                for openai_chunk in openai_stream:
+                    content = openai_chunk.choices[0].delta.content
                     if content:
                         has_yielded = True
                         yield content
@@ -745,17 +745,17 @@ def execute_llm(
                 key = _resolve_api_key(api_key, "OPENAI_API_KEY", "openai")
                 if not key:
                     continue
-                client = OpenAI(api_key=key)
+                openai_client = OpenAI(api_key=key)
                 configured_model = _get_provider_setting("openai", "model")
                 model_name = configured_model or "gpt-4o-mini"
                 try:
-                    message = client.chat.completions.create(
+                    openai_message = openai_client.chat.completions.create(
                         messages=[{"role": "user", "content": prompt}],
                         model=model_name,
                         max_tokens=max_tokens,
                         temperature=temperature,
                     )
-                    return message.choices[0].message.content.strip()
+                    return (openai_message.choices[0].message.content or "").strip()
                 except Exception:
                     continue
 

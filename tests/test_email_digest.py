@@ -62,6 +62,25 @@ class TestEmailDigest(unittest.TestCase):
         self.assertIn("Group Paper A", html)
         self.assertIn("This is from the group", html)
 
+    def test_build_email_content_escapes_untrusted_html(self):
+        """Paper titles/summaries are untrusted (arXiv + LLM) and must not render as HTML."""
+        papers = [
+            {
+                "title": '<img src=x onerror=alert(1)>Evil',
+                "authors": ["<b>Ada</b>"],
+                "score": 0.5,
+                "url": "http://arxiv.org/abs/1",
+                "summary": '<script>steal()</script>',
+            }
+        ]
+        _, html = email_digest._build_email_content(papers, trends={}, app_name="AURA")
+
+        self.assertNotIn("<img src=x", html)
+        self.assertNotIn("<script>steal()", html)
+        self.assertIn("&lt;img src=x", html)
+        self.assertIn("&lt;script&gt;steal()", html)
+        self.assertIn("&lt;b&gt;Ada", html)
+
     def test_build_email_content_survey_paper_with_none_summary_falls_back_to_abstract(self):
         papers = [
             {
