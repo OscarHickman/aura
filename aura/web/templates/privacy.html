@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Privacy Policy — AURA{% endblock %}
+{% block content %}
+<div class="row justify-content-center my-5">
+  <div class="col-lg-8">
+    <h1 class="mb-3">Privacy Policy</h1>
+    <p class="text-muted">AURA web app and AURA Android app · Last updated 27 September 2026</p>
+
+    <h4 class="mt-4">Who runs the service</h4>
+    <p>AURA is self-hosted research software. The Android app has no central AURA
+      service: it connects only to the AURA server address you enter in its settings,
+      which you or your organisation run. The developer of the app receives no data
+      from the app.</p>
+
+    <h4 class="mt-4">What the app stores on your device</h4>
+    <ul>
+      <li>The server address you configure.</li>
+      <li>An API access token issued by your server when you sign in. It is removed when you sign out.</li>
+      <li>Cached paper lists for offline reading.</li>
+    </ul>
+
+    <h4 class="mt-4">What is sent to your AURA server</h4>
+    <ul>
+      <li>Your email address and password when you sign in (used only to issue the access token).</li>
+      <li>Your paper ratings, reading-list changes, and questions you ask about papers.</li>
+    </ul>
+    <p>Your server stores this data to rank papers for you. Questions you ask about a paper
+      may be sent, together with that paper's text, to the language-model provider your
+      server's administrator has configured (for example Groq, OpenAI or Anthropic).</p>
+
+    <h4 class="mt-4">What we do not do</h4>
+    <ul>
+      <li>No advertising, analytics or tracking SDKs.</li>
+      <li>No sale or sharing of personal data with third parties.</li>
+      <li>No access to your contacts, location, camera, microphone or files. The app requests internet access only.</li>
+    </ul>
+
+    <h4 class="mt-4">Deleting your data</h4>
+    <p>Signing out removes the token and cached data from your device, and uninstalling the
+      app removes everything it stored. To delete your account and the data held on the
+      server, contact the administrator of your AURA server.</p>
+
+    <h4 class="mt-4">Contact</h4>
+    <p>Questions about this policy: <a href="https://github.com/OscarHickman/aura/issues">github.com/OscarHickman/aura/issues</a>.</p>
+  </div>
+</div>
+{% endblock %}

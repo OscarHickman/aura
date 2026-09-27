@@ -505,7 +505,7 @@ def _register_routes(app: Flask) -> None:
     def check_onboarding():
         """Redirect to onboarding if the user has rated fewer than 5 papers."""
         open_endpoints = {"login", "register", "logout", "static", "health", "metrics",
-                          "public_collection", "browse_public_collections"}
+                          "public_collection", "browse_public_collections", "privacy"}
         if request.endpoint in open_endpoints or request.path.startswith("/api/"):
             return None
         if not current_user.is_authenticated:
@@ -1786,6 +1786,11 @@ def _register_routes(app: Flask) -> None:
     # ------------------------------------------------------------------
     # Utility routes
     # ------------------------------------------------------------------
+
+    @app.route("/privacy")
+    def privacy():
+        """Public privacy policy (linked from the Google Play listing)."""
+        return render_template("privacy.html")
 
     @app.route("/health")
     def health():

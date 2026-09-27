@@ -64,6 +64,11 @@ class TestProxyPrefix(unittest.TestCase):
             resp = self._login(evil)
             self.assertEqual(resp.headers["Location"], "/aura/", evil)
 
+    def test_privacy_policy_is_public(self):
+        resp = self.client.get("/privacy", headers=PREFIX_HEADERS)
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn("Privacy Policy", resp.get_data(as_text=True))
+
 
 if __name__ == "__main__":
     unittest.main()
