@@ -6,7 +6,7 @@ from pathlib import Path
 import secrets
 import uuid
 
-from flask import Flask, Response, jsonify, redirect, render_template, request, g, url_for, flash
+from flask import Flask, Response, jsonify, make_response, redirect, render_template, request, g, url_for, flash
 from flask_login import (
     LoginManager,
     UserMixin,
@@ -15,6 +15,7 @@ from flask_login import (
     login_user,
     logout_user,
 )
+from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from ..recommender import RecommendationEngine
@@ -40,6 +41,40 @@ limiter = Limiter(
     storage_uri="memory://",
 )
 csrf = CSRFProtect()
+
+CORS_ALLOW_HEADERS = "Content-Type, Authorization, X-Request-ID"
+CORS_ALLOW_METHODS = "GET, POST, PUT, DELETE, OPTIONS"
+API_LOGIN_RATE_LIMIT = "5 per minute"
+API_MAX_PER_PAGE = 100
+API_RESULT_WINDOW = 200
+
+
+def _parse_cors_origins(raw: str) -> frozenset[str]:
+    """Parse a comma-separated origin allow-list (e.g. from AURA_CORS_ORIGINS)."""
+    return frozenset(o.strip().rstrip("/") for o in raw.split(",") if o.strip())
+
+
+def _local_redirect_target(next_page: str | None) -> str:
+    """Return a same-app path for a post-login redirect, rejecting external URLs."""
+    if next_page and next_page.startswith("/") and not next_page.startswith(("//", "/\\")):
+        return request.script_root + next_page
+    return url_for("index")
+
+
+def _bearer_token_user(req) -> dict | None:
+    """Return the user row for a valid Bearer token, cached per request."""
+    if engine is None:
+        return None
+    if "bearer_user" in g:
+        return g.bearer_user
+    row = None
+    auth_header = req.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header.split(" ", 1)[1].strip()
+        if token:
+            row = engine.db.get_user_by_token(token)
+    g.bearer_user = row if isinstance(row, dict) else None
+    return g.bearer_user
 
 
 def sanitise_input(text: str) -> str:
@@ -162,6 +197,16 @@ def create_app(config_path: str | None = None) -> Flask:
 
     app = Flask(__name__)
 
+    # Behind a reverse proxy (Caddy serving /aura/), trust its X-Forwarded-*
+    # headers so url_for() includes the path prefix and rate limits see the
+    # real client IP. Only enable when the app is reachable solely via the proxy.
+    proxy_hops = int(os.environ.get("AURA_TRUSTED_PROXY_HOPS", "0") or 0)
+    if proxy_hops > 0:
+        app.wsgi_app = ProxyFix(  # type: ignore[method-assign]
+            app.wsgi_app, x_for=proxy_hops, x_proto=proxy_hops,
+            x_host=proxy_hops, x_prefix=proxy_hops,
+        )
+
     secret_key = os.environ.get("AURA_SECRET_KEY")
     if not secret_key and os.path.exists("data/.secret_key"):
         try:
@@ -202,7 +247,9 @@ def create_app(config_path: str | None = None) -> Flask:
     # Initialize Limiter
     limiter.init_app(app)
 
-    # Initialize CSRF Protection
+    # Initialize CSRF Protection. The default check is replaced by
+    # _csrf_unless_bearer so token-authenticated API clients can skip it.
+    app.config["WTF_CSRF_CHECK_DEFAULT"] = False
     csrf.init_app(app)
 
     # Initialize Talisman (Security Headers)
@@ -269,19 +316,46 @@ def create_app(config_path: str | None = None) -> Flask:
     @login_manager.request_loader
     def load_user_from_request(req) -> User | None:
         """Authenticate via Bearer token for API requests."""
-        if engine is None:
+        row = _bearer_token_user(req)
+        return User(row) if row else None
+
+    @login_manager.unauthorized_handler
+    def unauthorized():
+        if request.path.startswith("/api/"):
+            return jsonify({"error": "Authentication required"}), 401
+        return redirect(url_for("login", next=request.path))
+
+    @app.before_request
+    def _csrf_unless_bearer():
+        """CSRF-check session requests; skip it for requests with a valid Bearer token.
+
+        A Bearer token cannot be attached by a cross-site form or cookie, so
+        token-authenticated API clients (the mobile app) are not exposed to CSRF.
+        """
+        if not app.config.get("WTF_CSRF_ENABLED", True):
             return None
-        auth_header = req.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            token = auth_header.split(" ", 1)[1]
-            row = engine.db.get_user_by_token(token)
-            if row:
-                return User(row)
+        if _bearer_token_user(request) is not None:
+            return None
+        csrf.protect(apply_exemptions=True)
         return None
 
-    # Request ID tracking
+    cors_origins = _parse_cors_origins(os.environ.get("AURA_CORS_ORIGINS", ""))
+
+    def _apply_cors(response):
+        origin = request.headers.get("Origin")
+        if origin and origin in cors_origins:
+            response.headers["Access-Control-Allow-Origin"] = origin
+            response.headers["Access-Control-Allow-Headers"] = CORS_ALLOW_HEADERS
+            response.headers["Access-Control-Allow-Methods"] = CORS_ALLOW_METHODS
+            response.headers["Vary"] = "Origin"
+        return response
+
+    # Request ID tracking & CORS preflight
     @app.before_request
-    def before_request() -> None:
+    def before_request():
+        if request.method == "OPTIONS" and request.path.startswith("/api/"):
+            return _apply_cors(make_response("", 204))
+
         req_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
         from ..logging_config import request_id_var
         request_id_var.set(req_id)
@@ -293,6 +367,8 @@ def create_app(config_path: str | None = None) -> Flask:
         req_id = getattr(g, "request_id", None)
         if req_id:
             response.headers["X-Request-ID"] = req_id
+        if request.path.startswith("/api/"):
+            _apply_cors(response)
         return response
 
     # Register routes
@@ -320,8 +396,7 @@ def _register_auth_routes(app: Flask) -> None:
                     return render_template("login.html")
                 user = User(user_row)
                 login_user(user, remember=remember)
-                next_page = request.args.get("next")
-                return redirect(next_page or url_for("index"))
+                return redirect(_local_redirect_target(request.args.get("next")))
             flash("Invalid email or password.", "danger")
         return render_template("login.html")
 
@@ -364,6 +439,64 @@ def _register_auth_routes(app: Flask) -> None:
         logout_user()
         return redirect(url_for("login"))
 
+    @app.route("/api/auth/login", methods=["POST"])
+    @csrf.exempt  # credential exchange: the caller has no session or token yet
+    @limiter.limit(API_LOGIN_RATE_LIMIT)
+    def api_login():
+        data = request.get_json(silent=True) or {}
+        email = str(data.get("email", "")).strip().lower()
+        password = str(data.get("password", ""))
+        if not email or not password:
+            return jsonify({"error": "Email and password are required"}), 400
+        user_row = engine.db.get_user_by_email(email) if engine else None
+        if not user_row or not check_password_hash(user_row["password_hash"], password):
+            return jsonify({"error": "Invalid email or password"}), 401
+        if not user_row.get("is_active", 1):
+            return jsonify({"error": "Account has been suspended"}), 403
+
+        uid = user_row["id"]
+        token_name = sanitise_input(str(data.get("token_name") or "AURA Android App"))[:100]
+        token = engine.db.create_api_token(
+            user_id=uid,
+            name=token_name,
+            scope="admin" if user_row.get("is_admin") else "write",
+        ) if engine else None
+        if not token:
+            return jsonify({"error": "Failed to generate API token"}), 500
+
+        return jsonify({
+            "status": "ok",
+            "token": token,
+            "user": {
+                "id": user_row["id"],
+                "email": user_row["email"],
+                "is_admin": bool(user_row.get("is_admin")),
+            },
+        })
+
+    @app.route("/api/auth/me", methods=["GET"])
+    @login_required
+    def api_me():
+        uid = _get_current_user_id()
+        user_row = engine.db.get_user_by_id(uid) if engine else None
+        if not user_row:
+            return jsonify({"error": "User not found"}), 404
+        return jsonify({
+            "id": user_row["id"],
+            "email": user_row["email"],
+            "is_admin": bool(user_row.get("is_admin")),
+        })
+
+    @app.route("/api/auth/logout", methods=["POST"])
+    def api_logout():
+        row = _bearer_token_user(request)
+        if row is None:
+            return jsonify({"error": "Authentication required"}), 401
+        revoked = engine.db.revoke_api_token(row["token_id"], row["id"]) if engine else False
+        if not revoked:
+            return jsonify({"error": "Failed to revoke token"}), 500
+        return jsonify({"status": "ok"})
+
 
 def _register_routes(app: Flask) -> None:
     """Register all route handlers."""
@@ -380,7 +513,7 @@ def _register_routes(app: Flask) -> None:
         stats = engine.get_stats(user_id=_get_current_user_id())
         if stats["database"]["total_rated"] < 5:
             if request.path != "/onboarding":
-                return redirect("/onboarding")
+                return redirect(url_for("onboarding"))
         return None
 
     @app.route("/")
@@ -404,7 +537,7 @@ def _register_routes(app: Flask) -> None:
         stats = engine.get_stats(user_id=uid)
         total_rated = stats["database"]["total_rated"]
         if total_rated >= 5:
-            return redirect("/")
+            return redirect(url_for("index"))
         papers = engine.get_diverse_papers(limit=20)
         return render_template("onboarding.html", papers=papers, total_rated=total_rated)
 
@@ -538,6 +671,104 @@ def _register_routes(app: Flask) -> None:
             selected_collection_id=collection_id,
         )
 
+    def _api_paper_list(
+        eng: RecommendationEngine, uid: int, filter_type: str, page: int, per_page: int,
+    ) -> tuple[list[dict], str]:
+        """Resolve the paper list for /api/papers before pagination."""
+        query = request.args.get("q", "").strip()
+        tag = request.args.get("tag", "").strip() or None
+        collection_id = request.args.get("collection_id", type=int)
+        if query:
+            if request.args.get("mode", "fts") == "semantic":
+                return eng.semantic_search(query=query, limit=API_RESULT_WINDOW), "search"
+            return eng.db.search_papers(
+                query=query,
+                category=request.args.get("category", "").strip() or None,
+                date_from=request.args.get("date_from", "").strip() or None,
+                date_to=request.args.get("date_to", "").strip() or None,
+                has_code=request.args.get("has_code", type=int),
+                has_data=request.args.get("has_data", type=int),
+                limit=API_RESULT_WINDOW,
+            ), "search"
+        if tag:
+            return eng.db.get_papers_by_tag(tag, user_id=uid, limit=API_RESULT_WINDOW), f"tag: {tag}"
+        if collection_id:
+            papers = eng.db.get_collection_papers(collection_id, limit=API_RESULT_WINDOW, user_id=uid)
+            return papers, f"collection: {collection_id}"
+        if filter_type in ("liked", "disliked"):
+            wanted = 1 if filter_type == "liked" else 0
+            rated = eng.db.get_papers(limit=API_RESULT_WINDOW, offset=0, rated_only=True)
+            papers = [
+                {**p, "rating": eng.db.get_latest_rating(p["arxiv_id"], user_id=uid), "score": p.get("score", 0)}
+                for p in rated
+            ]
+            return [p for p in papers if p["rating"] == wanted], filter_type
+        return eng.get_recommendations(
+            limit=per_page * page, unrated_only=(filter_type == "unrated"), user_id=uid
+        ), filter_type
+
+    @app.route("/api/papers", methods=["GET"])
+    @login_required
+    def api_papers():
+        uid = _get_current_user_id()
+        page = max(request.args.get("page", 1, type=int) or 1, 1)
+        per_page = min(max(request.args.get("per_page", 30, type=int) or 30, 1), API_MAX_PER_PAGE)
+        filter_type = request.args.get("filter", "unrated")
+        if engine is None:
+            return jsonify({"papers": [], "page": page, "per_page": per_page, "total": 0, "filter": filter_type})
+
+        paper_list, filter_type = _api_paper_list(engine, uid, filter_type, page, per_page)
+        start = (page - 1) * per_page
+        page_papers = paper_list[start : start + per_page]
+
+        tracked_authors = engine.db.get_tracked_authors() or []
+        followed = {a["name"].lower().strip() for a in tracked_authors if a["relationship"] == "follow"}
+        collaborators = {a["name"].lower().strip() for a in tracked_authors if a["relationship"] == "collaborator"}
+        citing = (
+            engine.db.get_papers_citing_user_work([p["arxiv_id"] for p in page_papers], uid)
+            if page_papers else set()
+        )
+
+        enriched = []
+        for p in page_papers:
+            authors = {a.strip().lower() for a in p.get("authors", [])}
+            enriched.append({
+                **p,
+                "rating": p["rating"] if "rating" in p else engine.db.get_latest_rating(p["arxiv_id"], user_id=uid),
+                "tags": engine.db.get_paper_tags(p["arxiv_id"], user_id=uid),
+                "collections": engine.db.get_paper_collections(p["arxiv_id"], user_id=uid),
+                "in_reading_list": bool(engine.db.is_in_reading_list(p["arxiv_id"], user_id=uid)),
+                "cites_user_work": p["arxiv_id"] in citing,
+                "from_followed_author": bool(authors & followed),
+                "from_collaborator": bool(authors & collaborators),
+            })
+
+        return jsonify({
+            "papers": enriched,
+            "page": page,
+            "per_page": per_page,
+            "total": len(paper_list),
+            "filter": filter_type,
+        })
+
+    @app.route("/api/papers/<path:arxiv_id>", methods=["GET"])
+    @login_required
+    def api_paper_detail(arxiv_id):
+        uid = _get_current_user_id()
+        paper = engine.db.get_paper(arxiv_id) if engine else None
+        if not paper:
+            return jsonify({"error": "Paper not found"}), 404
+        return jsonify({
+            **paper,
+            "rating": engine.db.get_latest_rating(arxiv_id, user_id=uid),
+            "tags": engine.db.get_paper_tags(arxiv_id, user_id=uid),
+            "collections": engine.db.get_paper_collections(arxiv_id, user_id=uid),
+            "notes": engine.db.get_paper_notes(arxiv_id, user_id=uid),
+            "in_reading_list": bool(engine.db.is_in_reading_list(arxiv_id, user_id=uid)),
+            "cites_user_work": bool(engine.db.check_if_paper_cites_user_work(arxiv_id, uid)),
+            "similar_papers": engine.get_similar_papers(arxiv_id, limit=5),
+        })
+
     @app.route("/papers/<path:arxiv_id>")
     @login_required
     def paper_detail(arxiv_id):
@@ -653,18 +884,32 @@ def _register_routes(app: Flask) -> None:
             p["cites_user_work"] = p["arxiv_id"] in citing_set if not isinstance(citing_set, Mock) else False
         return render_template("reading_list.html", papers=reading_papers, filter_type=filter_type)
 
-    @app.route("/api/reading-list", methods=["POST"])
+    @app.route("/api/reading-list", methods=["GET", "POST"])
     @login_required
     def add_to_reading_list():
         uid = _get_current_user_id()
-        data = request.get_json() or {}
-        arxiv_id = data.get("arxiv_id")
-        if not arxiv_id:
-            return jsonify({"error": "arxiv_id is required"}), 400
-        success = engine.db.add_to_reading_list(arxiv_id, user_id=uid) if engine else False
-        if not success:
-            return jsonify({"error": "failed to add to reading list"}), 500
-        return jsonify({"status": "ok"})
+        if request.method == "POST":
+            data = request.get_json() or {}
+            arxiv_id = data.get("arxiv_id")
+            if not arxiv_id:
+                return jsonify({"error": "arxiv_id is required"}), 400
+            success = engine.db.add_to_reading_list(arxiv_id, user_id=uid) if engine else False
+            if not success:
+                return jsonify({"error": "failed to add to reading list"}), 500
+            return jsonify({"status": "ok"})
+
+        filter_type = request.args.get("filter", "unread")
+        if filter_type == "read":
+            reading_papers = engine.db.get_reading_list(user_id=uid, only_read=True) if engine else []
+        else:
+            reading_papers = engine.db.get_reading_list(user_id=uid, only_unread=True) if engine else []
+        for p in reading_papers:
+            if engine:
+                p["rating"] = engine.db.get_latest_rating(p["arxiv_id"], user_id=uid)
+                p["tags"] = engine.db.get_paper_tags(p["arxiv_id"], user_id=uid)
+                p["collections"] = engine.db.get_paper_collections(p["arxiv_id"], user_id=uid)
+            p["in_reading_list"] = True
+        return jsonify({"papers": reading_papers})
 
     @app.route("/api/reading-list/<path:arxiv_id>", methods=["DELETE"])
     @login_required

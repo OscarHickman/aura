@@ -49,7 +49,7 @@
                                 </p>
                                 <small class="text-muted"><i class="bi bi-calendar-check me-1"></i>Registered on: {{ paper.created_at[:10] }}</small>
                             </div>
-                            <form action="/my-papers/delete/{{ paper.id }}" method="POST" onsubmit="return confirm('Remove registration for this paper?');">
+                            <form action="{{ request.script_root }}/my-papers/delete/{{ paper.id }}" method="POST" onsubmit="return confirm('Remove registration for this paper?');">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                 <button type="submit" class="btn btn-sm btn-outline-danger" title="Remove Registration">
                                     <i class="bi bi-trash me-1"></i> Remove
@@ -84,7 +84,7 @@
                 <h5 class="mb-0 text-light fw-semibold"><i class="bi bi-plus-circle text-success me-1"></i> Register New Paper</h5>
             </div>
             <div class="card-body p-4">
-                <form action="/my-papers/add" method="POST">
+                <form action="{{ request.script_root }}/my-papers/add" method="POST">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     
                     <div class="mb-3">

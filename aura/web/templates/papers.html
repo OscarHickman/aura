@@ -39,39 +39,39 @@
                 </li>
                 <li><hr class="dropdown-divider"></li>
                 <li>
-                    <a class="dropdown-item" href="/api/collections/{{ selected_collection_id }}/export-notes">
+                    <a class="dropdown-item" href="{{ request.script_root }}/api/collections/{{ selected_collection_id }}/export-notes">
                         <i class="bi bi-journal-text me-2"></i>Study Notes (.md)
                     </a>
                 </li>
             </ul>
         </div>
         <div class="btn-group">
-            <a href="/papers?filter=unrated" class="btn btn-outline-primary {% if filter_type == 'unrated' %}active{% endif %}">
+            <a href="{{ request.script_root }}/papers?filter=unrated" class="btn btn-outline-primary {% if filter_type == 'unrated' %}active{% endif %}">
                 Recommended
             </a>
-            <a href="/papers?filter=liked" class="btn btn-outline-success {% if filter_type == 'liked' %}active{% endif %}">
+            <a href="{{ request.script_root }}/papers?filter=liked" class="btn btn-outline-success {% if filter_type == 'liked' %}active{% endif %}">
                 Liked
             </a>
-            <a href="/papers?filter=disliked" class="btn btn-outline-danger {% if filter_type == 'disliked' %}active{% endif %}">
+            <a href="{{ request.script_root }}/papers?filter=disliked" class="btn btn-outline-danger {% if filter_type == 'disliked' %}active{% endif %}">
                 Disliked
             </a>
-            <a href="/papers?filter=all" class="btn btn-outline-secondary {% if filter_type == 'all' %}active{% endif %}">
+            <a href="{{ request.script_root }}/papers?filter=all" class="btn btn-outline-secondary {% if filter_type == 'all' %}active{% endif %}">
                 All
             </a>
         </div>
     </div>
     {% elif filter_type != 'search' %}
     <div class="btn-group">
-        <a href="/papers?filter=unrated" class="btn btn-outline-primary {% if filter_type == 'unrated' %}active{% endif %}">
+        <a href="{{ request.script_root }}/papers?filter=unrated" class="btn btn-outline-primary {% if filter_type == 'unrated' %}active{% endif %}">
             Recommended
         </a>
-        <a href="/papers?filter=liked" class="btn btn-outline-success {% if filter_type == 'liked' %}active{% endif %}">
+        <a href="{{ request.script_root }}/papers?filter=liked" class="btn btn-outline-success {% if filter_type == 'liked' %}active{% endif %}">
             Liked
         </a>
-        <a href="/papers?filter=disliked" class="btn btn-outline-danger {% if filter_type == 'disliked' %}active{% endif %}">
+        <a href="{{ request.script_root }}/papers?filter=disliked" class="btn btn-outline-danger {% if filter_type == 'disliked' %}active{% endif %}">
             Disliked
         </a>
-        <a href="/papers?filter=all" class="btn btn-outline-secondary {% if filter_type == 'all' %}active{% endif %}">
+        <a href="{{ request.script_root }}/papers?filter=all" class="btn btn-outline-secondary {% if filter_type == 'all' %}active{% endif %}">
             All
         </a>
     </div>
@@ -99,7 +99,7 @@
 <div class="card bg-body-tertiary mb-4">
     <div class="card-body py-3">
         <h6 class="card-title mb-3 text-muted"><i class="bi bi-funnel"></i> Filter Search Results for &ldquo;{{ q }}&rdquo;</h6>
-        <form method="get" action="/papers" class="row g-3 align-items-end">
+        <form method="get" action="{{ request.script_root }}/papers" class="row g-3 align-items-end">
             <input type="hidden" name="q" value="{{ q }}">
             <div class="col-md-4">
                 <label for="category" class="form-label small text-muted">Category</label>
@@ -131,7 +131,7 @@
             <div class="col-md-2">
                 <div class="d-grid gap-2 d-md-flex">
                     <button type="submit" class="btn btn-sm btn-primary">Filter</button>
-                    <a href="/papers?q={{ q }}" class="btn btn-sm btn-outline-secondary">Reset</a>
+                    <a href="{{ request.script_root }}/papers?q={{ q }}" class="btn btn-sm btn-outline-secondary">Reset</a>
                 </div>
             </div>
         </form>
@@ -161,12 +161,12 @@
                 <h6 class="mb-0 text-light small"><i class="bi bi-folder"></i> Collections</h6>
             </div>
             <div class="list-group list-group-flush small">
-                <a href="/papers" class="list-group-item list-group-item-action bg-transparent text-light border-secondary {% if not selected_collection_id and not selected_tag %}active{% endif %}">
+                <a href="{{ request.script_root }}/papers" class="list-group-item list-group-item-action bg-transparent text-light border-secondary {% if not selected_collection_id and not selected_tag %}active{% endif %}">
                     All Papers
                 </a>
                 {% for coll in collections %}
                 <div class="d-flex align-items-center bg-transparent border-bottom border-secondary list-group-item-action">
-                    <a href="/papers?collection_id={{ coll.id }}" class="list-group-item bg-transparent text-light border-0 flex-grow-1 py-2 {% if selected_collection_id == coll.id %}fw-bold text-success{% endif %}">
+                    <a href="{{ request.script_root }}/papers?collection_id={{ coll.id }}" class="list-group-item bg-transparent text-light border-0 flex-grow-1 py-2 {% if selected_collection_id == coll.id %}fw-bold text-success{% endif %}">
                         {{ coll.name }}
                         <span class="badge bg-secondary-subtle text-secondary-emphasis float-end">{{ coll.paper_count }}</span>
                     </a>
@@ -187,7 +187,7 @@
                 {% if surveys %}
                 <div class="d-flex flex-wrap gap-2">
                     {% for s in surveys %}
-                    <a href="/papers?tag={{ s.name | lower }}" class="badge {% if selected_tag == s.name | lower %}bg-info text-dark{% else %}bg-dark border border-secondary text-info-emphasis{% endif %} text-decoration-none" title="Filter by {{ s.name }}">
+                    <a href="{{ request.script_root }}/papers?tag={{ s.name | lower }}" class="badge {% if selected_tag == s.name | lower %}bg-info text-dark{% else %}bg-dark border border-secondary text-info-emphasis{% endif %} text-decoration-none" title="Filter by {{ s.name }}">
                         {{ s.name }}
                     </a>
                     {% endfor %}
@@ -210,7 +210,7 @@
                     {% for obs in obs_list %}
                     {% if obs in all_tags %}
                     {% set has_obs = true %}
-                    <a href="/papers?tag={{ obs }}" class="badge {% if selected_tag == obs %}bg-warning text-dark{% else %}bg-dark border border-secondary text-warning-emphasis{% endif %} text-decoration-none" title="Filter by {{ obs }}">
+                    <a href="{{ request.script_root }}/papers?tag={{ obs }}" class="badge {% if selected_tag == obs %}bg-warning text-dark{% else %}bg-dark border border-secondary text-warning-emphasis{% endif %} text-decoration-none" title="Filter by {{ obs }}">
                         {{ obs | title }}
                     </a>
                     {% endif %}
@@ -234,7 +234,7 @@
                         {% set code_lower = code | lower %}
                         {% if code_lower in all_tags %}
                             {% set has_sim = true %}
-                            <a href="/papers?tag={{ code_lower }}" class="badge {% if selected_tag == code_lower %}bg-primary text-white{% else %}bg-dark border border-secondary text-primary-emphasis{% endif %} text-decoration-none" title="Filter by {{ code }}">
+                            <a href="{{ request.script_root }}/papers?tag={{ code_lower }}" class="badge {% if selected_tag == code_lower %}bg-primary text-white{% else %}bg-dark border border-secondary text-primary-emphasis{% endif %} text-decoration-none" title="Filter by {{ code }}">
                                 {{ code }}
                             </a>
                         {% endif %}
@@ -258,7 +258,7 @@
                     {% for meth in meth_list %}
                     {% if meth | lower in all_tags %}
                     {% set has_meth = true %}
-                    <a href="/papers?tag={{ meth | lower }}" class="badge {% if selected_tag == meth | lower %}bg-success text-white{% else %}bg-dark border border-secondary text-success-emphasis{% endif %} text-decoration-none" title="Filter by {{ meth }}">
+                    <a href="{{ request.script_root }}/papers?tag={{ meth | lower }}" class="badge {% if selected_tag == meth | lower %}bg-success text-white{% else %}bg-dark border border-secondary text-success-emphasis{% endif %} text-decoration-none" title="Filter by {{ meth }}">
                         {{ meth }}
                     </a>
                     {% endif %}
@@ -279,7 +279,7 @@
                 {% if all_tags %}
                 <div class="d-flex flex-wrap gap-2">
                     {% for t in all_tags %}
-                    <a href="/papers?tag={{ t }}" class="badge {% if selected_tag == t %}bg-primary{% else %}bg-dark border border-secondary text-secondary-emphasis{% endif %} text-decoration-none">
+                    <a href="{{ request.script_root }}/papers?tag={{ t }}" class="badge {% if selected_tag == t %}bg-primary{% else %}bg-dark border border-secondary text-secondary-emphasis{% endif %} text-decoration-none">
                         {{ t }}
                     </a>
                     {% endfor %}
@@ -297,7 +297,7 @@
         <div class="alert alert-info">
             <i class="bi bi-info-circle"></i>
             {% if filter_type == 'unrated' %}
-            No unrated papers found. <a href="/fetch" class="alert-link">Fetch new papers</a> to get started!
+            No unrated papers found. <a href="{{ request.script_root }}/fetch" class="alert-link">Fetch new papers</a> to get started!
             {% else %}
             No papers found for this filter.
             {% endif %}
@@ -312,7 +312,7 @@
                 <div class="d-flex justify-content-between align-items-start" style="min-width: 0; width: 100%;">
                     <div class="flex-grow-1" style="min-width: 0;">
                         <h5 class="card-title mb-1">
-                            <a href="/papers/{{ paper.arxiv_id }}" class="text-decoration-none text-light">{{ paper.title | safe }}</a>
+                            <a href="{{ request.script_root }}/papers/{{ paper.arxiv_id }}" class="text-decoration-none text-light">{{ paper.title | safe }}</a>
                         </h5>
                         <div class="d-flex flex-wrap gap-1 mt-2">
                             {% if paper.from_followed_author %}
@@ -879,7 +879,7 @@ async function removeFromReadingList(arxivId, btn) {
             btn.innerHTML = '<i class="bi bi-bookmark"></i>';
             
             // If we are on the reading list page, we might want to remove the card
-            if (window.location.pathname === '/reading-list') {
+            if (window.location.pathname === window.APP_ROOT + '/reading-list') {
                 btn.closest('.col-12').remove();
             }
         }

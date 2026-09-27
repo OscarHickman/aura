@@ -31,7 +31,7 @@
                 {% endif %}
             </div>
             <div class="card-body">
-                <form method="post" action="/settings">
+                <form method="post" action="{{ request.script_root }}/settings">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="scheduler_submitted" value="1">
 
@@ -100,7 +100,7 @@
                 <h5 class="mb-0 text-info"><i class="bi bi-robot me-2"></i> AI &amp; LLM Summary Settings</h5>
             </div>
             <div class="card-body">
-                <form method="post" action="/settings">
+                <form method="post" action="{{ request.script_root }}/settings">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="llm_submitted" value="1">
 
@@ -157,7 +157,7 @@
                 <h5 class="mb-0"><i class="bi bi-envelope-paper me-2"></i> Email Digest &amp; SMTP Configuration</h5>
             </div>
             <div class="card-body">
-                <form method="post" action="/settings">
+                <form method="post" action="{{ request.script_root }}/settings">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="email_submitted" value="1">
 
@@ -231,7 +231,7 @@
                 {% if user and user.unsubscribe_token %}
                 <div class="mt-3 pt-3 border-top">
                     <p class="text-muted mb-1 extra-small">Your unique unsubscribe link:</p>
-                    <a href="/unsubscribe/{{ user.unsubscribe_token }}" class="text-danger extra-small">
+                    <a href="{{ request.script_root }}/unsubscribe/{{ user.unsubscribe_token }}" class="text-danger extra-small">
                         /unsubscribe/{{ user.unsubscribe_token[:12] }}...
                     </a>
                 </div>
@@ -294,7 +294,7 @@
         <div class="card h-100">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0"><i class="bi bi-person-badge me-2"></i> Tracked Authors</h5>
-                <a href="/settings/authors" class="btn btn-outline-primary btn-sm"><i class="bi bi-pencil-square me-1"></i> Manage</a>
+                <a href="{{ request.script_root }}/settings/authors" class="btn btn-outline-primary btn-sm"><i class="bi bi-pencil-square me-1"></i> Manage</a>
             </div>
             <div class="card-body">
                 <p class="text-muted small mb-0">
@@ -308,7 +308,7 @@
         <div class="card h-100">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0"><i class="bi bi-calendar-event me-2"></i> Conference &amp; Deadline Calendar</h5>
-                <a href="/settings/calendar" class="btn btn-outline-primary btn-sm"><i class="bi bi-pencil-square me-1"></i> Manage</a>
+                <a href="{{ request.script_root }}/settings/calendar" class="btn btn-outline-primary btn-sm"><i class="bi bi-pencil-square me-1"></i> Manage</a>
             </div>
             <div class="card-body">
                 <p class="text-muted small mb-0">
@@ -330,7 +330,7 @@
                 </button>
             </div>
             <div class="card-body">
-                <p class="text-muted small">Use API tokens to authenticate requests from scripts or external tools. Tokens are shown only once on creation. <a href="/api/docs" class="text-info text-decoration-none ms-2"><i class="bi bi-file-earmark-code"></i> View interactive API Documentation</a></p>
+                <p class="text-muted small">Use API tokens to authenticate requests from scripts or external tools. Tokens are shown only once on creation. <a href="{{ request.script_root }}/api/docs" class="text-info text-decoration-none ms-2"><i class="bi bi-file-earmark-code"></i> View interactive API Documentation</a></p>
                 {% if tokens %}
                 <table class="table table-sm extra-small">
                     <thead><tr><th>Token</th><th>Created</th><th>Actions</th></tr></thead>

@@ -54,7 +54,7 @@
 </head>
 <body>
     <div class="back-btn-container">
-        <a href="/" class="back-btn">&larr; Back to Dashboard</a>
+        <a href="{{ request.script_root }}/" class="back-btn">&larr; Back to Dashboard</a>
     </div>
     <div id="swagger-ui"></div>
     <script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
@@ -62,7 +62,7 @@
     <script>
         window.onload = function() {
             window.ui = SwaggerUIBundle({
-                url: "/static/openapi.json",
+                url: "{{ request.script_root }}/static/openapi.json",
                 dom_id: '#swagger-ui',
                 deepLinking: true,
                 presets: [

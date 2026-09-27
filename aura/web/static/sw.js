@@ -1,7 +1,9 @@
-const CACHE_NAME = 'aura-v1';
+const CACHE_NAME = 'aura-v2';
+// App root derived from this script's URL (/static/sw.js or /<prefix>/static/sw.js).
+const ROOT = new URL('../', self.location).pathname;
 const ASSETS = [
-  '/',
-  '/static/style.css',
+  ROOT,
+  ROOT + 'static/style.css',
   'https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css',
   'https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css'
 ];
@@ -22,7 +24,7 @@ self.addEventListener('fetch', (event) => {
 
   // Bypass cache for APIs or admin page to ensure real-time data
   const url = new URL(event.request.url);
-  if (url.pathname.startsWith('/api') || url.pathname.startsWith('/admin') || url.pathname.startsWith('/login') || url.pathname.startsWith('/register')) {
+  if (['api', 'admin', 'login', 'register'].some((p) => url.pathname.startsWith(ROOT + p))) {
     return;
   }
 

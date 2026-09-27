@@ -17,12 +17,12 @@
   <div class="col-md-4 mb-3">
     <div class="card border-secondary h-100">
       <div class="card-body">
-        <h6 class="card-title"><a href="/groups/{{ g.id }}" class="text-decoration-none">{{ g.name }}</a></h6>
+        <h6 class="card-title"><a href="{{ request.script_root }}/groups/{{ g.id }}" class="text-decoration-none">{{ g.name }}</a></h6>
         {% if g.description %}<p class="text-muted small mb-2">{{ g.description }}</p>{% endif %}
         <span class="badge bg-secondary">{{ g.role }}</span>
       </div>
       <div class="card-footer bg-transparent border-0 pt-0">
-        <a href="/groups/{{ g.id }}" class="btn btn-outline-secondary btn-sm">View Feed</a>
+        <a href="{{ request.script_root }}/groups/{{ g.id }}" class="btn btn-outline-secondary btn-sm">View Feed</a>
         <button class="btn btn-outline-danger btn-sm" onclick="leaveGroup({{ g.id }})">Leave</button>
       </div>
     </div>
@@ -37,7 +37,7 @@
   {% for g in all_groups %}
   <div class="list-group-item list-group-item-action d-flex justify-content-between align-items-center border-secondary">
     <div>
-      <a href="/groups/{{ g.id }}" class="fw-semibold text-decoration-none">{{ g.name }}</a>
+      <a href="{{ request.script_root }}/groups/{{ g.id }}" class="fw-semibold text-decoration-none">{{ g.name }}</a>
       {% if g.description %}<div class="text-muted small">{{ g.description }}</div>{% endif %}
     </div>
     <button class="btn btn-outline-primary btn-sm" onclick="joinGroup({{ g.id }})">Join</button>

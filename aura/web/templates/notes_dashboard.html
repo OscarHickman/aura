@@ -34,7 +34,7 @@
                         {% endif %}
                     {% endif %}
                     &mdash;
-                    <a href="/papers/{{ paper.arxiv_id }}" class="text-decoration-none">
+                    <a href="{{ request.script_root }}/papers/{{ paper.arxiv_id }}" class="text-decoration-none">
                         View paper <i class="bi bi-box-arrow-up-right"></i>
                     </a>
                 </div>
@@ -60,7 +60,7 @@
     <i class="bi bi-journal-x fs-1 d-block mb-3"></i>
     <h5>No study notes yet</h5>
     <p class="mb-3">Open any paper and add notes in the <strong>Personal Notes</strong> section.</p>
-    <a href="/papers" class="btn btn-outline-primary">Browse Papers</a>
+    <a href="{{ request.script_root }}/papers" class="btn btn-outline-primary">Browse Papers</a>
 </div>
 {% endif %}
 {% endblock %}

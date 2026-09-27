@@ -3,8 +3,10 @@ services:
     image: ${IMAGE:-ghcr.io/oscarhickman/aura}:${TAG:-latest}
     container_name: aura_app
     restart: unless-stopped
+    # Reached through Caddy at /aura/; the host port is loopback-only so
+    # X-Forwarded-* headers (trusted below) can only come from the proxy.
     ports:
-      - "5000:5000"
+      - "127.0.0.1:5000:5000"
     networks:
       - default
       - webproxy
@@ -14,6 +16,7 @@ services:
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
+      - AURA_TRUSTED_PROXY_HOPS=1
     volumes:
       - ./config.yaml:/app/config.yaml
       - ./data:/app/data
@@ -26,6 +29,7 @@ services:
       caddy.route: "/aura/*"
       caddy.route.0_uri: "strip_prefix /aura"
       caddy.route.1_reverse_proxy: "{{upstreams 5000}}"
+      caddy.route.1_reverse_proxy.header_up: "X-Forwarded-Prefix /aura"
 
   redis:
     image: redis:7-alpine

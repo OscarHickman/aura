@@ -23,7 +23,7 @@
 
 {% block content %}
 <div class="mb-3">
-    <a href="/papers" class="btn btn-outline-secondary btn-sm">
+    <a href="{{ request.script_root }}/papers" class="btn btn-outline-secondary btn-sm">
         <i class="bi bi-arrow-left"></i> Back to Papers
     </a>
 </div>
@@ -417,7 +417,7 @@
                 {% if similar_papers %}
                 <div class="list-group list-group-flush">
                     {% for sim in similar_papers %}
-                    <a href="/papers/{{ sim.arxiv_id }}" class="list-group-item list-group-item-action bg-transparent text-light border-secondary py-3">
+                    <a href="{{ request.script_root }}/papers/{{ sim.arxiv_id }}" class="list-group-item list-group-item-action bg-transparent text-light border-secondary py-3">
                         <div class="d-flex justify-content-between align-items-start mb-1">
                             <h6 class="mb-0 text-truncate-2" style="max-width: 85%;">{{ sim.title | safe }}</h6>
                             <span class="badge bg-info-subtle text-info-emphasis">{{ "%.0f" | format(sim.similarity * 100) }}%</span>
@@ -445,7 +445,7 @@
                 {% if same_author_papers %}
                 <div class="list-group list-group-flush">
                     {% for auth_p in same_author_papers %}
-                    <a href="/papers/{{ auth_p.arxiv_id }}" class="list-group-item list-group-item-action bg-transparent text-light border-secondary py-3">
+                    <a href="{{ request.script_root }}/papers/{{ auth_p.arxiv_id }}" class="list-group-item list-group-item-action bg-transparent text-light border-secondary py-3">
                         <h6 class="mb-1 text-truncate-2">{{ auth_p.title | safe }}</h6>
                         <small class="text-muted">{{ auth_p.published[:10] }}</small>
                     </a>
@@ -468,7 +468,7 @@
                 {% if citing_papers %}
                 <div class="list-group list-group-flush">
                     {% for cp in citing_papers %}
-                    <a href="/papers/{{ cp.arxiv_id }}" class="list-group-item list-group-item-action bg-transparent text-light border-secondary py-3">
+                    <a href="{{ request.script_root }}/papers/{{ cp.arxiv_id }}" class="list-group-item list-group-item-action bg-transparent text-light border-secondary py-3">
                         <h6 class="mb-1 text-truncate-2">{{ cp.title | safe }}</h6>
                         <small class="text-muted">
                             {{ cp.authors[:2] | join(', ') }}{% if cp.authors | length > 2 %} + others{% endif %}
@@ -493,7 +493,7 @@
                 {% if cited_papers %}
                 <div class="list-group list-group-flush">
                     {% for cp in cited_papers %}
-                    <a href="/papers/{{ cp.arxiv_id }}" class="list-group-item list-group-item-action bg-transparent text-light border-secondary py-3">
+                    <a href="{{ request.script_root }}/papers/{{ cp.arxiv_id }}" class="list-group-item list-group-item-action bg-transparent text-light border-secondary py-3">
                         <h6 class="mb-1 text-truncate-2">{{ cp.title | safe }}</h6>
                         <small class="text-muted">
                             {{ cp.authors[:2] | join(', ') }}{% if cp.authors | length > 2 %} + others{% endif %}
@@ -611,7 +611,7 @@ async function askPaperQuestion(arxivId, form) {
     let isFirstChunk = true;
     
     // Setup SSE connection
-    const sseUrl = `/api/papers/${encodeURIComponent(arxivId)}/ask?question=${encodeURIComponent(question)}`;
+    const sseUrl = `${window.APP_ROOT}/api/papers/${encodeURIComponent(arxivId)}/ask?question=${encodeURIComponent(question)}`;
     currentEventSource = new EventSource(sseUrl);
     
     currentEventSource.onmessage = function(event) {

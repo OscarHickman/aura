@@ -25,7 +25,7 @@
                     <h6 class="text-muted small">Top Keywords:</h6>
                     <div class="d-flex flex-wrap gap-1">
                         {% for kw in cluster.keywords %}
-                        <a href="/papers?mode=semantic&q={{ kw }}" class="badge bg-secondary-subtle text-secondary-emphasis text-decoration-none">
+                        <a href="{{ request.script_root }}/papers?mode=semantic&q={{ kw }}" class="badge bg-secondary-subtle text-secondary-emphasis text-decoration-none">
                             {{ kw }}
                         </a>
                         {% endfor %}
@@ -35,7 +35,7 @@
                 <h6 class="text-muted small mb-2">Representative Papers:</h6>
                 <div class="list-group list-group-flush">
                     {% for paper in cluster.top_papers %}
-                    <a href="/papers/{{ paper.arxiv_id }}" class="list-group-item list-group-item-action bg-transparent text-light border-secondary px-0 py-2">
+                    <a href="{{ request.script_root }}/papers/{{ paper.arxiv_id }}" class="list-group-item list-group-item-action bg-transparent text-light border-secondary px-0 py-2">
                         <div class="text-truncate" style="max-width: 100%;">
                             {{ paper.title | safe }}
                         </div>
@@ -45,7 +45,7 @@
                 </div>
             </div>
             <div class="card-footer border-secondary bg-transparent text-end">
-                <a href="/papers?mode=semantic&q={{ cluster.name }}" class="btn btn-sm btn-outline-primary">
+                <a href="{{ request.script_root }}/papers?mode=semantic&q={{ cluster.name }}" class="btn btn-sm btn-outline-primary">
                     Search this topic <i class="bi bi-arrow-right"></i>
                 </a>
             </div>

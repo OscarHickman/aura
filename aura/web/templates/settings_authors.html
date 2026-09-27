@@ -4,7 +4,7 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h1><i class="bi bi-person-badge"></i> Tracked Authors & Research Groups</h1>
-    <a href="/settings" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back to Settings</a>
+    <a href="{{ request.script_root }}/settings" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Back to Settings</a>
 </div>
 
 {% with messages = get_flashed_messages(with_categories=true) %}
@@ -26,7 +26,7 @@
                 <h5 class="mb-0"><i class="bi bi-person-plus"></i> Track a New Author</h5>
             </div>
             <div class="card-body">
-                <form method="post" action="/settings/authors">
+                <form method="post" action="{{ request.script_root }}/settings/authors">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="action" value="add">
                     
@@ -67,7 +67,7 @@
                 <p class="text-muted small">
                     Paste BibTeX entries below to extract all unique authors and track them in bulk.
                 </p>
-                <form method="post" action="/settings/authors/import-bibtex">
+                <form method="post" action="{{ request.script_root }}/settings/authors/import-bibtex">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <div class="mb-3">
                         <label for="bibtex_content" class="form-label small">BibTeX Entries</label>
@@ -130,7 +130,7 @@
                                     {% endif %}
                                 </td>
                                 <td class="text-end">
-                                    <form method="post" action="/settings/authors" style="display:inline;">
+                                    <form method="post" action="{{ request.script_root }}/settings/authors" style="display:inline;">
                                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                         <input type="hidden" name="action" value="delete">
                                         <input type="hidden" name="author_id" value="{{ author.id }}">

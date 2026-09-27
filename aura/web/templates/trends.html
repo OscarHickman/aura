@@ -189,7 +189,7 @@
                             <ul class="list-unstyled mb-0" style="font-size: 0.85rem;">
                                 {% for paper in topic.recent_papers %}
                                 <li class="mb-2 text-truncate-container">
-                                    <a href="/papers/{{ paper.arxiv_id }}" class="text-decoration-none text-info text-truncate-link d-block" title="{{ paper.title }}">
+                                    <a href="{{ request.script_root }}/papers/{{ paper.arxiv_id }}" class="text-decoration-none text-info text-truncate-link d-block" title="{{ paper.title }}">
                                         {{ paper.title }}
                                     </a>
                                     <span class="text-muted small d-block">

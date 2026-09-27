@@ -142,7 +142,7 @@ async function doFetch() {
                 const newCount = res.new_papers ?? 0;
                 if (newCount > 0) {
                     alert.className = 'alert alert-success';
-                    alert.innerHTML = `<i class="bi bi-check-circle"></i> Fetched <strong>${newCount}</strong> new papers! <a href="/papers?filter=unrated" class="alert-link">Browse them now</a>.`;
+                    alert.innerHTML = `<i class="bi bi-check-circle"></i> Fetched <strong>${newCount}</strong> new papers! <a href="{{ request.script_root }}/papers?filter=unrated" class="alert-link">Browse them now</a>.`;
                 } else {
                     alert.className = 'alert alert-info';
                     alert.textContent = 'No new papers found. Try increasing days back or check later.';

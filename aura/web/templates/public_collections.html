@@ -10,7 +10,7 @@
     <div class="card border-secondary h-100">
       <div class="card-body">
         <h6 class="card-title">
-          <a href="/collections/{{ coll.slug }}" class="text-decoration-none">{{ coll.name }}</a>
+          <a href="{{ request.script_root }}/collections/{{ coll.slug }}" class="text-decoration-none">{{ coll.name }}</a>
         </h6>
         {% if coll.description %}<p class="text-muted small mb-2">{{ coll.description }}</p>{% endif %}
         <div class="text-muted small">
@@ -20,7 +20,7 @@
         </div>
       </div>
       <div class="card-footer bg-transparent border-0">
-        <a href="/collections/{{ coll.slug }}" class="btn btn-outline-secondary btn-sm">View</a>
+        <a href="{{ request.script_root }}/collections/{{ coll.slug }}" class="btn btn-outline-secondary btn-sm">View</a>
         <button class="btn btn-outline-primary btn-sm" onclick="forkCollection({{ coll.id }})">
           <i class="bi bi-git me-1"></i>Fork
         </button>
@@ -32,7 +32,7 @@
 {% else %}
 <div class="text-muted text-center py-5">
   <i class="bi bi-collection display-4 d-block mb-3"></i>
-  No public collections yet. Share a collection from your <a href="/settings">Settings</a> page.
+  No public collections yet. Share a collection from your <a href="{{ request.script_root }}/settings">Settings</a> page.
 </div>
 {% endif %}
 {% endblock %}

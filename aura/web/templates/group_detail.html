@@ -5,7 +5,7 @@
   <div>
     <nav aria-label="breadcrumb">
       <ol class="breadcrumb mb-1">
-        <li class="breadcrumb-item"><a href="/groups">Groups</a></li>
+        <li class="breadcrumb-item"><a href="{{ request.script_root }}/groups">Groups</a></li>
         <li class="breadcrumb-item active">{{ group.name }}</li>
       </ol>
     </nav>
@@ -50,7 +50,7 @@
     <div class="card border-secondary mb-2">
       <div class="card-body py-2">
         <h6 class="mb-1">
-          <a href="/papers/{{ paper.arxiv_id }}" class="text-decoration-none">{{ paper.title }}</a>
+          <a href="{{ request.script_root }}/papers/{{ paper.arxiv_id }}" class="text-decoration-none">{{ paper.title }}</a>
           <span class="badge bg-warning text-dark ms-1">&#9733; {{ paper.best_rating }}</span>
         </h6>
         <div class="text-muted small">
@@ -78,7 +78,7 @@ async function joinGroup(id) {
 async function leaveGroup(id) {
   if (!confirm('Leave this group?')) return;
   const r = await fetch('/api/groups/' + id + '/leave', { method: 'POST', headers: {'Content-Type':'application/json'} });
-  if ((await r.json()).status === 'ok') location.href = '/groups';
+  if ((await r.json()).status === 'ok') location.href = window.APP_ROOT + '/groups';
 }
 async function removeMember(groupId, userId) {
   if (!confirm('Remove this member?')) return;
