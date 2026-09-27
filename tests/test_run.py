@@ -88,6 +88,10 @@ class TestRunModule(unittest.TestCase):
         config = {}
 
         out = io.StringIO()
+        # Import aura.scheduler before patching sys.modules: patch.dict drops
+        # modules first imported inside the block on exit, leaving a stale
+        # aura.scheduler attribute that later mock.patch calls would target.
+        import aura.scheduler  # noqa: F401
         with patch.dict("sys.modules", {"apscheduler": None}):
             with redirect_stdout(out):
                 run._setup_scheduler(app, config)
