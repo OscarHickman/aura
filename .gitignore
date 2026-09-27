@@ -110,3 +110,16 @@ data/uploads/
 # IDE
 .vscode/
 .idea/
+
+# Mobile / Node
+node_modules/
+.expo/
+*.apk
+*.aab
+mobile/android/
+mobile/ios/
+
+
+# Local tooling / machine-specific notes
+.playwright-mcp/
+SERVER.md

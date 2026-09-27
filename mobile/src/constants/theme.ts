@@ -1,0 +1,42 @@
+export const theme = {
+  colors: {
+    background: '#090d16',
+    surface: '#131b2e',
+    surfaceBorder: '#1e293b',
+    surfaceLight: '#1e293b',
+    card: '#0f172a',
+    cardBorder: '#27354f',
+    primary: '#6366f1',
+    primaryDark: '#4f46e5',
+    primaryLight: '#818cf8',
+    success: '#10b981',
+    danger: '#ef4444',
+    warning: '#f59e0b',
+    text: '#f8fafc',
+    textSecondary: '#cbd5e1',
+    textMuted: '#94a3b8',
+    textDim: '#64748b',
+    white: '#ffffff',
+  },
+  spacing: {
+    xs: 4,
+    sm: 8,
+    md: 14,
+    lg: 20,
+    xl: 28,
+  },
+  borderRadius: {
+    sm: 6,
+    md: 12,
+    lg: 18,
+    full: 9999,
+  },
+  typography: {
+    xs: 11,
+    sm: 13,
+    md: 15,
+    lg: 18,
+    xl: 22,
+    xxl: 26,
+  }
+};
