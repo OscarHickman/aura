@@ -269,7 +269,9 @@ jobs:
           packageName: com.oscarhickman.aura
           releaseFiles: release-assets/aura-${{ github.ref_name }}.aab
           track: ${{ vars.GOOGLE_PLAY_TRACK || 'internal' }}
-          status: completed
+          # Play only accepts 'draft' until the app's first release has been
+          # rolled out in the console; then set the variable to 'completed'.
+          status: ${{ vars.GOOGLE_PLAY_RELEASE_STATUS || 'completed' }}
 
       - name: Attach binaries to GitHub release
         uses: softprops/action-gh-release@v2

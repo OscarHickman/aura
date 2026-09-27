@@ -7,9 +7,6 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
     "scheme": "aura",
-    "splash": {
-      "backgroundColor": "#0f172a"
-    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.oscarhickman.aura"
@@ -28,7 +25,16 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-asset"
+      "expo-asset",
+      "expo-status-bar",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#0f172a",
+          "image": "./assets/icon.png",
+          "imageWidth": 160
+        }
+      ]
     ]
   }
 }
