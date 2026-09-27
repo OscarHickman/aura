@@ -196,8 +196,10 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      # ubuntu-latest ships the Android SDK with licenses accepted
+      # (ANDROID_HOME); android-actions/setup-android failed on a license prompt.
+      - name: Check Android SDK
+        run: test -d "$ANDROID_HOME" && echo "ANDROID_HOME=$ANDROID_HOME"
 
       - name: Install mobile dependencies
         working-directory: mobile
