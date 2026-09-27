@@ -23,7 +23,7 @@ Your server stores this data to rank papers for you. Questions you ask about a p
 
 - No advertising, analytics or tracking SDKs.
 - No sale or sharing of personal data with third parties.
-- No access to your contacts, location, camera, microphone or files. The app requests internet access only.
+- No access to your contacts, location, camera, microphone or files. The app requests only internet access (and vibration for haptic feedback).
 
 ## Deleting your data
 
