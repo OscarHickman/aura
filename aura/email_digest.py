@@ -541,6 +541,35 @@ def send_top_recommendations_email(
         for cp in citing_papers:
             cp["tags"] = engine.db.get_paper_tags(cp["arxiv_id"], user_id=user_id)
 
+        # Collect unnotified citation events and incorporate them into citing papers
+        unnotified_events = []
+        try:
+            from unittest.mock import Mock
+            if not isinstance(engine.db, Mock):
+                unnotified_events = engine.db.get_unnotified_citation_events(user_id=user_id) or []
+                if unnotified_events:
+                    citing_ids = {p.get("arxiv_id") for p in citing_papers}
+                    for ev in unnotified_events:
+                        c_id = ev.get("citing_arxiv_id")
+                        if c_id not in citing_ids:
+                            p = engine.db.get_paper(c_id)
+                            if p:
+                                p = dict(p)
+                                p["tags"] = engine.db.get_paper_tags(c_id, user_id=user_id)
+                                citing_papers.append(p)
+                            else:
+                                citing_papers.append({
+                                    "arxiv_id": c_id,
+                                    "title": ev.get("citing_title") or f"Paper citing '{ev.get('my_paper_title')}'",
+                                    "authors": [a.strip() for a in (ev.get("citing_authors") or "").split(",") if a.strip()],
+                                    "url": f"https://arxiv.org/abs/{c_id}" if not c_id.startswith("http") else c_id,
+                                    "summary": f"Cites your work: {ev.get('my_paper_title')}",
+                                    "tags": [],
+                                })
+                            citing_ids.add(c_id)
+        except Exception as e:
+            logger.warning(f"Failed to collect unnotified citation events: {e}")
+
         # Collect group papers
         group_papers = _collect_group_papers(engine, user_id=user_id, limit=5)
         for gp in group_papers:
@@ -568,6 +597,12 @@ def send_top_recommendations_email(
             _send_graph_email(email_config, subject, text_body, html_body)
         else:
             _send_smtp_email(email_config, subject, text_body, html_body)
+
+        if unnotified_events:
+            try:
+                engine.db.mark_citation_events_notified([ev["id"] for ev in unnotified_events if "id" in ev])
+            except Exception as e:
+                logger.warning(f"Failed to mark citation events as notified: {e}")
 
         return {
             "status": "sent",

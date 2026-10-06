@@ -1077,13 +1077,10 @@ class RecommendationEngine:
         return citing, cited
 
     def refresh_single_my_paper_citations(self, my_paper_id: int, user_id: int) -> None:
-        """Synchronously refresh citation relationships for a single registered paper from ADS."""
+        """Synchronously refresh citation relationships for a single registered paper, record history & events, and auto-ingest."""
         try:
             from aura.fetcher import ADSSource
             ads_source = ADSSource()
-            if not ads_source.api_key:
-                logger.warning("NASA ADS API key not configured. Skipping single my_paper citation refresh.")
-                return
 
             rows = self.db.conn.execute(
                 "SELECT id, arxiv_id, doi, title FROM my_papers WHERE id = ? AND user_id = ?",
@@ -1095,30 +1092,123 @@ class RecommendationEngine:
             mp = dict(rows[0])
             arxiv_id = mp.get("arxiv_id")
             doi = mp.get("doi")
+            my_title = mp.get("title") or "Your registered paper"
 
-            # Resolve arxiv_id if missing
-            if not arxiv_id and doi:
+            # Resolve arxiv_id if missing and ADS key configured
+            if not arxiv_id and doi and ads_source.api_key:
                 resolved = ads_source.fetch_paper_by_identifier(doi)
                 if resolved:
                     arxiv_id = resolved["arxiv_id"]
                     self.db.update_my_paper(my_paper_id, arxiv_id=arxiv_id, title=resolved.get("title"))
                     logger.info(f"Resolved arxiv_id={arxiv_id} for my_paper {my_paper_id} (DOI={doi})")
 
+            citing_list = []
             target_identifier = arxiv_id or doi
-            if target_identifier:
-                citing_list = ads_source.fetch_citations_for_identifier(target_identifier)
-                if citing_list:
-                    cited_id = arxiv_id or f"ads:{target_identifier}"
-                    links = []
-                    for cp in citing_list:
-                        c_arxiv = cp.get("arxiv_id")
-                        if c_arxiv:
-                            links.append((c_arxiv, cited_id))
-                    if links:
-                        self.db.add_citations_batch(links)
-                        logger.info(f"Updated {len(links)} citation relationships for my_paper {target_identifier}")
+            if ads_source.api_key and target_identifier:
+                citing_list = ads_source.fetch_citations_for_identifier(target_identifier) or []
+            elif arxiv_id:
+                # Fallback to Semantic Scholar if ADS key not present
+                self.fetch_and_store_citations(arxiv_id)
+                citing_list = self.db.get_papers_citing(arxiv_id) or []
+
+            # Record milestone snapshot in citation history
+            self.db.record_citation_history(user_id, my_paper_id, len(citing_list))
+
+            if citing_list:
+                cited_id = arxiv_id or f"ads:{target_identifier}"
+                links = []
+                new_events = []
+
+                for cp in citing_list:
+                    c_arxiv = cp.get("arxiv_id")
+                    if not c_arxiv:
+                        continue
+                    links.append((c_arxiv, cited_id))
+
+                    c_title = cp.get("title") or "Untitled"
+                    authors_val = cp.get("authors")
+                    if isinstance(authors_val, list):
+                        authors_str = ", ".join(authors_val)
+                    else:
+                        authors_str = str(authors_val or "")
+
+                    is_new = self.db.record_citation_event(
+                        user_id=user_id,
+                        my_paper_id=my_paper_id,
+                        citing_arxiv_id=c_arxiv,
+                        citing_title=c_title,
+                        citing_authors=authors_str,
+                    )
+                    if is_new:
+                        new_events.append({
+                            "user_id": user_id,
+                            "my_paper_id": my_paper_id,
+                            "my_paper_title": my_title,
+                            "citing_arxiv_id": c_arxiv,
+                            "citing_title": c_title,
+                            "citing_authors": authors_str,
+                        })
+                        # Auto-ingest citing paper into database
+                        if not self.db.get_paper(c_arxiv):
+                            self._auto_ingest_citing_paper(cp)
+
+                if links:
+                    self.db.add_citations_batch(links)
+                    logger.info(f"Updated {len(links)} citation relationships for my_paper {target_identifier}")
+
+                if new_events:
+                    self._notify_new_citation_events(new_events)
         except Exception as e:
             logger.error(f"Failed to refresh single my_paper citations for paper {my_paper_id}: {e}")
+
+    def _auto_ingest_citing_paper(self, paper: dict) -> None:
+        """Auto-ingest newly detected paper that cites user's research."""
+        try:
+            arxiv_id = paper.get("arxiv_id")
+            if not arxiv_id:
+                return
+
+            authors = paper.get("authors")
+            if isinstance(authors, str):
+                authors_list = [a.strip() for a in authors.split(",") if a.strip()]
+            elif isinstance(authors, list):
+                authors_list = authors
+            else:
+                authors_list = []
+
+            paper_dict = {
+                "arxiv_id": arxiv_id,
+                "title": paper.get("title") or "Untitled",
+                "abstract": paper.get("abstract") or "",
+                "authors": authors_list,
+                "categories": paper.get("categories") or ["citation"],
+                "published": paper.get("published") or utcnow().isoformat(),
+                "url": paper.get("url") or (f"https://arxiv.org/abs/{arxiv_id}" if not arxiv_id.startswith("http") else arxiv_id),
+                "pdf_url": paper.get("pdf_url") or "",
+                "source": paper.get("source") or "citation",
+            }
+            self.db.add_papers_batch([paper_dict])
+
+            if hasattr(self, "embedder") and self.embedder is not None:
+                try:
+                    emb = self.embedder.embed_paper(paper_dict)
+                    self.db.save_embeddings([(arxiv_id, emb)])
+                except Exception as ee:
+                    logger.warning(f"Failed to embed auto-ingested paper {arxiv_id}: {ee}")
+
+            logger.info(f"Auto-ingested newly citing paper {arxiv_id}: {paper_dict['title']}")
+        except Exception as e:
+            logger.error(f"Failed to auto-ingest citing paper: {e}")
+
+    def _notify_new_citation_events(self, events: list[dict]) -> None:
+        """Send notifications for newly discovered citations."""
+        try:
+            from aura.notifications import notify_citation_events
+            from aura.config import load_config_file
+            config = load_config_file()
+            notify_citation_events(self, events, config)
+        except Exception as e:
+            logger.warning(f"Failed to notify citation events: {e}")
 
     def refresh_my_papers_citations(self, user_id: Optional[int] = None) -> None:
         """Refresh citation relationships for all my_papers (or a specific user's my_papers) from ADS."""

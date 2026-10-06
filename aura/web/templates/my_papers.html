@@ -36,8 +36,12 @@
                 <div class="card paper-card glass-panel h-100 p-2">
                     <div class="card-body">
                         <div class="d-flex justify-content-between align-items-start gap-3">
-                            <div>
-                                <h5 class="card-title mb-2 text-light fw-semibold">{{ paper.title }}</h5>
+                                <div class="d-flex align-items-center gap-2 mb-2">
+                                    <h5 class="card-title mb-0 text-light fw-semibold">{{ paper.title }}</h5>
+                                    <span class="badge bg-primary bg-opacity-75 text-white" title="Citation Count">
+                                        <i class="bi bi-quote"></i> {{ paper.citation_count | default(0) }} citations
+                                    </span>
+                                </div>
                                 <p class="mb-2 small text-muted">
                                     {% if paper.arxiv_id %}
                                     <strong class="text-light-emphasis">ArXiv ID:</strong> <a href="https://arxiv.org/abs/{{ paper.arxiv_id }}" target="_blank" class="text-decoration-none text-info fw-medium">{{ paper.arxiv_id }} <i class="bi bi-box-arrow-up-right small"></i></a>
@@ -49,12 +53,14 @@
                                 </p>
                                 <small class="text-muted"><i class="bi bi-calendar-check me-1"></i>Registered on: {{ paper.created_at[:10] }}</small>
                             </div>
-                            <form action="{{ request.script_root }}/my-papers/delete/{{ paper.id }}" method="POST" onsubmit="return confirm('Remove registration for this paper?');">
-                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Remove Registration">
-                                    <i class="bi bi-trash me-1"></i> Remove
-                                </button>
-                            </form>
+                            <div class="d-flex gap-2">
+                                <form action="{{ request.script_root }}/my-papers/delete/{{ paper.id }}" method="POST" onsubmit="return confirm('Remove registration for this paper?');">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger" title="Remove Registration">
+                                        <i class="bi bi-trash me-1"></i> Remove
+                                    </button>
+                                </form>
+                            </div>
                         </div>
                     </div>
                 </div>

@@ -148,3 +148,93 @@ def notify_high_scoring_papers(engine: Any, new_papers: List[Dict[str, Any]], co
                 threshold = discord_conf.get("score_threshold", 0.8)
                 if score >= threshold:
                     send_discord_notification(discord_conf["webhook_url"], paper, score)
+
+
+def send_slack_citation_alert(webhook_url: str, event: Dict[str, Any]) -> bool:
+    """Send a Slack notification for a newly detected paper citation."""
+    try:
+        my_title = event.get("my_paper_title", "Your paper")
+        citing_title = event.get("citing_title", "Untitled")
+        citing_arxiv = event.get("citing_arxiv_id", "")
+        citing_url = (
+            f"https://arxiv.org/abs/{citing_arxiv}"
+            if citing_arxiv and not citing_arxiv.startswith("http")
+            else citing_arxiv
+        )
+        authors = event.get("citing_authors") or "Unknown authors"
+
+        payload = {
+            "blocks": [
+                {
+                    "type": "section",
+                    "text": {
+                        "type": "mrkdwn",
+                        "text": (
+                            f"🎓 *New Citation Detected!*\n\n"
+                            f"Your publication *{my_title}* has been cited by:\n"
+                            f"*<{citing_url}|{citing_title}>*\n"
+                            f"*Authors*: {authors}"
+                        ),
+                    },
+                }
+            ]
+        }
+        resp = requests.post(webhook_url, json=payload, timeout=10)
+        resp.raise_for_status()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send Slack citation alert: {e}")
+        return False
+
+
+def send_discord_citation_alert(webhook_url: str, event: Dict[str, Any]) -> bool:
+    """Send a Discord notification for a newly detected paper citation."""
+    try:
+        my_title = event.get("my_paper_title", "Your paper")
+        citing_title = event.get("citing_title", "Untitled")
+        citing_arxiv = event.get("citing_arxiv_id", "")
+        citing_url = (
+            f"https://arxiv.org/abs/{citing_arxiv}"
+            if citing_arxiv and not citing_arxiv.startswith("http")
+            else citing_arxiv
+        )
+        authors = event.get("citing_authors") or "Unknown authors"
+
+        payload = {
+            "content": (
+                f"🎓 **New Citation Detected!**\n\n"
+                f"Your publication **{my_title}** has been cited by:\n"
+                f"**[{citing_title}]({citing_url})**\n"
+                f"*Authors*: {authors}"
+            )
+        }
+        resp = requests.post(webhook_url, json=payload, timeout=10)
+        resp.raise_for_status()
+        return True
+    except Exception as e:
+        logger.error(f"Failed to send Discord citation alert: {e}")
+        return False
+
+
+def notify_citation_events(
+    engine: Any, events: List[Dict[str, Any]], config: Dict[str, Any]
+) -> None:
+    """Send webhook notifications for newly detected citation events."""
+    if not events:
+        return
+
+    integrations = config.get("integrations", {})
+    slack_conf = integrations.get("slack", {})
+    discord_conf = integrations.get("discord", {})
+
+    slack_enabled = slack_conf.get("enabled", False) and slack_conf.get("webhook_url")
+    discord_enabled = discord_conf.get("enabled", False) and discord_conf.get("webhook_url")
+
+    if not slack_enabled and not discord_enabled:
+        return
+
+    for event in events:
+        if slack_enabled:
+            send_slack_citation_alert(slack_conf["webhook_url"], event)
+        if discord_enabled:
+            send_discord_citation_alert(discord_conf["webhook_url"], event)

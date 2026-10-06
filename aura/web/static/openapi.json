@@ -996,6 +996,129 @@
         }
       }
     },
+    "/api/my-papers": {
+      "get": {
+        "summary": "List registered papers",
+        "description": "Get all papers registered by the user with their latest citation counts.",
+        "responses": {
+          "200": {
+            "description": "List of user registered papers with citation counts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "papers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": { "type": "integer" },
+                          "title": { "type": "string" },
+                          "arxiv_id": { "type": "string" },
+                          "doi": { "type": "string" },
+                          "citation_count": { "type": "integer" },
+                          "created_at": { "type": "string" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Register a new paper",
+        "description": "Register a publication by arXiv ID or DOI to monitor citations.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["title"],
+                "properties": {
+                  "title": { "type": "string" },
+                  "arxiv_id": { "type": "string" },
+                  "doi": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Paper registered successfully"
+          },
+          "400": {
+            "description": "Validation error or already registered"
+          }
+        }
+      }
+    },
+    "/api/my-papers/{paper_id}": {
+      "delete": {
+        "summary": "Delete registered paper",
+        "parameters": [
+          {
+            "name": "paper_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Paper deleted successfully" },
+          "404": { "description": "Paper not found" }
+        }
+      }
+    },
+    "/api/my-papers/{paper_id}/citation-history": {
+      "get": {
+        "summary": "Get citation count snapshots",
+        "parameters": [
+          {
+            "name": "paper_id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "integer" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Historical citation counts for sparkline rendering"
+          }
+        }
+      }
+    },
+    "/api/my-papers/citation-events": {
+      "get": {
+        "summary": "Get recent citation events",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "default": 20 }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of citation events"
+          }
+        }
+      }
+    },
+    "/api/my-papers/refresh-citations": {
+      "post": {
+        "summary": "Refresh citation counts and events",
+        "responses": {
+          "200": { "description": "Citation refresh triggered" }
+        }
+      }
+    },
     "/api/search": {
       "get": {
         "summary": "Search papers",

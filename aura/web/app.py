@@ -1034,6 +1034,90 @@ def _register_routes(app: Flask) -> None:
             flash("Failed to remove paper registration.", "danger")
         return redirect(url_for("my_papers"))
 
+    @app.route("/api/my-papers", methods=["GET"])
+    @login_required
+    def api_get_my_papers():
+        if not engine:
+            return jsonify({"error": "Engine not initialized"}), 500
+        uid = _get_current_user_id()
+        papers = engine.db.get_my_papers(user_id=uid)
+        return jsonify({"papers": papers})
+
+    @app.route("/api/my-papers", methods=["POST"])
+    @login_required
+    def api_add_my_paper():
+        if not engine:
+            return jsonify({"error": "Engine not initialized"}), 500
+        uid = _get_current_user_id()
+        data = request.get_json(silent=True) or request.form
+        title = (data.get("title") or "").strip()
+        arxiv_id = (data.get("arxiv_id") or "").strip() or None
+        doi = (data.get("doi") or "").strip() or None
+
+        if not title:
+            return jsonify({"error": "Paper title is required"}), 400
+        if not arxiv_id and not doi:
+            return jsonify({"error": "Either ArXiv ID or DOI must be provided"}), 400
+
+        success = engine.db.add_my_paper(title=title, arxiv_id=arxiv_id, doi=doi, user_id=uid)
+        if not success:
+            return jsonify({"error": "Failed to register paper. It may already be registered."}), 400
+
+        row = None
+        if arxiv_id:
+            row = engine.db.conn.execute(
+                "SELECT id FROM my_papers WHERE arxiv_id = ? AND user_id = ?",
+                (arxiv_id, uid)
+            ).fetchone()
+        elif doi:
+            row = engine.db.conn.execute(
+                "SELECT id FROM my_papers WHERE doi = ? AND user_id = ?",
+                (doi, uid)
+            ).fetchone()
+
+        if row:
+            engine.refresh_single_my_paper_citations(row["id"], uid)
+
+        return jsonify({"status": "ok", "message": f"Successfully registered paper '{title}'"}), 201
+
+    @app.route("/api/my-papers/<int:paper_id>", methods=["DELETE"])
+    @login_required
+    def api_delete_my_paper(paper_id):
+        if not engine:
+            return jsonify({"error": "Engine not initialized"}), 500
+        uid = _get_current_user_id()
+        success = engine.db.delete_my_paper(paper_id, user_id=uid)
+        if not success:
+            return jsonify({"error": "Paper not found or deletion failed"}), 404
+        return jsonify({"status": "ok"})
+
+    @app.route("/api/my-papers/<int:paper_id>/citation-history", methods=["GET"])
+    @login_required
+    def api_get_paper_citation_history(paper_id):
+        if not engine:
+            return jsonify({"error": "Engine not initialized"}), 500
+        history = engine.db.get_paper_citation_history(paper_id)
+        return jsonify({"paper_id": paper_id, "history": history})
+
+    @app.route("/api/my-papers/citation-events", methods=["GET"])
+    @login_required
+    def api_get_citation_events():
+        if not engine:
+            return jsonify({"error": "Engine not initialized"}), 500
+        uid = _get_current_user_id()
+        limit = min(max(request.args.get("limit", default=20, type=int), 1), 100)
+        events = engine.db.get_recent_citation_events(user_id=uid, limit=limit)
+        return jsonify({"events": events})
+
+    @app.route("/api/my-papers/refresh-citations", methods=["POST"])
+    @login_required
+    def api_refresh_my_papers_citations():
+        if not engine:
+            return jsonify({"error": "Engine not initialized"}), 500
+        uid = _get_current_user_id()
+        engine.refresh_my_papers_citations(user_id=uid)
+        return jsonify({"status": "ok", "message": "Citation refresh triggered"})
+
     @app.route("/api/explain/<path:arxiv_id>", methods=["GET"])
     @login_required
     def explain_paper(arxiv_id):
@@ -1194,6 +1278,61 @@ def _register_routes(app: Flask) -> None:
             mimetype="text/markdown",
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
+
+    @app.route("/collections/<int:collection_id>/export/latex")
+    @login_required
+    def export_collection_latex(collection_id):
+        if not engine:
+            return "Engine not initialized", 500
+        uid = _get_current_user_id()
+        include_synthesis = request.args.get("synthesize", "").lower() in ("true", "1", "yes")
+
+        from aura.latex_export import export_collection_latex_zip
+        try:
+            filename, zip_bytes = export_collection_latex_zip(
+                collection_id=collection_id,
+                user_id=uid,
+                engine=engine,
+                include_synthesis=include_synthesis,
+            )
+        except ValueError:
+            return "Collection not found", 404
+        except PermissionError:
+            return "Access denied to collection", 403
+        except Exception as e:
+            logger.error(f"Failed to export collection {collection_id} to LaTeX: {e}")
+            return f"Export failed: {e}", 500
+
+        return Response(
+            zip_bytes,
+            mimetype="application/zip",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+
+    @app.route("/api/collections/<int:collection_id>/synthesize-related-work", methods=["POST"])
+    @login_required
+    def api_synthesize_related_work(collection_id):
+        if not engine:
+            return jsonify({"error": "Engine not initialized"}), 500
+        uid = _get_current_user_id()
+        collection = engine.db.get_collection(collection_id)
+        if not collection:
+            return jsonify({"error": "Collection not found"}), 404
+        if collection["user_id"] != uid and not collection.get("is_public"):
+            return jsonify({"error": "Access denied"}), 403
+
+        papers = engine.db.get_collection_papers(collection_id, limit=500)
+        from aura.latex_export import generate_cite_key, synthesize_related_work
+        existing_keys = set()
+        notes_by_paper = {}
+        for p in papers:
+            p["cite_key"] = generate_cite_key(p, existing_keys)
+            arxiv_id = p.get("arxiv_id", "")
+            if arxiv_id:
+                notes_by_paper[arxiv_id] = engine.db.get_paper_notes(arxiv_id, user_id=uid) or []
+
+        synthesis_latex = synthesize_related_work(papers, notes_by_paper, engine=engine)
+        return jsonify({"status": "ok", "latex": synthesis_latex})
 
     @app.route("/api/tags", methods=["GET"])
     @login_required

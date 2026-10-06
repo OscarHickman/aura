@@ -266,6 +266,31 @@ class PaperDatabase:
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_my_papers_user_arxiv ON my_papers(user_id, arxiv_id) WHERE arxiv_id IS NOT NULL;
             CREATE UNIQUE INDEX IF NOT EXISTS idx_my_papers_user_doi ON my_papers(user_id, doi) WHERE doi IS NOT NULL;
+            CREATE TABLE IF NOT EXISTS citation_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL DEFAULT 1,
+                my_paper_id INTEGER NOT NULL,
+                citing_arxiv_id TEXT NOT NULL,
+                citing_title TEXT,
+                citing_authors TEXT,
+                detected_at TEXT NOT NULL,
+                notified INTEGER DEFAULT 0,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (my_paper_id) REFERENCES my_papers(id) ON DELETE CASCADE,
+                UNIQUE(user_id, my_paper_id, citing_arxiv_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_citation_events_user ON citation_events(user_id, detected_at);
+
+            CREATE TABLE IF NOT EXISTS citation_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL DEFAULT 1,
+                my_paper_id INTEGER NOT NULL,
+                citation_count INTEGER NOT NULL,
+                recorded_at TEXT NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                FOREIGN KEY (my_paper_id) REFERENCES my_papers(id) ON DELETE CASCADE
+            );
+            CREATE INDEX IF NOT EXISTS idx_citation_history_paper ON citation_history(my_paper_id, recorded_at);
 
             CREATE TABLE IF NOT EXISTS events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -2570,15 +2595,134 @@ class PaperDatabase:
             return False
 
     def get_my_papers(self, user_id: int = 1) -> list[dict]:
-        """Get all papers registered by the user."""
+        """Get all papers registered by the user with their latest citation count."""
         try:
             rows = self.conn.execute(
-                "SELECT id, arxiv_id, doi, title, created_at FROM my_papers WHERE user_id = ? ORDER BY created_at DESC",
+                """
+                SELECT m.id, m.user_id, m.arxiv_id, m.doi, m.title, m.created_at,
+                       COALESCE(
+                           (SELECT citation_count FROM citation_history WHERE my_paper_id = m.id ORDER BY recorded_at DESC LIMIT 1),
+                           (SELECT COUNT(DISTINCT c.citing_arxiv_id) FROM citations c WHERE c.cited_arxiv_id = m.arxiv_id),
+                           0
+                       ) as citation_count
+                FROM my_papers m
+                WHERE m.user_id = ?
+                ORDER BY m.created_at DESC
+                """,
                 (user_id,)
             ).fetchall()
             return [dict(row) for row in rows]
         except sqlite3.Error as e:
             logger.error(f"Failed to get my_papers: {e}")
+            return []
+
+    def record_citation_event(
+        self,
+        user_id: int,
+        my_paper_id: int,
+        citing_arxiv_id: str,
+        citing_title: Optional[str] = None,
+        citing_authors: Optional[str] = None,
+    ) -> bool:
+        """Record a new citation of user's registered paper. Returns True if newly inserted."""
+        try:
+            cursor = self.conn.execute(
+                """
+                INSERT OR IGNORE INTO citation_events
+                (user_id, my_paper_id, citing_arxiv_id, citing_title, citing_authors, detected_at, notified)
+                VALUES (?, ?, ?, ?, ?, ?, 0)
+                """,
+                (user_id, my_paper_id, citing_arxiv_id, citing_title, citing_authors, utcnow().isoformat()),
+            )
+            self.conn.commit()
+            return cursor.rowcount > 0
+        except sqlite3.Error as e:
+            logger.error(f"Failed to record citation event: {e}")
+            return False
+
+    def get_unnotified_citation_events(self, user_id: int) -> list[dict]:
+        """Get all pending citation events that have not yet been included in a digest or alert."""
+        try:
+            rows = self.conn.execute(
+                """
+                SELECT ce.*, m.title as my_paper_title, m.arxiv_id as my_paper_arxiv_id
+                FROM citation_events ce
+                JOIN my_papers m ON ce.my_paper_id = m.id
+                WHERE ce.user_id = ? AND ce.notified = 0
+                ORDER BY ce.detected_at DESC
+                """,
+                (user_id,),
+            ).fetchall()
+            return [dict(row) for row in rows]
+        except sqlite3.Error as e:
+            logger.error(f"Failed to get unnotified citation events: {e}")
+            return []
+
+    def mark_citation_events_notified(self, event_ids: list[int]) -> None:
+        """Mark citation events as notified."""
+        if not event_ids:
+            return
+        placeholders = ",".join("?" for _ in event_ids)
+        try:
+            self.conn.execute(
+                f"UPDATE citation_events SET notified = 1 WHERE id IN ({placeholders})",
+                event_ids,
+            )
+            self.conn.commit()
+        except sqlite3.Error as e:
+            logger.error(f"Failed to mark citation events as notified: {e}")
+
+    def record_citation_history(
+        self, user_id: int, my_paper_id: int, citation_count: int
+    ) -> None:
+        """Record citation count milestone over time."""
+        try:
+            self.conn.execute(
+                """
+                INSERT INTO citation_history (user_id, my_paper_id, citation_count, recorded_at)
+                VALUES (?, ?, ?, ?)
+                """,
+                (user_id, my_paper_id, citation_count, utcnow().isoformat()),
+            )
+            self.conn.commit()
+        except sqlite3.Error as e:
+            logger.error(f"Failed to record citation history for paper {my_paper_id}: {e}")
+
+    def get_paper_citation_history(self, my_paper_id: int, limit: int = 30) -> list[dict]:
+        """Get chronological citation count snapshots for sparklines/graphs."""
+        try:
+            rows = self.conn.execute(
+                """
+                SELECT recorded_at, citation_count
+                FROM citation_history
+                WHERE my_paper_id = ?
+                ORDER BY recorded_at ASC
+                LIMIT ?
+                """,
+                (my_paper_id, limit),
+            ).fetchall()
+            return [dict(row) for row in rows]
+        except sqlite3.Error as e:
+            logger.error(f"Failed to get citation history for paper {my_paper_id}: {e}")
+            return []
+
+    def get_recent_citation_events(self, user_id: int, limit: int = 20) -> list[dict]:
+        """Get recent citation events for user's work."""
+        try:
+            rows = self.conn.execute(
+                """
+                SELECT ce.*, m.title as my_paper_title, m.arxiv_id as my_paper_arxiv_id
+                FROM citation_events ce
+                JOIN my_papers m ON ce.my_paper_id = m.id
+                WHERE ce.user_id = ?
+                ORDER BY ce.detected_at DESC
+                LIMIT ?
+                """,
+                (user_id, limit),
+            ).fetchall()
+            return [dict(row) for row in rows]
+        except sqlite3.Error as e:
+            logger.error(f"Failed to get recent citation events: {e}")
             return []
 
     def delete_my_paper(self, paper_id: int, user_id: int = 1) -> bool:

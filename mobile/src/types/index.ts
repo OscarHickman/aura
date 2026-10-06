@@ -30,8 +30,38 @@ export interface Paper {
 export interface Note {
   id: number;
   content: string;
+  arxiv_id?: string;
+  note_type?: string;
   created_at: string;
   updated_at?: string;
+}
+
+export interface MyPaper {
+  id: number;
+  title: string;
+  arxiv_id?: string;
+  doi?: string;
+  citation_count: number;
+  created_at: string;
+}
+
+export interface Collection {
+  id: number;
+  name: string;
+  description?: string;
+  paper_count?: number;
+  is_public?: boolean;
+}
+
+export interface CitationEvent {
+  id: number;
+  my_paper_id: number;
+  my_paper_title: string;
+  citing_arxiv_id: string;
+  citing_title?: string;
+  citing_authors?: string;
+  detected_at: string;
+  notified: number;
 }
 
 export interface User {
