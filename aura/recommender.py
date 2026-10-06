@@ -1192,7 +1192,7 @@ class RecommendationEngine:
             if hasattr(self, "embedder") and self.embedder is not None:
                 try:
                     emb = self.embedder.embed_paper(paper_dict)
-                    self.db.save_embeddings([(arxiv_id, emb)])
+                    self.db.update_embedding(arxiv_id, emb)
                 except Exception as ee:
                     logger.warning(f"Failed to embed auto-ingested paper {arxiv_id}: {ee}")
 

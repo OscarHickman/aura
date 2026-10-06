@@ -551,6 +551,8 @@ def send_top_recommendations_email(
                     citing_ids = {p.get("arxiv_id") for p in citing_papers}
                     for ev in unnotified_events:
                         c_id = ev.get("citing_arxiv_id")
+                        if not c_id:
+                            continue
                         if c_id not in citing_ids:
                             p = engine.db.get_paper(c_id)
                             if p:

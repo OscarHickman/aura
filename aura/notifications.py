@@ -163,7 +163,7 @@ def send_slack_citation_alert(webhook_url: str, event: Dict[str, Any]) -> bool:
         )
         authors = event.get("citing_authors") or "Unknown authors"
 
-        payload = {
+        payload: Dict[str, Any] = {
             "blocks": [
                 {
                     "type": "section",
@@ -200,7 +200,7 @@ def send_discord_citation_alert(webhook_url: str, event: Dict[str, Any]) -> bool
         )
         authors = event.get("citing_authors") or "Unknown authors"
 
-        payload = {
+        payload: Dict[str, Any] = {
             "content": (
                 f"🎓 **New Citation Detected!**\n\n"
                 f"Your publication **{my_title}** has been cited by:\n"

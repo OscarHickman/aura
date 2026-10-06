@@ -382,7 +382,7 @@ def create_app(config_path: str | None = None) -> Flask:
             environ["PATH_INFO"] = "/api/" + path[len("/api/v1/"):]
         return orig_wsgi(environ, start_response)
 
-    app.wsgi_app = v1_compat_wsgi
+    app.wsgi_app = v1_compat_wsgi  # type: ignore[method-assign]
 
     # Register routes
     _register_auth_routes(app)
