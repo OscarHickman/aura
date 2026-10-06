@@ -1187,6 +1187,9 @@ def _register_routes(app: Flask) -> None:
         content = sanitise_input(data.get("content", ""))
         if not content:
             return jsonify({"error": "content is required"}), 400
+        note_type = data.get("note_type")
+        if note_type and note_type.lower() not in ("general", "note") and not content.lower().startswith(f"[{note_type.lower()}]"):
+            content = f"[{note_type.capitalize()}] {content}"
         note_id = engine.db.add_note(arxiv_id, content, user_id=uid) if engine else None
         if note_id is None:
             return jsonify({"error": "failed to add note"}), 500

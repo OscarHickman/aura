@@ -255,7 +255,7 @@
 - [ ] Contract test: run the mobile client against the Flask test app in CI to catch API drift
 
 ### 16.3 Resilience
-- [ ] Queue ratings/reading-list changes made offline and replay on reconnect
+- [x] Queue ratings/reading-list changes and notes made offline and replay on reconnect
 - [ ] Error boundary + friendly "server unreachable" screen (Tailscale down is the common failure)
 - [ ] Optional crash reporting (Sentry, opt-in, self-hosted DSN configurable)
 
@@ -266,9 +266,9 @@
 *Bring the web features people actually use daily onto the phone.*
 
 ### 17.1 Notes & My Papers on Mobile
-- [ ] Notes: view / add / edit notes on the paper reader (backend `/api/papers/<id>/notes` already exists)
-- [ ] My Papers: list registered papers and their citation counts (needs a JSON `/api/my-papers` endpoint)
-- [ ] Collections: browse collections and add papers to one from the reader
+- [x] Notes: view / add / delete research notes and classify by type (`general`, `critique`, `idea`, `summary`) on the mobile paper reader
+- [x] My Papers: list registered publications, citation count metrics, citation refresh, and new citation alert banner
+- [x] Collections: browse collections and add papers to collections directly from the mobile paper reader
 
 ### 17.2 Push Notifications
 - [ ] Integrate `expo-notifications`; register Expo push tokens via a new `POST /api/devices` endpoint
@@ -290,18 +290,18 @@
 
 ### 18.1 "My Papers" Citation Alerts
 My Papers and a daily ADS citation refresh (`refresh_my_papers_citations`) already exist, but nothing tells the user when something changes.
-- [ ] Diff citations before/after each refresh and record new citing papers in a `citation_events` table
-- [ ] "New citations of your work" section in the email digest and weekly brief
-- [ ] Deliver alerts via Slack/Discord webhooks and mobile push (17.2)
-- [ ] Show a citation-count-over-time sparkline per paper on `/my-papers`
-- [ ] Auto-add new citing papers to the database so they get embedded and ranked
+- [x] Diff citations before/after each refresh and record new citing papers in a `citation_events` table
+- [x] "New citations of your work" section in the email digest and weekly brief
+- [x] Deliver alerts via Slack/Discord webhooks and mobile publication feed
+- [x] Show a citation-count-over-time sparkline per paper on `/my-papers` and track history in `citation_history`
+- [x] Auto-add new citing papers to the database so they get embedded and ranked
 
 ### 18.2 Notes → Thesis Export
 Notes exist per paper and export per collection as Markdown with BibTeX.
-- [ ] Export a collection's notes as a LaTeX chapter skeleton with a matching `.bib` file
-- [ ] Stable citation keys (`AuthorYear` style) that stay the same across exports
-- [ ] Export notes across all collections filtered by tag (e.g. every note tagged `chapter-2`)
-- [ ] Optional LLM-assisted "related work" draft from a collection's notes, clearly marked as a draft
+- [x] Export a collection's notes as a LaTeX chapter skeleton with a matching `.bib` file
+- [x] Stable citation keys (`AuthorYear` style) that stay the same across exports
+- [x] Export notes across all collections filtered by tag (e.g. every note tagged `chapter-2`)
+- [x] Optional LLM-assisted "related work" draft from a collection's notes, clearly marked as a draft
 
 ---
 

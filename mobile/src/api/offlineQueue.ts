@@ -39,6 +39,12 @@ export type QueuedMutation =
   | QueuedReadingListRemoveMutation
   | QueuedNoteMutation;
 
+export type NewQueuedMutation =
+  | (Omit<QueuedRateMutation, 'id' | 'timestamp'> & { id?: string; timestamp?: number })
+  | (Omit<QueuedReadingListAddMutation, 'id' | 'timestamp'> & { id?: string; timestamp?: number })
+  | (Omit<QueuedReadingListRemoveMutation, 'id' | 'timestamp'> & { id?: string; timestamp?: number })
+  | (Omit<QueuedNoteMutation, 'id' | 'timestamp'> & { id?: string; timestamp?: number });
+
 export async function getOfflineQueue(): Promise<QueuedMutation[]> {
   try {
     const raw = await AsyncStorage.getItem(OFFLINE_QUEUE_STORAGE_KEY);
@@ -60,7 +66,7 @@ export async function clearOfflineQueue(): Promise<void> {
 }
 
 export async function enqueueMutation(
-  mutation: Omit<QueuedMutation, 'id' | 'timestamp'> & { id?: string; timestamp?: number }
+  mutation: NewQueuedMutation
 ): Promise<QueuedMutation> {
   const item: QueuedMutation = {
     ...mutation,

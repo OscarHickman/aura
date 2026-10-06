@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   Linking,
   Alert,
+  Modal,
 } from 'react-native';
 import {
   Sparkles,
@@ -20,10 +21,14 @@ import {
   FileText,
   MessageSquare,
   StickyNote,
+  FolderPlus,
+  Trash2,
+  X,
+  Check,
 } from 'lucide-react-native';
 import { theme } from '../constants/theme';
 import { api } from '../api/client';
-import { Paper, Note } from '../types';
+import { Paper, Note, Collection } from '../types';
 
 interface PaperDetailScreenProps {
   route: any;
@@ -40,9 +45,24 @@ export const PaperDetailScreen: React.FC<PaperDetailScreenProps> = ({ route, nav
   const [qaHistory, setQaHistory] = useState<{ q: string; a: string }[]>([]);
   const [isAsking, setIsAsking] = useState<boolean>(false);
 
-  // Note state
+  // Notes state
+  const [notes, setNotes] = useState<Note[]>([]);
   const [newNote, setNewNote] = useState<string>('');
+  const [noteType, setNoteType] = useState<string>('general');
   const [isSavingNote, setIsSavingNote] = useState<boolean>(false);
+
+  // Collections state
+  const [collections, setCollections] = useState<Collection[]>([]);
+  const [isCollectionModalVisible, setIsCollectionModalVisible] = useState<boolean>(false);
+
+  const loadNotes = useCallback(async () => {
+    try {
+      const data = await api.getPaperNotes(arxivId);
+      setNotes(data.notes || []);
+    } catch (e) {
+      console.warn('Failed to load paper notes:', e);
+    }
+  }, [arxivId]);
 
   const loadPaper = useCallback(async () => {
     setIsLoading(true);
@@ -58,13 +78,17 @@ export const PaperDetailScreen: React.FC<PaperDetailScreenProps> = ({ route, nav
 
   useEffect(() => {
     loadPaper();
-  }, [loadPaper]);
+    loadNotes();
+  }, [loadPaper, loadNotes]);
 
   const handleRate = async (rating: number) => {
     if (!paper) return;
     try {
-      await api.ratePaper(paper.arxiv_id, rating);
+      const res = await api.ratePaper(paper.arxiv_id, rating);
       setPaper({ ...paper, rating });
+      if (res.status === 'queued_offline') {
+        Alert.alert('Offline Mode', 'Your rating was saved offline and will sync when connected.');
+      }
     } catch (e: any) {
       Alert.alert('Rate Error', e.message);
     }
@@ -82,6 +106,54 @@ export const PaperDetailScreen: React.FC<PaperDetailScreenProps> = ({ route, nav
       }
     } catch (e: any) {
       Alert.alert('Reading List Error', e.message);
+    }
+  };
+
+  const handleSaveNote = async () => {
+    const text = newNote.trim();
+    if (!text || isSavingNote) return;
+    setIsSavingNote(true);
+    try {
+      const res = await api.addPaperNote(arxivId, text, noteType);
+      setNewNote('');
+      if (res.status === 'queued_offline') {
+        Alert.alert('Offline Mode', 'Note queued offline. It will be saved upon reconnect.');
+      }
+      loadNotes();
+    } catch (e: any) {
+      Alert.alert('Note Error', e.message || 'Failed to save note');
+    } finally {
+      setIsSavingNote(false);
+    }
+  };
+
+  const handleDeleteNote = async (noteId: number) => {
+    try {
+      await api.deletePaperNote(noteId);
+      setNotes((prev) => prev.filter((n) => n.id !== noteId));
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to delete note');
+    }
+  };
+
+  const openCollectionPicker = async () => {
+    try {
+      const list = await api.getCollections();
+      setCollections(list || []);
+      setIsCollectionModalVisible(true);
+    } catch (e: any) {
+      Alert.alert('Collections Error', e.message || 'Failed to load collections');
+    }
+  };
+
+  const handleAddToCollection = async (collectionId: number) => {
+    try {
+      await api.addPaperToCollection(collectionId, arxivId);
+      setIsCollectionModalVisible(false);
+      Alert.alert('Saved', 'Paper added to collection successfully');
+      loadPaper();
+    } catch (e: any) {
+      Alert.alert('Collection Error', e.message || 'Failed to add to collection');
     }
   };
 
@@ -182,6 +254,11 @@ export const PaperDetailScreen: React.FC<PaperDetailScreenProps> = ({ route, nav
           <ExternalLink size={16} color={theme.colors.textMuted} />
           <Text style={styles.linkButtonText}>arXiv</Text>
         </TouchableOpacity>
+
+        <TouchableOpacity style={styles.linkButton} onPress={openCollectionPicker}>
+          <FolderPlus size={16} color={theme.colors.warning} />
+          <Text style={styles.linkButtonText}>Collection</Text>
+        </TouchableOpacity>
       </View>
 
       {/* AI Summary */}
@@ -237,8 +314,168 @@ export const PaperDetailScreen: React.FC<PaperDetailScreenProps> = ({ route, nav
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Research Notes */}
+      <View style={styles.notesSection}>
+        <View style={styles.sectionHeader}>
+          <StickyNote size={16} color={theme.colors.primaryLight} />
+          <Text style={styles.sectionTitle}>Research Notes ({notes.length})</Text>
+        </View>
+
+        {notes.length === 0 ? (
+          <Text style={styles.emptyNotesText}>
+            No research notes yet. Add your reflections, critiques, or ideas below.
+          </Text>
+        ) : (
+          notes.map((note) => {
+            const raw = note.content || '';
+            let displayType = note.note_type || 'general';
+            let displayContent = raw;
+            const match = raw.match(/^\[(critique|idea|summary)\]\s*(.*)$/i);
+            if (match) {
+              displayType = match[1].toLowerCase();
+              displayContent = match[2];
+            }
+
+            return (
+              <View key={note.id} style={styles.noteCard}>
+                <View style={styles.noteHeader}>
+                  <View
+                    style={[
+                      styles.noteTypeBadge,
+                      getNoteTypeBadgeStyle(displayType),
+                    ]}
+                  >
+                    <Text style={styles.noteTypeText}>{displayType.toUpperCase()}</Text>
+                  </View>
+                  <TouchableOpacity
+                    style={styles.deleteNoteBtn}
+                    onPress={() => handleDeleteNote(note.id)}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Trash2 size={15} color={theme.colors.textMuted} />
+                  </TouchableOpacity>
+                </View>
+                <Text style={styles.noteContentText}>{displayContent}</Text>
+                {note.created_at ? (
+                  <Text style={styles.noteDateText}>
+                    {new Date(note.created_at).toLocaleDateString()}
+                  </Text>
+                ) : null}
+              </View>
+            );
+          })
+        )}
+
+        {/* Add Note Form */}
+        <View style={styles.addNoteContainer}>
+          <Text style={styles.addNoteLabel}>Add a Note</Text>
+          <View style={styles.noteTypeSelector}>
+            {(['general', 'critique', 'idea', 'summary'] as const).map((type) => (
+              <TouchableOpacity
+                key={type}
+                style={[
+                  styles.noteTypePill,
+                  noteType === type && styles.noteTypePillActive,
+                ]}
+                onPress={() => setNoteType(type)}
+              >
+                <Text
+                  style={[
+                    styles.noteTypePillText,
+                    noteType === type && styles.noteTypePillTextActive,
+                  ]}
+                >
+                  {type.charAt(0).toUpperCase() + type.slice(1)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+          <TextInput
+            style={styles.noteInput}
+            placeholder={`Write a ${noteType} note...`}
+            placeholderTextColor={theme.colors.textDim}
+            value={newNote}
+            onChangeText={setNewNote}
+            multiline
+            numberOfLines={3}
+          />
+          <TouchableOpacity
+            style={[
+              styles.saveNoteBtn,
+              (!newNote.trim() || isSavingNote) && styles.saveNoteBtnDisabled,
+            ]}
+            onPress={handleSaveNote}
+            disabled={!newNote.trim() || isSavingNote}
+          >
+            {isSavingNote ? (
+              <ActivityIndicator size="small" color={theme.colors.white} />
+            ) : (
+              <Text style={styles.saveNoteBtnText}>Save Note</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      {/* Add to Collection Modal */}
+      <Modal
+        visible={isCollectionModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIsCollectionModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Add to Collection</Text>
+              <TouchableOpacity onPress={() => setIsCollectionModalVisible(false)}>
+                <X size={20} color={theme.colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+
+            {collections.length === 0 ? (
+              <Text style={styles.modalEmptyText}>
+                No collections available. Create one in the web application.
+              </Text>
+            ) : (
+              <ScrollView style={styles.modalScroll}>
+                {collections.map((col) => (
+                  <TouchableOpacity
+                    key={col.id}
+                    style={styles.collectionItem}
+                    onPress={() => handleAddToCollection(col.id)}
+                  >
+                    <View style={styles.collectionInfo}>
+                      <Text style={styles.collectionName}>{col.name}</Text>
+                      {col.description ? (
+                        <Text style={styles.collectionDesc} numberOfLines={1}>
+                          {col.description}
+                        </Text>
+                      ) : null}
+                    </View>
+                    <FolderPlus size={18} color={theme.colors.primary} />
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
+};
+
+const getNoteTypeBadgeStyle = (type: string) => {
+  switch (type) {
+    case 'critique':
+      return styles.noteType_critique;
+    case 'idea':
+      return styles.noteType_idea;
+    case 'summary':
+      return styles.noteType_summary;
+    default:
+      return styles.noteType_general;
+  }
 };
 
 const styles = StyleSheet.create({
@@ -445,5 +682,190 @@ const styles = StyleSheet.create({
   },
   sendButtonDisabled: {
     opacity: 0.4,
+  },
+  notesSection: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.md,
+    borderWidth: 1,
+    borderColor: theme.colors.surfaceBorder,
+    marginTop: theme.spacing.lg,
+  },
+  emptyNotesText: {
+    color: theme.colors.textMuted,
+    fontSize: theme.typography.sm,
+    fontStyle: 'italic',
+    marginVertical: theme.spacing.sm,
+  },
+  noteCard: {
+    backgroundColor: theme.colors.surfaceLight,
+    borderRadius: theme.borderRadius.sm,
+    padding: theme.spacing.sm,
+    marginBottom: theme.spacing.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.surfaceBorder,
+  },
+  noteHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  noteTypeBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  noteType_general: {
+    backgroundColor: 'rgba(148, 163, 184, 0.2)',
+  },
+  noteType_critique: {
+    backgroundColor: 'rgba(239, 68, 68, 0.2)',
+  },
+  noteType_idea: {
+    backgroundColor: 'rgba(245, 158, 11, 0.2)',
+  },
+  noteType_summary: {
+    backgroundColor: 'rgba(59, 130, 246, 0.2)',
+  },
+  noteTypeText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: theme.colors.text,
+  },
+  deleteNoteBtn: {
+    padding: 4,
+  },
+  noteContentText: {
+    color: theme.colors.text,
+    fontSize: theme.typography.sm,
+    lineHeight: 20,
+  },
+  noteDateText: {
+    color: theme.colors.textDim,
+    fontSize: 11,
+    marginTop: 4,
+  },
+  addNoteContainer: {
+    marginTop: theme.spacing.md,
+    paddingTop: theme.spacing.md,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.surfaceBorder,
+  },
+  addNoteLabel: {
+    color: theme.colors.text,
+    fontSize: theme.typography.sm,
+    fontWeight: '600',
+    marginBottom: theme.spacing.xs,
+  },
+  noteTypeSelector: {
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: theme.spacing.sm,
+  },
+  noteTypePill: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 14,
+    backgroundColor: theme.colors.surfaceLight,
+    borderWidth: 1,
+    borderColor: theme.colors.surfaceBorder,
+  },
+  noteTypePillActive: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
+  },
+  noteTypePillText: {
+    color: theme.colors.textMuted,
+    fontSize: theme.typography.xs,
+    fontWeight: '600',
+  },
+  noteTypePillTextActive: {
+    color: theme.colors.white,
+  },
+  noteInput: {
+    backgroundColor: theme.colors.background,
+    color: theme.colors.text,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: theme.borderRadius.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.surfaceBorder,
+    fontSize: theme.typography.sm,
+    minHeight: 60,
+    marginBottom: theme.spacing.sm,
+  },
+  saveNoteBtn: {
+    backgroundColor: theme.colors.primary,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: theme.borderRadius.sm,
+    alignItems: 'center',
+    alignSelf: 'flex-end',
+  },
+  saveNoteBtnDisabled: {
+    opacity: 0.5,
+  },
+  saveNoteBtnText: {
+    color: theme.colors.white,
+    fontSize: theme.typography.sm,
+    fontWeight: '600',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: theme.spacing.lg,
+  },
+  modalContent: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.lg,
+    width: '100%',
+    maxHeight: '70%',
+    borderWidth: 1,
+    borderColor: theme.colors.surfaceBorder,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: theme.spacing.md,
+  },
+  modalTitle: {
+    color: theme.colors.text,
+    fontSize: theme.typography.lg,
+    fontWeight: '700',
+  },
+  modalEmptyText: {
+    color: theme.colors.textMuted,
+    fontSize: theme.typography.sm,
+    paddingVertical: theme.spacing.md,
+  },
+  modalScroll: {
+    maxHeight: 300,
+  },
+  collectionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.surfaceBorder,
+  },
+  collectionInfo: {
+    flex: 1,
+    marginRight: 8,
+  },
+  collectionName: {
+    color: theme.colors.text,
+    fontSize: theme.typography.md,
+    fontWeight: '600',
+  },
+  collectionDesc: {
+    color: theme.colors.textMuted,
+    fontSize: theme.typography.xs,
+    marginTop: 2,
   },
 });

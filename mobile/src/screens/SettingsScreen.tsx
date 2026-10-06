@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,12 +9,26 @@ import {
   ActivityIndicator,
   Alert,
 } from 'react-native';
-import { Server, ShieldCheck, LogOut, CheckCircle2, XCircle, User as UserIcon, Key } from 'lucide-react-native';
+import {
+  Server,
+  ShieldCheck,
+  LogOut,
+  CheckCircle2,
+  XCircle,
+  User as UserIcon,
+  Key,
+  BookOpen,
+  RefreshCw,
+} from 'lucide-react-native';
 import { theme } from '../constants/theme';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
 
-export const SettingsScreen: React.FC = () => {
+interface SettingsScreenProps {
+  navigation?: any;
+}
+
+export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) => {
   const { serverUrl, token, user, isAuthenticated, login, logout, updateServerUrl } = useAuth();
 
   const [urlInput, setUrlInput] = useState<string>(serverUrl);
@@ -25,6 +39,48 @@ export const SettingsScreen: React.FC = () => {
   const [email, setEmail] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
+
+  // Offline queue state
+  const [pendingMutations, setPendingMutations] = useState<number>(0);
+  const [isSyncingOffline, setIsSyncingOffline] = useState<boolean>(false);
+
+  const checkPendingMutations = useCallback(async () => {
+    try {
+      const count = await api.getOfflineQueueCount();
+      setPendingMutations(count);
+    } catch {
+      // Ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    checkPendingMutations();
+  }, [checkPendingMutations]);
+
+  const handleFlushOffline = async () => {
+    setIsSyncingOffline(true);
+    try {
+      const res = await api.flushOfflineMutations();
+      await checkPendingMutations();
+      if (res.successCount > 0) {
+        Alert.alert(
+          'Synchronisation Complete',
+          `Successfully replayed ${res.successCount} offline action(s).`
+        );
+      } else if (res.failedCount > 0) {
+        Alert.alert(
+          'Synchronisation Warning',
+          `${res.failedCount} action(s) could not be replayed.`
+        );
+      } else {
+        Alert.alert('Synchronisation', 'No pending offline actions found.');
+      }
+    } catch (e: any) {
+      Alert.alert('Sync Error', e.message || 'Failed to sync offline mutations.');
+    } finally {
+      setIsSyncingOffline(false);
+    }
+  };
 
   const handleSaveUrl = async () => {
     try {
@@ -194,6 +250,50 @@ export const SettingsScreen: React.FC = () => {
               )}
             </TouchableOpacity>
           </View>
+        )}
+      </View>
+
+      {/* Research Tracking */}
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <BookOpen size={20} color={theme.colors.primaryLight} />
+          <Text style={styles.cardTitle}>Research Tracking</Text>
+        </View>
+        <Text style={styles.aboutText}>
+          Track your own publications, monitor incoming citation alerts, and automatically
+          ingest citing works into your feed.
+        </Text>
+        <TouchableOpacity
+          style={[styles.btn, styles.primaryBtn, { marginTop: theme.spacing.sm }]}
+          onPress={() => navigation?.navigate('MyPapers')}
+        >
+          <Text style={styles.primaryBtnText}>My Publications & Citation Tracking</Text>
+        </TouchableOpacity>
+      </View>
+
+      {/* Offline Synchronisation */}
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <RefreshCw size={20} color={theme.colors.primaryLight} />
+          <Text style={styles.cardTitle}>Offline Synchronisation</Text>
+        </View>
+        <Text style={styles.aboutText}>
+          {pendingMutations > 0
+            ? `${pendingMutations} pending mutation${pendingMutations > 1 ? 's' : ''} queued locally.`
+            : 'All ratings, reading list actions, and notes are synchronised.'}
+        </Text>
+        {pendingMutations > 0 && (
+          <TouchableOpacity
+            style={[styles.btn, styles.secondaryBtn, { marginTop: theme.spacing.sm }]}
+            onPress={handleFlushOffline}
+            disabled={isSyncingOffline}
+          >
+            {isSyncingOffline ? (
+              <ActivityIndicator size="small" color={theme.colors.text} />
+            ) : (
+              <Text style={styles.secondaryBtnText}>Sync Pending Actions Now</Text>
+            )}
+          </TouchableOpacity>
         )}
       </View>
 

@@ -13,6 +13,7 @@ import { FeedScreen } from './src/screens/FeedScreen';
 import { ReadingListScreen } from './src/screens/ReadingListScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { PaperDetailScreen } from './src/screens/PaperDetailScreen';
+import { MyPapersScreen } from './src/screens/MyPapersScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -119,6 +120,11 @@ export default function App() {
               name="PaperDetail"
               component={PaperDetailScreen}
               options={{ title: 'Paper Detail' }}
+            />
+            <Stack.Screen
+              name="MyPapers"
+              component={MyPapersScreen}
+              options={{ title: 'My Publications' }}
             />
           </Stack.Navigator>
         </NavigationContainer>

@@ -194,5 +194,103 @@ describe('AuraApiClient', () => {
       const res = await api.askPaper('2401.00001', 'What dataset?');
       expect(res.answer).toBe('They used the Planck 2018 dataset.');
     });
+
+    it('fetches notes and normalises array or object responses', async () => {
+      (globalThis as any).fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => [
+          { id: 1, content: 'Crucial methodology insight', created_at: '2026-01-01' },
+        ],
+      } as any);
+
+      const res = await api.getPaperNotes('2401.00001');
+      expect(res.notes).toHaveLength(1);
+      expect(res.notes[0].content).toBe('Crucial methodology insight');
+    });
+
+    it('handles adding and deleting notes', async () => {
+      (globalThis as any).fetch = jest
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ status: 'ok', id: 42 }),
+        } as any)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ status: 'ok' }),
+        } as any);
+
+      const addRes = await api.addPaperNote('2401.00001', 'Method idea', 'idea');
+      expect(addRes.status).toBe('ok');
+      expect(addRes.note_id).toBe(42);
+
+      const delRes = await api.deletePaperNote(42);
+      expect(delRes.status).toBe('ok');
+    });
+
+    it('handles collection operations', async () => {
+      (globalThis as any).fetch = jest
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => [{ id: 10, name: 'Cosmology Chapter' }],
+        } as any)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ status: 'ok' }),
+        } as any)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ status: 'ok' }),
+        } as any);
+
+      const cols = await api.getCollections();
+      expect(cols).toHaveLength(1);
+      expect(cols[0].name).toBe('Cosmology Chapter');
+
+      const addRes = await api.addPaperToCollection(10, '2401.00001');
+      expect(addRes.status).toBe('ok');
+
+      const delRes = await api.removePaperFromCollection(10, '2401.00001');
+      expect(delRes.status).toBe('ok');
+    });
+
+    it('handles My Papers and citation tracking endpoints', async () => {
+      (globalThis as any).fetch = jest
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            papers: [{ id: 1, title: 'My Novel Model', citation_count: 5 }],
+          }),
+        } as any)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ status: 'ok' }),
+        } as any)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            events: [{ id: 99, my_paper_id: 1, citing_arxiv_id: '2501.00002' }],
+          }),
+        } as any)
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ status: 'ok' }),
+        } as any);
+
+      const papersRes = await api.getMyPapers();
+      expect(papersRes.papers).toHaveLength(1);
+      expect(papersRes.papers[0].citation_count).toBe(5);
+
+      const addRes = await api.addMyPaper({ title: 'New Thesis Paper', arxiv_id: '2501.99999' });
+      expect(addRes.status).toBe('ok');
+
+      const eventsRes = await api.getCitationEvents(5);
+      expect(eventsRes.events).toHaveLength(1);
+
+      const refreshRes = await api.refreshMyPapersCitations();
+      expect(refreshRes.status).toBe('ok');
+    });
   });
 });

@@ -1,5 +1,31 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Paper, PapersResponse, User } from '../types';
+import {
+  CitationEvent,
+  Collection,
+  MyPaper,
+  Note,
+  Paper,
+  PapersResponse,
+  User,
+} from '../types';
+import {
+  enqueueMutation,
+  flushOfflineQueue,
+  FlushResult,
+  getOfflineQueue,
+} from './offlineQueue';
+
+function isNetworkError(error: any): boolean {
+  if (!error) return false;
+  const msg = (error.message || '').toLowerCase();
+  return (
+    msg.includes('network request failed') ||
+    msg.includes('aborted') ||
+    msg.includes('failed to fetch') ||
+    msg.includes('networkerror') ||
+    msg.includes('timeout')
+  );
+}
 
 const STORAGE_KEYS = {
   SERVER_URL: '@aura_server_url',
@@ -154,23 +180,47 @@ class AuraApiClient {
   }
 
   async ratePaper(arxivId: string, rating: number): Promise<{ status: string; score?: number }> {
-    return await this.request<{ status: string; score?: number }>('/api/rate', {
-      method: 'POST',
-      body: JSON.stringify({ arxiv_id: arxivId, rating }),
-    });
+    try {
+      return await this.request<{ status: string; score?: number }>('/api/rate', {
+        method: 'POST',
+        body: JSON.stringify({ arxiv_id: arxivId, rating }),
+      });
+    } catch (e: any) {
+      if (isNetworkError(e)) {
+        await enqueueMutation({ type: 'rate', paperId: arxivId, rating });
+        return { status: 'queued_offline', score: rating };
+      }
+      throw e;
+    }
   }
 
   async addToReadingList(arxivId: string): Promise<{ status: string }> {
-    return await this.request<{ status: string }>('/api/reading-list', {
-      method: 'POST',
-      body: JSON.stringify({ arxiv_id: arxivId }),
-    });
+    try {
+      return await this.request<{ status: string }>('/api/reading-list', {
+        method: 'POST',
+        body: JSON.stringify({ arxiv_id: arxivId }),
+      });
+    } catch (e: any) {
+      if (isNetworkError(e)) {
+        await enqueueMutation({ type: 'reading_list_add', paperId: arxivId });
+        return { status: 'queued_offline' };
+      }
+      throw e;
+    }
   }
 
   async removeFromReadingList(arxivId: string): Promise<{ status: string }> {
-    return await this.request<{ status: string }>(`/api/reading-list/${arxivId}`, {
-      method: 'DELETE',
-    });
+    try {
+      return await this.request<{ status: string }>(`/api/reading-list/${arxivId}`, {
+        method: 'DELETE',
+      });
+    } catch (e: any) {
+      if (isNetworkError(e)) {
+        await enqueueMutation({ type: 'reading_list_remove', paperId: arxivId });
+        return { status: 'queued_offline' };
+      }
+      throw e;
+    }
   }
 
   async markAsRead(arxivId: string): Promise<{ status: string }> {
@@ -195,6 +245,124 @@ class AuraApiClient {
       method: 'POST',
       body: JSON.stringify({ arxiv_id: arxivId }),
     });
+  }
+
+  // Notes API
+  async getPaperNotes(arxivId: string): Promise<{ notes: Note[] }> {
+    const res = await this.request<any>(`/api/papers/${arxivId}/notes`);
+    if (Array.isArray(res)) {
+      return { notes: res };
+    }
+    return { notes: res?.notes || [] };
+  }
+
+  async addPaperNote(
+    arxivId: string,
+    content: string,
+    noteType?: string
+  ): Promise<{ status: string; note_id?: number; id?: number }> {
+    try {
+      const res = await this.request<{ status: string; note_id?: number; id?: number }>(
+        `/api/papers/${arxivId}/notes`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ content, note_type: noteType }),
+        }
+      );
+      return {
+        ...res,
+        note_id: res.note_id ?? res.id,
+      };
+    } catch (e: any) {
+      if (isNetworkError(e)) {
+        await enqueueMutation({ type: 'add_note', paperId: arxivId, content, noteType });
+        return { status: 'queued_offline' };
+      }
+      throw e;
+    }
+  }
+
+  async deletePaperNote(noteId: number): Promise<{ status: string }> {
+    return await this.request<{ status: string }>(`/api/notes/${noteId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Collections API
+  async getCollections(): Promise<Collection[]> {
+    return await this.request<Collection[]>('/api/collections');
+  }
+
+  async addPaperToCollection(collectionId: number, arxivId: string): Promise<{ status: string }> {
+    return await this.request<{ status: string }>(`/api/collections/${collectionId}/papers`, {
+      method: 'POST',
+      body: JSON.stringify({ arxiv_id: arxivId }),
+    });
+  }
+
+  async removePaperFromCollection(
+    collectionId: number,
+    arxivId: string
+  ): Promise<{ status: string }> {
+    return await this.request<{ status: string }>(
+      `/api/collections/${collectionId}/papers/${arxivId}`,
+      {
+        method: 'DELETE',
+      }
+    );
+  }
+
+  // My Papers API
+  async getMyPapers(): Promise<{ papers: MyPaper[] }> {
+    return await this.request<{ papers: MyPaper[] }>('/api/my-papers');
+  }
+
+  async addMyPaper(paper: {
+    title: string;
+    arxiv_id?: string;
+    doi?: string;
+  }): Promise<{ status: string; message?: string }> {
+    return await this.request<{ status: string; message?: string }>('/api/my-papers', {
+      method: 'POST',
+      body: JSON.stringify(paper),
+    });
+  }
+
+  async deleteMyPaper(paperId: number): Promise<{ status: string }> {
+    return await this.request<{ status: string }>(`/api/my-papers/${paperId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getCitationHistory(
+    paperId: number
+  ): Promise<{ paper_id: number; history: { recorded_at: string; citation_count: number }[] }> {
+    return await this.request<{
+      paper_id: number;
+      history: { recorded_at: string; citation_count: number }[];
+    }>(`/api/my-papers/${paperId}/citation-history`);
+  }
+
+  async getCitationEvents(limit: number = 20): Promise<{ events: CitationEvent[] }> {
+    return await this.request<{ events: CitationEvent[] }>(
+      `/api/my-papers/citation-events?limit=${limit}`
+    );
+  }
+
+  async refreshMyPapersCitations(): Promise<{ status: string }> {
+    return await this.request<{ status: string }>('/api/my-papers/refresh-citations', {
+      method: 'POST',
+    });
+  }
+
+  // Offline queue utilities
+  async flushOfflineMutations(): Promise<FlushResult> {
+    return await flushOfflineQueue(this);
+  }
+
+  async getOfflineQueueCount(): Promise<number> {
+    const queue = await getOfflineQueue();
+    return queue.length;
   }
 }
 
