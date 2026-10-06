@@ -203,7 +203,7 @@
 - [ ] Document the keystore backup and recovery procedure (losing it locks the app listing)
 
 ### 14.3 Pipeline Dry Runs
-- [ ] Add a `workflow_dispatch` trigger that builds and signs without publishing, to test the pipeline without cutting a tag
+- [x] Add a `workflow_dispatch` trigger that builds and signs without publishing, to test the pipeline without cutting a tag
 - [ ] Verify `expo prebuild` + `./gradlew bundleRelease assembleRelease` locally at least once
 - [ ] Publish to the Play **internal testing** track first; promote to production manually
 - [x] Make `versionCode` monotonic across workflow re-runs (e.g. derive from tag, not only `run_number`)
@@ -211,7 +211,7 @@
 
 ### 14.4 Store Listing
 - [ ] App icon, feature graphic, and phone screenshots of Triage / Feed / Reader / Reading List
-- [ ] Privacy policy page (served by the Flask app, e.g. `/privacy`) — required by Play
+- [x] Privacy policy page (served by the Flask app, e.g. `/privacy`) — required by Play
 - [ ] Data safety form: document that the app talks only to the user's own server
 
 ---
@@ -221,21 +221,21 @@
 *The mobile API was built for one trusted user; make it safe to expose to a lab.*
 
 ### 15.1 Token Lifecycle
-- [ ] Add `expires_at` to `api_tokens`; enforce expiry in Bearer auth
-- [ ] Reuse or rotate the token per device instead of minting a new one on every `POST /api/auth/login`
+- [x] Add `expires_at` to `api_tokens`; enforce expiry in Bearer auth
+- [x] Reuse or rotate the token per device instead of minting a new one on every `POST /api/auth/login`
 - [x] Add `POST /api/auth/logout` that revokes the calling token
-- [ ] Show mobile device tokens (name, last used) on the tokens settings page with a revoke button
+- [x] Show mobile device tokens (name, last used) on the tokens settings page with a revoke button
 
 ### 15.2 Abuse Protection
 - [x] Strict per-IP rate limit on `POST /api/auth/login` (5/min), separate from the global 100/min default
-- [ ] Add a per-email login limit / lockout (per-IP alone lets a distributed attacker keep guessing)
+- [x] Add a per-email login limit / lockout (per-IP alone lets a distributed attacker keep guessing)
 - [x] Replace `Access-Control-Allow-Origin: *` with a configurable allow-list (native apps don't need CORS; only browser clients do)
 - [x] Audit every CSRF-exempt `/api/*` route to confirm it requires a Bearer token or session auth
 
 ### 15.3 API Contract
-- [ ] Add the mobile endpoints to the OpenAPI spec served at `/api/docs`
-- [ ] Version the mobile API (`/api/v1/...` or an `X-API-Version` header) so older app builds keep working after server upgrades
-- [ ] Return a minimum-supported-app-version from `/api/auth/me` so the app can prompt for updates
+- [x] Add the mobile endpoints to the OpenAPI spec served at `/api/docs`
+- [x] Version the mobile API (`/api/v1/...` or an `X-API-Version` header) so older app builds keep working after server upgrades
+- [x] Return a minimum-supported-app-version from `/api/auth/me` so the app can prompt for updates
 
 ---
 
@@ -244,14 +244,14 @@
 *CI only type-checks the app today. Add real tests before adding features.*
 
 ### 16.1 Unit & Component Tests
-- [ ] Add Jest (`jest-expo` preset) + React Native Testing Library and a `test` script in `mobile/package.json`
-- [ ] Unit test `src/api/client.ts`: auth header injection, error mapping, timeout, 401 → logout
-- [ ] Unit test `AuthContext`: token persistence in AsyncStorage, restore on launch, sign-out
+- [x] Add Jest (`jest-expo` preset) + React Native Testing Library and a `test` script in `mobile/package.json`
+- [x] Unit test `src/api/client.ts`: auth header injection, error mapping, timeout, 401 → logout
+- [x] Unit test `AuthContext`: token persistence in AsyncStorage, restore on launch, sign-out
 - [ ] Component tests for Triage (swipe → rate call), Feed (pagination, search), Reading List (filter toggle, mark read)
 - [ ] Coverage target: 80% for `src/api` and `src/context`
 
 ### 16.2 CI
-- [ ] Run `pnpm test` and ESLint alongside `tsc --noEmit` in the `mobile-check` job
+- [x] Run `pnpm test` and ESLint alongside `tsc --noEmit` in the `mobile-check` job
 - [ ] Contract test: run the mobile client against the Flask test app in CI to catch API drift
 
 ### 16.3 Resilience
