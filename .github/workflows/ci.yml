@@ -66,7 +66,7 @@ jobs:
           kill $(cat gunicorn.pid) || true
 
   mobile-check:
-    name: Mobile Typecheck
+    name: Mobile Typecheck & Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -88,4 +88,8 @@ jobs:
       - name: Type check mobile
         working-directory: mobile
         run: pnpm tsc --noEmit
+
+      - name: Run mobile unit tests
+        working-directory: mobile
+        run: pnpm test
 
