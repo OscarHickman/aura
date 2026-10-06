@@ -149,6 +149,213 @@
     }
   ],
   "paths": {
+    "/api/auth/login": {
+      "post": {
+        "summary": "Authenticate and get API token",
+        "description": "Exchanges email and password for a Bearer API token. Reuses or rotates existing token for the device name.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "password"],
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "example": "researcher@example.com"
+                  },
+                  "password": {
+                    "type": "string",
+                    "format": "password",
+                    "example": "correct-horse-battery-staple"
+                  },
+                  "token_name": {
+                    "type": "string",
+                    "description": "Optional device or application name for this token session.",
+                    "example": "AURA Android Phone"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Authentication successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "ok" },
+                    "token": { "type": "string", "example": "a1b2c3d4..." },
+                    "user": {
+                      "type": "object",
+                      "properties": {
+                        "id": { "type": "integer", "example": 1 },
+                        "email": { "type": "string", "example": "researcher@example.com" },
+                        "is_admin": { "type": "boolean", "example": false }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Email and password are required" },
+          "401": { "description": "Invalid credentials" },
+          "429": { "description": "Rate limit exceeded or account locked due to failed attempts" }
+        }
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "summary": "Revoke active Bearer token",
+        "description": "Revokes the calling Bearer token.",
+        "security": [{ "TokenAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Token revoked successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "ok" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Authentication required" }
+        }
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "summary": "Get authenticated user details and version info",
+        "description": "Returns current user details along with API version and minimum supported mobile app version.",
+        "security": [{ "TokenAuth": [] }, { "CookieAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "User details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": { "type": "integer", "example": 1 },
+                    "email": { "type": "string", "example": "researcher@example.com" },
+                    "is_admin": { "type": "boolean", "example": false },
+                    "min_app_version": { "type": "string", "example": "1.0.0" },
+                    "server_version": { "type": "string", "example": "1.2.1" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Authentication required" }
+        }
+      }
+    },
+    "/api/papers": {
+      "get": {
+        "summary": "List and paginate papers",
+        "description": "Lists papers filtered by recommendation, date, liked status, tags, or search query.",
+        "security": [{ "TokenAuth": [] }, { "CookieAuth": [] }],
+        "parameters": [
+          {
+            "name": "filter",
+            "in": "query",
+            "required": false,
+            "description": "Paper filter mode (recommend, latest, liked, unrated, reading_list)",
+            "schema": { "type": "string", "default": "recommend" }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "description": "Page number (1-based)",
+            "schema": { "type": "integer", "default": 1 }
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "required": false,
+            "description": "Items per page (max 100)",
+            "schema": { "type": "integer", "default": 20 }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "description": "Search term across title, abstract, authors",
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "tag",
+            "in": "query",
+            "required": false,
+            "description": "Filter by topic or keyword tag",
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paginated papers list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "papers": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/Paper" }
+                    },
+                    "total": { "type": "integer", "example": 100 },
+                    "page": { "type": "integer", "example": 1 },
+                    "per_page": { "type": "integer", "example": 20 },
+                    "has_more": { "type": "boolean", "example": true }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Authentication required" }
+        }
+      }
+    },
+    "/api/papers/{arxiv_id}": {
+      "get": {
+        "summary": "Get paper details",
+        "description": "Fetches complete details for a single paper, including tags, notes, and reading list status.",
+        "security": [{ "TokenAuth": [] }, { "CookieAuth": [] }],
+        "parameters": [
+          {
+            "name": "arxiv_id",
+            "in": "path",
+            "required": true,
+            "description": "The arXiv identifier",
+            "schema": { "type": "string", "example": "2401.00001" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Paper metadata",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Paper" }
+              }
+            }
+          },
+          "401": { "description": "Authentication required" },
+          "404": { "description": "Paper not found" }
+        }
+      }
+    },
     "/api/rate": {
       "post": {
         "summary": "Rate a paper",

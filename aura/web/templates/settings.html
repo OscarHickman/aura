@@ -332,18 +332,44 @@
             <div class="card-body">
                 <p class="text-muted small">Use API tokens to authenticate requests from scripts or external tools. Tokens are shown only once on creation. <a href="{{ request.script_root }}/api/docs" class="text-info text-decoration-none ms-2"><i class="bi bi-file-earmark-code"></i> View interactive API Documentation</a></p>
                 {% if tokens %}
-                <table class="table table-sm extra-small">
-                    <thead><tr><th>Token</th><th>Created</th><th>Actions</th></tr></thead>
-                    <tbody>
-                        {% for t in tokens %}
-                        <tr>
-                            <td><code class="text-muted">{{ t.token[:8] }}&hellip;</code></td>
-                            <td class="text-muted">{{ t.created_at[:10] }}</td>
-                            <td><button class="btn btn-link text-danger btn-sm p-0" onclick="revokeToken({{ t.id }})">Revoke</button></td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+                <div class="table-responsive">
+                    <table class="table table-sm extra-small align-middle">
+                        <thead>
+                            <tr>
+                                <th>Device / Name</th>
+                                <th>Token</th>
+                                <th>Scope</th>
+                                <th>Created</th>
+                                <th>Last Active</th>
+                                <th>Expires</th>
+                                <th>Status</th>
+                                <th class="text-end">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for t in tokens %}
+                            <tr>
+                                <td class="fw-semibold">{{ t.name or 'Unnamed token' }}</td>
+                                <td><code class="text-muted">{{ t.masked_token }}</code></td>
+                                <td><span class="badge bg-secondary">{{ t.scope }}</span></td>
+                                <td class="text-muted">{{ t.created_at[:10] }}</td>
+                                <td class="text-muted">{{ t.last_used_at[:10] if t.last_used_at else 'Never' }}</td>
+                                <td class="text-muted">{{ t.expires_at[:10] if t.expires_at else 'Never' }}</td>
+                                <td>
+                                    {% if t.is_expired %}
+                                    <span class="badge bg-danger">Expired</span>
+                                    {% else %}
+                                    <span class="badge bg-success">Active</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-end">
+                                    <button class="btn btn-outline-danger btn-sm py-0 px-2" onclick="revokeToken({{ t.id }})">Revoke</button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
                 {% else %}
                 <p class="text-muted small mb-0">No API tokens created yet.</p>
                 {% endif %}
@@ -463,23 +489,37 @@ async function resetModel() {
 }
 
 async function createToken() {
-    const r = await fetch('/api/tokens', { method: 'POST', headers: {'Content-Type': 'application/json'} });
-    const d = await r.json();
-    if (d.token) {
-        document.getElementById('new-token-value').textContent = d.token;
-        document.getElementById('new-token-display').classList.remove('d-none');
-        setTimeout(() => location.reload(), 8000);
-    } else {
-        showToast('Error', d.error || 'Failed to create token');
+    const tokenName = prompt('Enter a name for this token (e.g. My Script, Work Laptop):', 'Personal Token');
+    if (tokenName === null) return;
+    try {
+        const r = await fetch('{{ request.script_root }}/api/tokens', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ name: tokenName.trim() || 'Personal Token', expires_in_days: 90 })
+        });
+        const d = await r.json();
+        if (d.token) {
+            document.getElementById('new-token-value').textContent = d.token;
+            document.getElementById('new-token-display').classList.remove('d-none');
+            setTimeout(() => location.reload(), 8000);
+        } else {
+            showToast('Error', d.error || 'Failed to create token');
+        }
+    } catch (e) {
+        showToast('Error', e.message || 'Failed to create token');
     }
 }
 
 async function revokeToken(id) {
-    if (!confirm('Revoke this token?')) return;
-    const r = await fetch('/api/tokens/' + id, { method: 'DELETE' });
-    const d = await r.json();
-    if (d.status === 'ok') location.reload();
-    else showToast('Error', d.error || 'Failed to revoke token');
+    if (!confirm('Revoke this token? Any devices or scripts using it will lose access immediately.')) return;
+    try {
+        const r = await fetch('{{ request.script_root }}/api/tokens/' + id, { method: 'DELETE' });
+        const d = await r.json();
+        if (d.status === 'ok') location.reload();
+        else showToast('Error', d.error || 'Failed to revoke token');
+    } catch (e) {
+        showToast('Error', e.message || 'Failed to revoke token');
+    }
 }
 </script>
 {% endblock %}

@@ -368,8 +368,21 @@ def create_app(config_path: str | None = None) -> Flask:
         if req_id:
             response.headers["X-Request-ID"] = req_id
         if request.path.startswith("/api/"):
+            response.headers["X-API-Version"] = "1.2.1"
+            response.headers["X-Min-App-Version"] = "1.0.0"
             _apply_cors(response)
         return response
+
+    # API v1 prefix compatibility layer
+    orig_wsgi = app.wsgi_app
+
+    def v1_compat_wsgi(environ, start_response):
+        path = environ.get("PATH_INFO", "")
+        if path.startswith("/api/v1/"):
+            environ["PATH_INFO"] = "/api/" + path[len("/api/v1/"):]
+        return orig_wsgi(environ, start_response)
+
+    app.wsgi_app = v1_compat_wsgi
 
     # Register routes
     _register_auth_routes(app)
@@ -389,14 +402,26 @@ def _register_auth_routes(app: Flask) -> None:
             email = request.form.get("email", "").strip().lower()
             password = request.form.get("password", "")
             remember = bool(request.form.get("remember"))
+            client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+            if client_ip and "," in client_ip:
+                client_ip = client_ip.split(",")[0].strip()
+
+            if engine and engine.db.is_email_locked_out(email) is True:
+                flash("Account temporarily locked due to too many failed login attempts. Please try again in 15 minutes.", "danger")
+                return render_template("login.html")
+
             user_row = engine.db.get_user_by_email(email) if engine else None
             if user_row and check_password_hash(user_row["password_hash"], password):
+                if engine:
+                    engine.db.record_login_attempt(email, ip_address=client_ip, success=True)
                 if not user_row.get("is_active", 1):
                     flash("Your account has been suspended.", "danger")
                     return render_template("login.html")
                 user = User(user_row)
                 login_user(user, remember=remember)
                 return redirect(_local_redirect_target(request.args.get("next")))
+            if engine:
+                engine.db.record_login_attempt(email, ip_address=client_ip, success=False)
             flash("Invalid email or password.", "danger")
         return render_template("login.html")
 
@@ -446,20 +471,36 @@ def _register_auth_routes(app: Flask) -> None:
         data = request.get_json(silent=True) or {}
         email = str(data.get("email", "")).strip().lower()
         password = str(data.get("password", ""))
+        client_ip = request.headers.get("X-Forwarded-For", request.remote_addr)
+        if client_ip and "," in client_ip:
+            client_ip = client_ip.split(",")[0].strip()
+
         if not email or not password:
             return jsonify({"error": "Email and password are required"}), 400
+
+        if engine and engine.db.is_email_locked_out(email) is True:
+            return jsonify({
+                "error": "Account temporarily locked due to too many failed login attempts. Please try again in 15 minutes."
+            }), 429
+
         user_row = engine.db.get_user_by_email(email) if engine else None
         if not user_row or not check_password_hash(user_row["password_hash"], password):
+            if engine:
+                engine.db.record_login_attempt(email, ip_address=client_ip, success=False)
             return jsonify({"error": "Invalid email or password"}), 401
         if not user_row.get("is_active", 1):
             return jsonify({"error": "Account has been suspended"}), 403
 
+        if engine:
+            engine.db.record_login_attempt(email, ip_address=client_ip, success=True)
+
         uid = user_row["id"]
         token_name = sanitise_input(str(data.get("token_name") or "AURA Android App"))[:100]
-        token = engine.db.create_api_token(
+        token = engine.db.rotate_or_create_device_token(
             user_id=uid,
             name=token_name,
             scope="admin" if user_row.get("is_admin") else "write",
+            expires_in_days=60,
         ) if engine else None
         if not token:
             return jsonify({"error": "Failed to generate API token"}), 500
@@ -485,6 +526,8 @@ def _register_auth_routes(app: Flask) -> None:
             "id": user_row["id"],
             "email": user_row["email"],
             "is_admin": bool(user_row.get("is_admin")),
+            "min_app_version": "1.0.0",
+            "server_version": "1.2.1",
         })
 
     @app.route("/api/auth/logout", methods=["POST"])
@@ -1519,7 +1562,15 @@ def _register_routes(app: Flask) -> None:
         scope = data.get("scope", "read")
         if scope not in ("read", "write", "admin"):
             return jsonify({"error": "scope must be read, write, or admin"}), 400
-        token = engine.db.create_api_token(uid, name, scope=scope) if engine else None
+        expires_in_days = data.get("expires_in_days")
+        if expires_in_days is not None:
+            try:
+                expires_in_days = int(expires_in_days)
+            except (ValueError, TypeError):
+                expires_in_days = None
+        token = engine.db.create_api_token(
+            uid, name, scope=scope, expires_in_days=expires_in_days
+        ) if engine else None
         if not token:
             return jsonify({"error": "failed to create token"}), 500
         return jsonify({"status": "ok", "token": token, "name": name, "scope": scope})

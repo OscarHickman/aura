@@ -45,6 +45,8 @@ class TestMobileAPI(unittest.TestCase):
         self.engine.db.get_paper_notes.return_value = []
         self.engine.db.check_if_paper_cites_user_work.return_value = False
         self.engine.db.get_user_by_token.return_value = None
+        self.engine.db.is_email_locked_out.return_value = False
+        self.engine.db.rotate_or_create_device_token.return_value = "token_xyz123"
         self.engine.get_similar_papers.return_value = []
 
         env = {"AURA_CORS_ORIGINS": "http://localhost:8081"}
@@ -220,6 +222,32 @@ class TestMobileAPI(unittest.TestCase):
         resp = self.client.get("/api/reading-list", headers=headers)
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(len(resp.get_json()["papers"]), 1)
+
+    def test_api_login_locked_out(self):
+        self.engine.db.is_email_locked_out.return_value = True
+        resp = self.client.post(
+            "/api/auth/login",
+            json={"email": "attacker@example.com", "password": "password"},
+        )
+        self.assertEqual(resp.status_code, 429)
+        self.assertIn("temporarily locked", resp.get_json()["error"])
+
+    def test_api_v1_compatibility_and_headers(self):
+        self.engine.db.get_user_by_token.return_value = USER_ROW
+        self.engine.db.get_user_by_id.return_value = USER_ROW
+        resp = self.client.get("/api/v1/papers", headers=BEARER)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.headers.get("X-API-Version"), "1.2.1")
+        self.assertEqual(resp.headers.get("X-Min-App-Version"), "1.0.0")
+
+    def test_api_me_returns_versions(self):
+        self.engine.db.get_user_by_token.return_value = USER_ROW
+        self.engine.db.get_user_by_id.return_value = USER_ROW
+        resp = self.client.get("/api/auth/me", headers=BEARER)
+        self.assertEqual(resp.status_code, 200)
+        data = resp.get_json()
+        self.assertEqual(data["min_app_version"], "1.0.0")
+        self.assertEqual(data["server_version"], "1.2.1")
 
 
 if __name__ == "__main__":

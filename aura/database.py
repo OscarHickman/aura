@@ -54,9 +54,18 @@ class PaperDatabase:
                 name TEXT,
                 scope TEXT DEFAULT 'read',
                 created_at TEXT NOT NULL,
+                expires_at TEXT,
                 last_used_at TEXT,
                 revoked_at TEXT,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS login_attempts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT NOT NULL,
+                ip_address TEXT,
+                attempted_at TEXT NOT NULL,
+                success INTEGER NOT NULL
             );
 
             CREATE TABLE IF NOT EXISTS groups (
@@ -282,6 +291,7 @@ class PaperDatabase:
             CREATE UNIQUE INDEX IF NOT EXISTS idx_users_unsubscribe_token ON users(unsubscribe_token);
             CREATE INDEX IF NOT EXISTS idx_api_tokens_token ON api_tokens(token);
             CREATE INDEX IF NOT EXISTS idx_api_tokens_user_id ON api_tokens(user_id);
+            CREATE INDEX IF NOT EXISTS idx_login_attempts_email ON login_attempts(email, attempted_at);
             CREATE INDEX IF NOT EXISTS idx_papers_published ON papers(published);
             CREATE INDEX IF NOT EXISTS idx_ratings_arxiv_id ON ratings(arxiv_id);
             CREATE INDEX IF NOT EXISTS idx_ratings_user_id ON ratings(user_id);
@@ -390,6 +400,7 @@ class PaperDatabase:
         self._add_column_if_missing("users", "digest_frequency", "TEXT DEFAULT 'daily'")
         self._add_column_if_missing("users", "unsubscribe_token", "TEXT DEFAULT NULL")
         self._add_column_if_missing("papers", "citations_fetched", "INTEGER DEFAULT 0")
+        self._add_column_if_missing("api_tokens", "expires_at", "TEXT")
         try:
             self.conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_unsubscribe_token ON users(unsubscribe_token)")
             self.conn.commit()
@@ -1706,20 +1717,29 @@ class PaperDatabase:
         return self.conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
 
     # ------------------------------------------------------------------
-    # API tokens
+    # API tokens & Authentication
     # ------------------------------------------------------------------
 
     def create_api_token(
-        self, user_id: int, name: str, scope: str = "read"
+        self,
+        user_id: int,
+        name: str,
+        scope: str = "read",
+        expires_in_days: Optional[int] = None,
+        expires_at: Optional[str] = None,
     ) -> Optional[str]:
         """Generate and store a new API token. Returns the token string."""
         import secrets
+        from datetime import timedelta
         token = secrets.token_urlsafe(32)
-        now = utcnow().isoformat()
+        now = utcnow()
+        now_iso = now.isoformat()
+        if expires_at is None and expires_in_days is not None:
+            expires_at = (now + timedelta(days=expires_in_days)).isoformat()
         try:
             self.conn.execute(
-                "INSERT INTO api_tokens (user_id, token, name, scope, created_at) VALUES (?, ?, ?, ?, ?)",
-                (user_id, token, name, scope, now),
+                "INSERT INTO api_tokens (user_id, token, name, scope, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (user_id, token, name, scope, now_iso, expires_at),
             )
             self.conn.commit()
             return token
@@ -1727,37 +1747,91 @@ class PaperDatabase:
             logger.error(f"Failed to create API token for user {user_id}: {e}")
             return None
 
+    def rotate_or_create_device_token(
+        self, user_id: int, name: str, scope: str = "write", expires_in_days: int = 60
+    ) -> Optional[str]:
+        """Rotate an existing token for this device/name or create a new one with expiry."""
+        import secrets
+        from datetime import timedelta
+        now = utcnow()
+        now_iso = now.isoformat()
+        expires_at = (now + timedelta(days=expires_in_days)).isoformat()
+        new_token = secrets.token_urlsafe(32)
+        try:
+            existing = self.conn.execute(
+                """
+                SELECT id FROM api_tokens
+                WHERE user_id = ? AND name = ? AND revoked_at IS NULL
+                ORDER BY created_at DESC LIMIT 1
+                """,
+                (user_id, name),
+            ).fetchone()
+
+            if existing:
+                self.conn.execute(
+                    """
+                    UPDATE api_tokens
+                    SET token = ?, scope = ?, created_at = ?, expires_at = ?, last_used_at = ?
+                    WHERE id = ?
+                    """,
+                    (new_token, scope, now_iso, expires_at, now_iso, existing["id"]),
+                )
+            else:
+                self.conn.execute(
+                    """
+                    INSERT INTO api_tokens (user_id, token, name, scope, created_at, expires_at, last_used_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (user_id, new_token, name, scope, now_iso, expires_at, now_iso),
+                )
+            self.conn.commit()
+            return new_token
+        except sqlite3.Error as e:
+            logger.error(f"Failed to rotate/create device token for user {user_id}: {e}")
+            return None
+
     def get_user_by_token(self, token: str) -> Optional[dict]:
-        """Look up a user by a valid (non-revoked) API token; updates last_used_at."""
+        """Look up a user by a valid (non-revoked, unexpired) API token; updates last_used_at."""
+        now_iso = utcnow().isoformat()
         row = self.conn.execute(
             """
-            SELECT u.*, t.scope, t.id as token_id
+            SELECT u.*, t.scope, t.id as token_id, t.expires_at
             FROM api_tokens t
             JOIN users u ON t.user_id = u.id
             WHERE t.token = ? AND t.revoked_at IS NULL AND u.is_active = 1
+              AND (t.expires_at IS NULL OR t.expires_at > ?)
             """,
-            (token,),
+            (token, now_iso),
         ).fetchone()
         if row:
             self.conn.execute(
                 "UPDATE api_tokens SET last_used_at = ? WHERE id = ?",
-                (utcnow().isoformat(), row["token_id"]),
+                (now_iso, row["token_id"]),
             )
             self.conn.commit()
         return dict(row) if row else None
 
     def get_user_tokens(self, user_id: int) -> list[dict]:
-        """List all active tokens for a user."""
+        """List all active tokens for a user, including device name, expiration, and masked token."""
         rows = self.conn.execute(
             """
-            SELECT id, name, scope, created_at, last_used_at
+            SELECT id, token, name, scope, created_at, expires_at, last_used_at
             FROM api_tokens
             WHERE user_id = ? AND revoked_at IS NULL
             ORDER BY created_at DESC
             """,
             (user_id,),
         ).fetchall()
-        return [dict(row) for row in rows]
+        result = []
+        now_iso = utcnow().isoformat()
+        for r in rows:
+            d = dict(r)
+            raw_token = d.get("token") or ""
+            d["masked_token"] = f"{raw_token[:8]}…" if len(raw_token) >= 8 else raw_token
+            expires_at = d.get("expires_at")
+            d["is_expired"] = bool(expires_at and expires_at <= now_iso)
+            result.append(d)
+        return result
 
     def revoke_api_token(self, token_id: int, user_id: int) -> bool:
         """Revoke a specific API token. Returns True if revoked."""
@@ -1770,6 +1844,49 @@ class PaperDatabase:
             return cursor.rowcount > 0
         except sqlite3.Error as e:
             logger.error(f"Failed to revoke token {token_id}: {e}")
+            return False
+
+    def record_login_attempt(
+        self, email: str, ip_address: Optional[str] = None, success: bool = False
+    ) -> None:
+        """Record a login attempt and periodically prune records older than 7 days."""
+        now = utcnow()
+        now_iso = now.isoformat()
+        clean_email = email.strip().lower()
+        try:
+            self.conn.execute(
+                "INSERT INTO login_attempts (email, ip_address, attempted_at, success) VALUES (?, ?, ?, ?)",
+                (clean_email, ip_address, now_iso, 1 if success else 0),
+            )
+            from datetime import timedelta
+            cutoff = (now - timedelta(days=7)).isoformat()
+            self.conn.execute("DELETE FROM login_attempts WHERE attempted_at < ?", (cutoff,))
+            self.conn.commit()
+        except sqlite3.Error as e:
+            logger.error(f"Failed to record login attempt for {clean_email}: {e}")
+
+    def is_email_locked_out(
+        self, email: str, max_failures: int = 5, window_minutes: int = 15
+    ) -> bool:
+        """Check if an email has exceeded the allowed consecutive failed login attempts within the window."""
+        clean_email = email.strip().lower()
+        from datetime import timedelta
+        cutoff = (utcnow() - timedelta(minutes=window_minutes)).isoformat()
+        try:
+            rows = self.conn.execute(
+                """
+                SELECT success FROM login_attempts
+                WHERE email = ? AND attempted_at >= ?
+                ORDER BY attempted_at DESC
+                LIMIT ?
+                """,
+                (clean_email, cutoff, max_failures),
+            ).fetchall()
+            if len(rows) >= max_failures and all(not r["success"] for r in rows):
+                return True
+            return False
+        except sqlite3.Error as e:
+            logger.error(f"Failed to check login lockout for {clean_email}: {e}")
             return False
 
     # ------------------------------------------------------------------
