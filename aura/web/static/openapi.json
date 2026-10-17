@@ -591,7 +591,11 @@
                     "citation_bonus": { "type": "number" },
                     "read_bonus": { "type": "number" },
                     "refereed_bonus": { "type": "number" },
-                    "citation_graph_bonus": { "type": "number" }
+                    "citation_graph_bonus": { "type": "number" },
+                    "similar_liked": {
+                      "type": "array",
+                      "items": { "type": "object" }
+                    }
                   }
                 }
               }
@@ -618,8 +622,8 @@
             "in": "query",
             "schema": {
               "type": "string",
-              "enum": ["expert", "grad"],
-              "default": "expert"
+              "enum": ["expert", "grad_student", "grad"],
+              "default": "grad_student"
             }
           }
         ],

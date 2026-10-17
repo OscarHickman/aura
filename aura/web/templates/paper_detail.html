@@ -322,10 +322,14 @@
                     {% for item in ratings_history %}
                     <li class="list-group-item bg-transparent text-light border-secondary d-flex justify-content-between align-items-center px-0 py-2">
                         <div>
-                            {% if item.rating == 1 %}
-                            <span class="badge bg-success"><i class="bi bi-hand-thumbs-up-fill"></i> Thumbs Up</span>
+                            {% if item.rating >= 1 and item.rating <= 5 %}
+                            <span class="badge bg-warning text-dark"><i class="bi bi-star-fill"></i> {{ item.rating }} Star{% if item.rating > 1 %}s{% endif %}</span>
+                            {% elif item.rating == -1 %}
+                            <span class="badge bg-secondary"><i class="bi bi-skip-forward-fill"></i> Skipped</span>
+                            {% elif item.rating == 0 %}
+                            <span class="badge bg-danger"><i class="bi bi-hand-thumbs-down-fill"></i> Disliked</span>
                             {% else %}
-                            <span class="badge bg-danger"><i class="bi bi-hand-thumbs-down-fill"></i> Thumbs Down</span>
+                            <span class="badge bg-secondary"><i class="bi bi-question-circle"></i> Rated ({{ item.rating }})</span>
                             {% endif %}
                         </div>
                         <small class="text-muted">{{ item.rated_at[:19] | replace('T', ' ') }}</small>

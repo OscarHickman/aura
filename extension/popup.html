@@ -95,8 +95,19 @@
 </head>
 <body>
   <div class="header">
-    <h1 class="title">AURA</h1>
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <h1 class="title">AURA</h1>
+      <button id="settings-toggle-btn" style="background: transparent; border: none; color: #94a3b8; cursor: pointer; padding: 2px;" title="Server Settings">⚙️</button>
+    </div>
     <span class="status" id="connection-status">Checking...</span>
+  </div>
+
+  <div id="settings-ui" style="display: none; margin-bottom: 16px;" class="content-box">
+    <label style="font-size: 0.75rem; color: #94a3b8; display: block; margin-bottom: 4px;">Server URL</label>
+    <input type="text" id="setting-server-url" placeholder="http://127.0.0.1:5000" style="width: 100%; box-sizing: border-box; background: #0f172a; border: 1px solid #334155; color: #f8fafc; padding: 6px; border-radius: 4px; font-size: 0.8rem; margin-bottom: 8px;">
+    <label style="font-size: 0.75rem; color: #94a3b8; display: block; margin-bottom: 4px;">API Token (Bearer)</label>
+    <input type="password" id="setting-api-token" placeholder="aura_..." style="width: 100%; box-sizing: border-box; background: #0f172a; border: 1px solid #334155; color: #f8fafc; padding: 6px; border-radius: 4px; font-size: 0.8rem; margin-bottom: 8px;">
+    <button class="btn" id="save-settings-btn" style="padding: 6px; font-size: 0.8rem;">Save Settings</button>
   </div>
 
   <div id="main-ui">

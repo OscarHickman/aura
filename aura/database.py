@@ -24,6 +24,7 @@ class PaperDatabase:
         try:
             self.conn.execute("PRAGMA journal_mode=WAL;")
             self.conn.execute("PRAGMA busy_timeout=10000;")
+            self.conn.execute("PRAGMA foreign_keys=ON;")
         except Exception as e:
             logger.warning(f"Could not set SQLite WAL mode or busy timeout: {e}")
         self.simulation_codes = simulation_codes or [
@@ -120,8 +121,7 @@ class PaperDatabase:
                 arxiv_id TEXT NOT NULL,
                 rating INTEGER NOT NULL,
                 rated_at TEXT NOT NULL,
-                FOREIGN KEY (arxiv_id) REFERENCES papers(arxiv_id),
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                FOREIGN KEY (arxiv_id) REFERENCES papers(arxiv_id)
             );
 
             CREATE TABLE IF NOT EXISTS fetch_log (
@@ -275,7 +275,6 @@ class PaperDatabase:
                 citing_authors TEXT,
                 detected_at TEXT NOT NULL,
                 notified INTEGER DEFAULT 0,
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
                 FOREIGN KEY (my_paper_id) REFERENCES my_papers(id) ON DELETE CASCADE,
                 UNIQUE(user_id, my_paper_id, citing_arxiv_id)
             );
@@ -287,7 +286,6 @@ class PaperDatabase:
                 my_paper_id INTEGER NOT NULL,
                 citation_count INTEGER NOT NULL,
                 recorded_at TEXT NOT NULL,
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
                 FOREIGN KEY (my_paper_id) REFERENCES my_papers(id) ON DELETE CASCADE
             );
             CREATE INDEX IF NOT EXISTS idx_citation_history_paper ON citation_history(my_paper_id, recorded_at);

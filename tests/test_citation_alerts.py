@@ -194,8 +194,8 @@ class TestCitationAlertsWebEndpoints(unittest.TestCase):
         self.client = self.app.test_client()
 
         # Create test user and token
-        user_id = self.db.create_user("cituser@example.com", "Password123!")
-        self.token = self.db.create_api_token(user_id, "Test Client")
+        self.user_id = self.db.create_user("cituser@example.com", "Password123!")
+        self.token = self.db.create_api_token(self.user_id, "Test Client")
 
     def tearDown(self):
         self.db.close()
@@ -228,8 +228,8 @@ class TestCitationAlertsWebEndpoints(unittest.TestCase):
         paper_id = papers[0]["id"]
 
         # 4. Citation history & events endpoints
-        self.db.record_citation_history(1, paper_id, 3)
-        self.db.record_citation_event(1, paper_id, "2402.00002", "Citing Title", "Citing Authors")
+        self.db.record_citation_history(self.user_id, paper_id, 3)
+        self.db.record_citation_event(self.user_id, paper_id, "2402.00002", "Citing Title", "Citing Authors")
 
         res = self.client.get(f"/api/my-papers/{paper_id}/citation-history", headers=headers)
         self.assertEqual(res.status_code, 200)

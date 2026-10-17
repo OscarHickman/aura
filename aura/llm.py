@@ -399,29 +399,63 @@ _PROVIDER_FUNCS = {
 }
 
 
-def extract_text_from_pdf_url(pdf_url: str) -> str:
-    """Download PDF from URL and extract plain text."""
+def extract_text_from_pdf_url(pdf_url: str, arxiv_id: Optional[str] = None, data_dir: str = "data") -> str:
+    """Download PDF from URL and extract plain text with disk caching and 50MB size limit."""
+    safe_id = re.sub(r"[^a-zA-Z0-9._-]", "_", arxiv_id) if arxiv_id else None
+    cache_path = None
+    if safe_id:
+        cache_dir = Path(data_dir) / "pdf_text"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_path = cache_dir / f"{safe_id}.txt"
+        if cache_path.exists():
+            try:
+                cached = cache_path.read_text(encoding="utf-8")
+                if len(cached.strip()) > 100:
+                    return cached
+            except Exception as e:
+                logger.debug(f"Could not read cached PDF text for {safe_id}: {e}")
+
     logger.info(f"Downloading PDF from {pdf_url}...")
     headers = {
         "User-Agent": "AURA Research Assistant (https://github.com/OscarHickman/aura)"
     }
-    response = requests.get(pdf_url, headers=headers, timeout=30)
+    # Stream download with 50 MB max limit
+    MAX_PDF_BYTES = 50 * 1024 * 1024
+    response = requests.get(pdf_url, headers=headers, timeout=30, stream=True)
     response.raise_for_status()
-    
+
+    content = bytearray()
+    try:
+        for chunk in response.iter_content(chunk_size=65536):
+            if chunk:
+                content.extend(chunk)
+            if len(content) > MAX_PDF_BYTES:
+                logger.warning(f"PDF exceeded {MAX_PDF_BYTES} bytes limit, truncating download.")
+                break
+    except (TypeError, AttributeError):
+        content = bytearray(getattr(response, "content", b""))
+
     # Load PDF bytes in pypdf
     from pypdf import PdfReader
     import io
-    pdf_file = io.BytesIO(response.content)
+    pdf_file = io.BytesIO(bytes(content))
     reader = PdfReader(pdf_file)
-    
+
     text_parts = []
     # Extract text from all pages
     for page in reader.pages:
         page_text = page.extract_text()
         if page_text:
             text_parts.append(page_text)
-            
-    return "\n".join(text_parts)
+
+    full_text = "\n".join(text_parts)
+    if cache_path and full_text.strip():
+        try:
+            cache_path.write_text(full_text, encoding="utf-8")
+        except Exception as e:
+            logger.debug(f"Could not cache PDF text to {cache_path}: {e}")
+
+    return full_text
 
 
 def generate_full_summary(
@@ -433,7 +467,7 @@ def generate_full_summary(
 ) -> str:
     """Download the paper's PDF, extract text, and generate a structured deep-dive summary."""
     try:
-        text = extract_text_from_pdf_url(pdf_url)
+        text = extract_text_from_pdf_url(pdf_url, arxiv_id=arxiv_id)
     except Exception as e:
         logger.error(f"Failed to extract text from PDF for {arxiv_id}: {e}")
         return f"Error: Failed to download or parse PDF ({e})"
@@ -553,15 +587,16 @@ def stream_ask_paper(
     api_key: Optional[str] = None,
 ):
     """Stream answers to questions about a paper using its full text as context."""
-    # Limit full text size to prevent context overflow (approx 40k characters)
-    truncated_text = full_text[:40000]
+    # Section-aware context retrieval to prevent context overflow (approx 40k characters)
+    from .pdf_scanner import retrieve_context_for_query
+    context_text = retrieve_context_for_query(full_text, question, max_chars=40000)
     
     prompt = (
         f"You are a helpful research assistant. Answer the user's question about the research paper (arxiv ID {arxiv_id}) "
         f"using the provided full text of the paper. Always use UK-English spelling (e.g., colour, prioritising, analysing).\n\n"
         f"Here is the text extracted from the paper:\n"
         f"---\n"
-        f"{truncated_text}\n"
+        f"{context_text}\n"
         f"---\n\n"
         f"Question: {question}\n"
         f"Answer:"

@@ -109,11 +109,15 @@ class RecommendationEngine:
             cfg = get_validated_config()
             vs_conf = cfg.get("vector_store", {})
             self.vector_store: "VectorStore"
-            if vs_conf.get("provider") == "qdrant" and vs_conf.get("url"):
+            qdrant_url = os.environ.get("QDRANT_URL") or vs_conf.get("url")
+            if not qdrant_url and os.environ.get("QDRANT_HOST"):
+                qdrant_url = f"http://{os.environ['QDRANT_HOST']}:{os.environ.get('QDRANT_PORT', '6333')}"
+            provider = os.environ.get("VECTOR_STORE_PROVIDER") or vs_conf.get("provider")
+            if (provider == "qdrant" or (not provider and qdrant_url)) and qdrant_url:
                 self.vector_store = QdrantVectorStore(
-                    url=vs_conf["url"],
-                    api_key=vs_conf.get("api_key"),
-                    collection_name=vs_conf.get("collection_name", "aura_papers"),
+                    url=qdrant_url,
+                    api_key=os.environ.get("QDRANT_API_KEY") or vs_conf.get("api_key"),
+                    collection_name=os.environ.get("QDRANT_COLLECTION") or vs_conf.get("collection_name", "aura_papers"),
                     embedding_dim=self._embedding_dim
                 )
                 self._migrate_to_vector_store()
@@ -237,8 +241,16 @@ class RecommendationEngine:
             self.db.log_fetch(0, self.categories)
             return 0
 
-        # Extract cosmology metadata for new papers
-        self._extract_and_save_metadata(new_papers)
+        # Extract cosmology metadata for new papers if configured
+        try:
+            from .config import get_validated_config
+            cfg = get_validated_config()
+            extract_meta = cfg.get("summaries", {}).get("extract_metadata_on_fetch", False)
+        except Exception:
+            extract_meta = False
+
+        if extract_meta:
+            self._extract_and_save_metadata(new_papers)
 
         # Generate embeddings for new papers
         embeddings = embed_papers_batch(new_papers, model_name=self.embedding_model)
@@ -422,7 +434,7 @@ class RecommendationEngine:
                 
             try:
                 from .llm import extract_text_from_pdf_url
-                full_text = extract_text_from_pdf_url(pdf_url)
+                full_text = extract_text_from_pdf_url(pdf_url, arxiv_id=arxiv_id, data_dir=str(self.data_dir))
                 if full_text and not full_text.startswith("Error:"):
                     self.db.add_paper_text(arxiv_id, full_text)
                     logger.info(f"Extracted and cached full text for paper {arxiv_id}")
@@ -687,7 +699,7 @@ class RecommendationEngine:
 
         return scorable_papers[:limit]
 
-    def get_similar_liked_papers(self, arxiv_id: str, limit: int = 3) -> list[dict]:
+    def get_similar_liked_papers(self, arxiv_id: str, limit: int = 3, user_id: int = 1) -> list[dict]:
         """Find the most similar papers that the user has previously liked.
 
         Useful for recommendation explainability via a dedicated endpoint.
@@ -698,7 +710,7 @@ class RecommendationEngine:
 
         _, current_emb = current_data[0]
 
-        rated_papers = self.db.get_rated_papers(user_id=1)
+        rated_papers = self.db.get_rated_papers(user_id=user_id)
         liked_papers = [(p, emb) for p, emb, rating in rated_papers if rating >= 4 or rating == 1]
 
         similarities = []

@@ -6,6 +6,7 @@ from pathlib import Path
 import secrets
 import uuid
 
+from typing import Any
 from flask import Flask, Response, jsonify, make_response, redirect, render_template, request, g, url_for, flash
 from flask_login import (
     LoginManager,
@@ -1166,11 +1167,25 @@ def _register_routes(app: Flask) -> None:
     @app.route("/api/explain/<path:arxiv_id>", methods=["GET"])
     @login_required
     def explain_paper(arxiv_id):
-        paper = engine.db.get_paper(arxiv_id) if engine else None
+        if not engine:
+            return jsonify({"error": "Engine not initialized"}), 500
+        paper = engine.db.get_paper(arxiv_id)
         if not paper:
             return jsonify({"error": "Paper not found"}), 404
-        similar_liked = engine.get_similar_liked_papers(arxiv_id, limit=3) if engine else []
-        return jsonify({"arxiv_id": arxiv_id, "similar_liked": similar_liked})
+        uid = _get_current_user_id()
+        similar_liked = engine.get_similar_liked_papers(arxiv_id, limit=3, user_id=uid)
+        return jsonify({
+            "arxiv_id": arxiv_id,
+            "similar_liked": similar_liked,
+            "score": paper.get("score"),
+            "model_score": paper.get("model_score"),
+            "freshness_bonus": paper.get("freshness_bonus"),
+            "summary_bonus": paper.get("summary_bonus"),
+            "citation_bonus": paper.get("citation_bonus"),
+            "read_bonus": paper.get("read_bonus"),
+            "refereed_bonus": paper.get("refereed_bonus"),
+            "citation_graph_bonus": paper.get("citation_graph_bonus"),
+        })
 
     @app.route("/api/papers/<path:arxiv_id>/deep-summary", methods=["GET"])
     @login_required
@@ -1289,7 +1304,7 @@ def _register_routes(app: Flask) -> None:
 
     @app.route("/notes")
     @login_required
-    def notes_dashboard():
+    def notes_dashboard() -> Any:
         uid = _get_current_user_id()
         all_notes = engine.db.get_all_notes(user_id=uid) if engine else []
         papers_with_notes: dict[str, dict] = {}
@@ -1308,7 +1323,7 @@ def _register_routes(app: Flask) -> None:
 
     @app.route("/api/collections/<int:collection_id>/export-notes")
     @login_required
-    def export_collection_notes(collection_id):
+    def export_collection_notes(collection_id: int) -> Any:
         uid = _get_current_user_id()
         collection = engine.db.get_collection(collection_id, user_id=uid) if engine else None
         if not collection:
@@ -2054,18 +2069,23 @@ def _register_routes(app: Flask) -> None:
     # ------------------------------------------------------------------
 
     @app.route("/privacy")
-    def privacy():
+    def privacy() -> Any:
         """Public privacy policy (linked from the Google Play listing)."""
         return render_template("privacy.html")
 
     @app.route("/health")
-    def health():
+    def health() -> Any:
         status = "ok"
         code = 200
         details: dict = {}
         try:
-            engine.db.conn.execute("SELECT 1")
-            details["db"] = "ok"
+            if engine and engine.db:
+                engine.db.conn.execute("SELECT 1")
+                details["db"] = "ok"
+            else:
+                status = "degraded"
+                code = 503
+                details["db"] = "error: engine not initialized"
         except Exception as e:
             status = "degraded"
             code = 503
@@ -2073,7 +2093,7 @@ def _register_routes(app: Flask) -> None:
         try:
             from ..embedder import _model
             details["embedder"] = "ok" if _model is not None else "lazy_not_loaded"
-            if engine.preference_model and engine.preference_model.model:
+            if engine and engine.preference_model and engine.preference_model.model:
                 details["preference_model"] = "ok"
             else:
                 status = "degraded"
@@ -2086,8 +2106,8 @@ def _register_routes(app: Flask) -> None:
         return jsonify({"status": status, "details": details}), code
 
     @app.route("/metrics")
-    def metrics():
-        stats_data = engine.get_stats()
+    def metrics() -> Any:
+        stats_data = engine.get_stats() if engine else {"database": {"total_papers": 0}, "model": {}}
         db = stats_data["database"]
         model = stats_data["model"]
         lines = [

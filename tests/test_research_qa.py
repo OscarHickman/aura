@@ -191,7 +191,7 @@ class TestRecommenderAndWebResearchQA(unittest.TestCase):
             self.assertEqual(chunks, ["X", "Y"])
             self.db.get_paper_text.assert_called_once_with("2401.00001")
             self.db.get_paper.assert_called_once_with("2401.00001")
-            mock_extract.assert_called_once_with("https://arxiv.org/pdf/2401.00001.pdf")
+            mock_extract.assert_called_once_with("https://arxiv.org/pdf/2401.00001.pdf", arxiv_id="2401.00001", data_dir=str(self.engine.data_dir))
             self.db.add_paper_text.assert_called_once_with("2401.00001", "Newly extracted PDF text.")
             mock_stream.assert_called_once_with("2401.00001", "What is dark energy?", "Newly extracted PDF text.")
 

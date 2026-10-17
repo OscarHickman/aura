@@ -110,3 +110,112 @@ def scan_pdf_metadata(content_bytes: bytes, filename: str) -> Dict[str, Any]:
         "abstract": abstract,
         "scanned_text": extracted_text[:2000],
     }
+
+
+def chunk_paper_text(text: str, chunk_size: int = 1500, overlap: int = 200) -> list[Dict[str, Any]]:
+    """Split paper text into section-aware overlapping chunks.
+
+    Each chunk contains:
+      - 'text': string content of the chunk
+      - 'section': detected section header (e.g., 'Abstract', 'Introduction', 'Methods', 'Results', 'Conclusion')
+      - 'char_start': start offset in full_text
+      - 'char_end': end offset in full_text
+    """
+    if not text:
+        return []
+
+    section_pattern = re.compile(
+        r"^(?:(?:[0-9IVXLCDM]+\.?\s+)?(abstract|introduction|background|methods?|methodology|data(?:set)?|experiments?|results?|discussion|conclusions?|summary|future work|references|appendix))\b",
+        re.IGNORECASE | re.MULTILINE,
+    )
+
+    matches = list(section_pattern.finditer(text))
+    chunks: list[Dict[str, Any]] = []
+
+    if not matches:
+        start = 0
+        while start < len(text):
+            end = min(start + chunk_size, len(text))
+            chunks.append({
+                "text": text[start:end].strip(),
+                "section": "General",
+                "char_start": start,
+                "char_end": end,
+            })
+            if end == len(text):
+                break
+            start += chunk_size - overlap
+        return chunks
+
+    for idx, match in enumerate(matches):
+        sec_name = match.group(1).title()
+        sec_start = match.start()
+        sec_end = matches[idx + 1].start() if idx + 1 < len(matches) else len(text)
+        sec_text = text[sec_start:sec_end]
+
+        sub_start = 0
+        while sub_start < len(sec_text):
+            sub_end = min(sub_start + chunk_size, len(sec_text))
+            chunks.append({
+                "text": sec_text[sub_start:sub_end].strip(),
+                "section": sec_name,
+                "char_start": sec_start + sub_start,
+                "char_end": sec_start + sub_end,
+            })
+            if sub_end == len(sec_text):
+                break
+            sub_start += chunk_size - overlap
+
+    return chunks
+
+
+def retrieve_context_for_query(full_text: str, query: str, max_chars: int = 40000) -> str:
+    """Retrieve the most relevant sections of a paper for a user question.
+
+    If the document exceeds max_chars, performs section-aware chunking and lexical
+    relevance scoring, guaranteeing the retention of Abstract, Introduction, and
+    Conclusion alongside the top-scoring content chunks in document order.
+    """
+    if not full_text or len(full_text) <= max_chars:
+        return full_text
+
+    chunks = chunk_paper_text(full_text)
+    if not chunks:
+        return full_text[:max_chars]
+
+    query_tokens = set(re.findall(r"\w{3,}", query.lower()))
+
+    scored_chunks = []
+    for i, c in enumerate(chunks):
+        c_tokens = re.findall(r"\w{3,}", c["text"].lower())
+        overlap_count = sum(1 for t in c_tokens if t in query_tokens)
+        sec_lower = c["section"].lower()
+        sec_boost = 1.5 if any(k in sec_lower for k in ("abstract", "intro", "conclu")) else 1.0
+        score = (overlap_count / (len(c_tokens) + 1)) * sec_boost
+        scored_chunks.append((score, i, c))
+
+    priority_indices = {0}
+    for i in range(len(chunks) - 1, -1, -1):
+        if "reference" not in chunks[i]["section"].lower():
+            priority_indices.add(i)
+            break
+
+    scored_chunks.sort(key=lambda x: x[0], reverse=True)
+
+    selected_indices = set(priority_indices)
+    current_chars = sum(len(chunks[idx]["text"]) for idx in selected_indices)
+
+    for score, idx, c in scored_chunks:
+        if idx in selected_indices:
+            continue
+        c_len = len(c["text"])
+        if current_chars + c_len > max_chars:
+            continue
+        selected_indices.add(idx)
+        current_chars += c_len
+
+    ordered_indices = sorted(selected_indices)
+    assembled = "\n\n[...]\n\n".join(
+        f"[{chunks[idx]['section']}]\n{chunks[idx]['text']}" for idx in ordered_indices
+    )
+    return assembled

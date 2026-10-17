@@ -137,15 +137,15 @@ Following a full-system audit of the backend, web UI, mobile app, database, ML p
 1. `PaperDatabase` shares a single `sqlite3.Connection` (`check_same_thread=False`) across threads without a `busy_timeout` PRAGMA or thread-local cursor/transaction isolation, risking `ProgrammingError` or interleaved commits under concurrent requests.
 2. `aura/trends.py:187, 390` creates `PaperDatabase(db_path)` on every `/trends` request and never calls `db.close()`.
 3. `migrations/versions/5b0234fff970_initial_schema.py` is a no-op (`pass`), so running `alembic upgrade head` on a blank DB before `PaperDatabase._create_tables()` fails, and `docker/entrypoint.sh:14` calls `python run.py migrate --check` which does not exist.
-- [ ] Configure `PRAGMA busy_timeout=5000;` and `PRAGMA foreign_keys=ON;` on connection creation, and use `threading.local()` connections (or a thread-safe connection context manager) inside `PaperDatabase`.
-- [ ] Close `PaperDatabase` connections in `aura/trends.py:187, 390` via `try/finally` (or pass `engine.db` directly).
+- [x] Configure `PRAGMA busy_timeout=5000;` and `PRAGMA foreign_keys=ON;` on connection creation, and use `threading.local()` connections (or a thread-safe connection context manager) inside `PaperDatabase`.
+- [x] Close `PaperDatabase` connections in `aura/trends.py:187, 390` via context manager (`with PaperDatabase(...) as db`).
 - [ ] Unify `PaperDatabase._create_tables()` and Alembic so `python run.py migrate` cleanly bootstraps base tables, stamps/runs revisions, and supports `--check` as invoked by `docker/entrypoint.sh`.
 
 ### 20.5 Multi-Worker Gunicorn Synchronisation & Memory Optimisation
 **Audit finding:** `Dockerfile:33` and `deploy/systemd/aura.service:9` start 4 Gunicorn workers (`-w 4`). Each worker loads its own copy of PyTorch + `sentence-transformers` (~4x RAM), keeps independent in-memory `PreferenceModel` instances in `engine._user_models` (causing Worker B to overwrite Worker A's newly trained weights on disk), and keeps separate `memory://` rate-limit buckets.
 - [x] Track `model_path.stat().st_mtime` in `RecommendationEngine._get_user_model(user_id)`: before predicting or training, reload `PreferenceModel` from disk if `st_mtime` has changed since the worker last loaded it.
 - [ ] Configure `Flask-Limiter` to use `REDIS_URL` / `CELERY_BROKER_URL` storage when Redis is available, falling back to `memory://` only in local single-process dev.
-- [ ] Wire `QDRANT_HOST` / `QDRANT_PORT` (and `QDRANT_URL`) environment variables in `aura/config.py` so the Qdrant container in `docker-compose.yml` is automatically used when present.
+- [x] Wire `QDRANT_HOST` / `QDRANT_PORT` (and `QDRANT_URL`) environment variables in `aura/config.py` / `recommender.py` so the Qdrant container in `docker-compose.yml` is automatically used when present.
 - [ ] Update `Dockerfile` to run Gunicorn under a non-root `aura` user and tune worker/thread topology (`--workers 2 --threads 4` or `--preload` with lazy CUDA/fork-safe PyTorch init) to cut memory footprint in half.
 
 ---
@@ -167,12 +167,12 @@ Following a full-system audit of the backend, web UI, mobile app, database, ML p
 
 ### 21.2 Decouple Synchronous LLM Metadata Extraction from `fetch_new_papers()`
 **Audit finding:** `engine.fetch_new_papers()` (`aura/recommender.py:237`) unconditionally calls `self._extract_and_save_metadata(new_papers)` even when `generate_summaries=False`. Fetching 200 papers triggers 200 sequential synchronous LLM requests (`extract_cosmology_metadata`), blocking `fetch` for several minutes and exhausting rate limits.
-- [ ] Gate LLM cosmology metadata extraction behind a config flag (`summaries.extract_metadata_on_fetch: false` by default, or run asynchronously via a background task / batched multi-paper LLM prompt) while keeping fast deterministic regex tagging (surveys, simulation codes, methods) synchronous during fetch.
+- [x] Gate LLM cosmology metadata extraction behind a config flag (`summaries.extract_metadata_on_fetch: false` by default, or run asynchronously via a background task / batched multi-paper LLM prompt) while keeping fast deterministic regex tagging (surveys, simulation codes, methods) synchronous during fetch.
 
 ### 21.3 Section-Aware PDF Chunking & True Embedding RAG for Q&A and Deep Summaries
 **Audit finding:** `generate_full_summary()` (`aura/llm.py:445`) and `stream_ask_paper()` (`aura/llm.py:557`) download the PDF with no size cap and slice `full_text[:40000]`. For 15–40 page astrophysics/ML papers, the results, discussion, conclusions, and appendices beyond char 40,000 are completely discarded.
-- [ ] Enforce a maximum streaming download size (e.g. 50 MB) and cache extracted text on disk (`data/pdf_text/{safe_id}.txt`) so repeated Q&A questions do not re-download and re-parse the PDF on every question.
-- [ ] Implement section-aware chunking in `aura/pdf_scanner.py` (splitting on headings such as *Introduction, Data, Methods, Results, Discussion, Conclusion* into ~1,500-char overlapping chunks).
+- [x] Enforce a maximum streaming download size (50 MB) and cache extracted text on disk (`data/pdf_text/{safe_id}.txt`) so repeated Q&A questions do not re-download and re-parse the PDF on every question.
+- [x] Implement section-aware chunking in `aura/pdf_scanner.py` (splitting on headings such as *Introduction, Data, Methods, Results, Discussion, Conclusion* into ~1,500-char overlapping chunks).
 - [ ] For `stream_ask_paper()`, embed the chunks with `Embedder` (cached per paper) and retrieve the top-K most relevant chunks for the user's question + the abstract/conclusion, enabling accurate RAG across the entire paper length.
 - [ ] For `generate_full_summary()`, perform a map-reduce or section-targeted extraction (Abstract + Introduction + Methods + Results + Conclusion sections) rather than blind prefix truncation.
 
@@ -194,8 +194,8 @@ Following a full-system audit of the backend, web UI, mobile app, database, ML p
 4. `aura/web/static/openapi.json` has schema drift on `/api/papers/{arxiv_id}/deep-summary` (`mode` enum `grad` vs `grad_student`), `/api/explain/{arxiv_id}`, and `/api/reading-list`.
 - [x] Switch `aura/web/static/sw.js` to **network-first** for HTML navigation requests and **cache-first** only for versioned static assets (`/static/*`).
 - [x] Fix keyboard shortcuts (`j`, `k`, `u`/`l`, `d`, `b`, `o`) in `papers.html` to read `card.dataset.arxivId` and trigger the 5-star / bookmark handlers accurately.
-- [ ] Fix rating history badge rendering in `paper_detail.html:325–329` to render 1–5 star ratings, skips (`-1`), and dislikes (`0`) accurately.
-- [ ] Align `aura/web/static/openapi.json` with the exact request/response payloads of `aura/web/app.py` and add an automated schema conformance test in `tests/test_web_app.py`.
+- [x] Fix rating history badge rendering in `paper_detail.html:325–329` to render 1–5 star ratings, skips (`-1`), and dislikes (`0`) accurately.
+- [x] Align `aura/web/static/openapi.json` with the exact request/response payloads of `aura/web/app.py` and add an automated schema conformance test in `tests/test_web_app.py`.
 
 ### 22.2 Mobile App Bug Fixes (`mobile/`)
 **Audit finding:**
@@ -221,8 +221,8 @@ Following a full-system audit of the backend, web UI, mobile app, database, ML p
 - [ ] **Deep Linking & Version Check (`App.tsx`, `AuthContext.tsx`):** Configure React Navigation `linking` for the `aura://` URL scheme (`aura://papers/:arxivId`, `aura://my-papers`, `aura://triage`) and surface an update banner when `min_app_version` from `/api/auth/me` exceeds the installed app version.
 
 ### 22.4 Browser Extension Upgrade (`extension/`)
-- [ ] Add an Extension Options / Settings view in `extension/popup.html` + `popup.js` using `chrome.storage.sync` so users can configure their AURA server URL (e.g. `http://100.88.127.35/aura` or custom domain) and personal Bearer API token (`aura_...`), instead of hardcoding `http://127.0.0.1:5000`.
-- [ ] Pass `Authorization: Bearer <token>` on `/api/extension/check` and `/api/extension/add` requests from `popup.js` and `content.js`.
+- [x] Add an Extension Options / Settings view in `extension/popup.html` + `popup.js` using `chrome.storage.sync` so users can configure their AURA server URL (e.g. `http://100.88.127.35/aura` or custom domain) and personal Bearer API token (`aura_...`), instead of hardcoding `http://127.0.0.1:5000`.
+- [x] Pass `Authorization: Bearer <token>` on `/api/extension/check` and `/api/extension/add` requests from `popup.js` and `content.js`.
 
 ---
 

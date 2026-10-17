@@ -3,14 +3,32 @@
   if (!match) return;
   const arxivId = match[1];
 
-  const AURA_BASE_URL = "http://127.0.0.1:5000";
+  let baseUrl = "http://127.0.0.1:5000";
+  let token = "";
 
   try {
-    const response = await fetch(`${AURA_BASE_URL}/api/extension/check?arxiv_id=${encodeURIComponent(arxivId)}`);
+    if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.sync) {
+      const stored = await chrome.storage.sync.get(["serverUrl", "apiToken"]);
+      if (stored.serverUrl) baseUrl = stored.serverUrl.replace(/\/+$/, "");
+      if (stored.apiToken) token = stored.apiToken;
+    }
+  } catch (e) {
+    // Fall back to default local baseUrl
+  }
+
+  const reqHeaders = { "Content-Type": "application/json" };
+  if (token) {
+    reqHeaders["Authorization"] = `Bearer ${token}`;
+  }
+
+  try {
+    const response = await fetch(`${baseUrl}/api/extension/check?arxiv_id=${encodeURIComponent(arxivId)}`, {
+      headers: reqHeaders
+    });
     if (!response.ok) return;
     const data = await response.json();
 
-    // Create a beautiful floating container
+    // Create a floating container
     const container = document.createElement("div");
     container.id = "aura-extension-badge";
     container.style.cssText = `
@@ -79,9 +97,9 @@
         addBtn.disabled = true;
         addBtn.innerText = "Adding...";
         try {
-          const addResp = await fetch(`${AURA_BASE_URL}/api/extension/add`, {
+          const addResp = await fetch(`${baseUrl}/api/extension/add`, {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: reqHeaders,
             body: JSON.stringify({ arxiv_id: arxivId })
           });
           if (addResp.ok) {

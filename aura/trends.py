@@ -184,12 +184,11 @@ def generate_monthly_trends(data_dir: str | Path, embedding_model: str = "all-Mi
     else:
         topics = grouped_topics
 
-    db = PaperDatabase(Path(data_dir) / "papers.db")
-    
     # Get all papers from last 30 days
     cutoff_date = utcnow() - timedelta(days=30)
-    
-    papers_with_emb = db.get_papers_with_embeddings()
+
+    with PaperDatabase(Path(data_dir) / "papers.db") as db:
+        papers_with_emb = db.get_papers_with_embeddings()
     recent_papers = []
     
     for paper, emb in papers_with_emb:
@@ -387,8 +386,8 @@ def get_trends_data(
         return {}
 
     # 2. Load papers from database
-    db = PaperDatabase(Path(data_dir) / "papers.db")
-    papers_with_emb = db.get_papers_with_embeddings()
+    with PaperDatabase(Path(data_dir) / "papers.db") as db:
+        papers_with_emb = db.get_papers_with_embeddings()
     if not papers_with_emb:
         return {}
 
