@@ -132,10 +132,9 @@ def notify_high_scoring_papers(engine: Any, new_papers: List[Dict[str, Any]], co
             _, embedding = papers_emb[0]
             
             # Predict preference score
-            import torch
-            with torch.no_grad():
-                emb_t = torch.tensor(embedding, dtype=torch.float32).unsqueeze(0)
-                score = float(torch.sigmoid(pref_model(emb_t)).item())
+            # PaperPreferenceNet already ends in a sigmoid; predict() returns a 0-1 score.
+            import numpy as np
+            score, _ = pref_model.predict(np.asarray(embedding, dtype=np.float32), num_samples=1)
                 
             # Slack check
             if slack_enabled:

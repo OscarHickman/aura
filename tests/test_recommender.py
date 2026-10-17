@@ -22,6 +22,16 @@ def _paper(arxiv_id="2401.00001"):
 
 
 class TestRecommendationEngine(unittest.TestCase):
+    def setUp(self):
+        for target, result in (
+            ("aura.fetcher.BiorxivSource.fetch", []),
+            ("aura.fetcher.BiorxivSource.fetch_simple", []),
+            ("aura.llm.extract_cosmology_metadata", {}),
+        ):
+            patcher = patch(target, return_value=result)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
     @patch("aura.recommender.PreferenceModel")
     @patch("aura.recommender.PaperDatabase")
     @patch("aura.recommender.get_embedding_dim", return_value=3)

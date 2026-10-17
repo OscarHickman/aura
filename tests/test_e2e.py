@@ -7,6 +7,16 @@ import numpy as np
 from aura.recommender import RecommendationEngine
 
 class TestE2EFlow(unittest.TestCase):
+    def setUp(self):
+        for target, result in (
+            ("aura.fetcher.BiorxivSource.fetch", []),
+            ("aura.fetcher.BiorxivSource.fetch_simple", []),
+            ("aura.llm.extract_cosmology_metadata", {}),
+        ):
+            patcher = patch(target, return_value=result)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
     @patch("aura.recommender.get_embedding_dim", return_value=4)
     @patch("aura.recommender.embed_papers_batch")
     @patch("aura.fetcher.ArxivSource.fetch")

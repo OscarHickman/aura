@@ -6,10 +6,10 @@ Modern Android companion app for AURA (Automated Understanding of Research Artic
 
 ## Key Features
 
-1. **Triage Deck**: Fast, one-handed card swipe & triage deck to quickly like, skip, or bookmark recommended papers and train your preference model.
+1. **Triage Deck**: Fast, one-handed triage deck to quickly like, skip, or bookmark recommended papers and train your preference model.
 2. **Paper Feed**: Scrollable ranked feed with pull-to-refresh, real-time match scores, and instant search across titles, authors, and arXiv categories.
 3. **Paper Detail & AI Q&A**: Clean reading view with AI summaries, links to arXiv/PDF, and an interactive Q&A assistant to ask questions about the paper directly to the home server's LLM backend.
-4. **Reading List**: Saved papers separated into Unread and Read history.
+4. **Reading List**: Saved papers separated into Unread and Read history, with offline paper/note caching and queued changes that sync when the app reconnects.
 5. **Server Connection Manager**: Configurable server address with connection testing and persistent Bearer token authentication.
 
 ---
@@ -19,7 +19,7 @@ Modern Android companion app for AURA (Automated Understanding of Research Artic
 The app connects to your AURA backend over HTTP/HTTPS:
 
 * **Home Network (Wi-Fi):** `http://<home-server-lan-ip>:5000`
-* **Tailscale (Remote / On the go):** `http://100.88.127.35:5000` (pre-configured default)
+* **Tailscale (Remote / On the go):** `http://100.88.127.35/aura` (pre-configured default)
 
 Open the **Settings** tab in the app to test the connection and log in with your account credentials.
 
@@ -66,3 +66,17 @@ To enable automatic publishing to Google Play, add these secrets under **Setting
 
 *(Optional)* Under **Variables > Actions**, set `GOOGLE_PLAY_TRACK` to `internal` (default), `alpha`, `beta`, or `production`.
 
+
+## Quality checks and release status
+
+```sh
+pnpm typecheck
+pnpm test:ci
+AURA_CONTRACT_PYTHON=../.venv/bin/python pnpm exec jest --runInBand contract.test.js
+```
+
+Jest covers API/auth behavior and the main screens. The contract test uses the real Flask routes and a temporary database; install the backend dependencies before running it. CI enforces 80% statement/function/line coverage for API/auth code and compiles the Android JavaScript bundle.
+
+See [RELEASE.md](RELEASE.md) for verified build steps, remaining physical-device/signing checks, key backup, and the release sequence. Native project generation and JavaScript export have passed locally; a signed APK/AAB and Play upload remain unverified.
+
+Offline changes are stored separately for each server/account. Opening Settings shows pending changes and offers manual sync; foreground sync retries every 30 seconds while signed in. Changing the server signs out locally. Cached content and pending changes remain scoped to their original account. Install the updated backend before using note replay deduplication.

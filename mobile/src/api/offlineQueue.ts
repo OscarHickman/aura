@@ -2,114 +2,70 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 export const OFFLINE_QUEUE_STORAGE_KEY = '@aura_offline_mutations';
 
-export interface QueuedRateMutation {
-  id: string;
-  type: 'rate';
-  paperId: string;
-  rating: number;
-  timestamp: number;
+type MutationData =
+  | { type: 'rate'; paperId: string; rating: number }
+  | { type: 'reading_list_add' | 'reading_list_remove' | 'reading_list_read'; paperId: string }
+  | { type: 'add_note'; paperId: string; content: string; noteType?: string };
+export type QueuedMutation = MutationData & { id: string; timestamp: number };
+export type NewQueuedMutation = MutationData & { id?: string; timestamp?: number };
+
+const storageKey = (scope: string) => scope
+  ? `${OFFLINE_QUEUE_STORAGE_KEY}:${encodeURIComponent(scope)}`
+  : OFFLINE_QUEUE_STORAGE_KEY;
+
+// Serialise read/modify/write operations; network calls never hold this lock.
+const writes = new Map<string, Promise<unknown>>();
+function serialise<T>(scope: string, operation: () => Promise<T>): Promise<T> {
+  const previous = writes.get(scope) || Promise.resolve();
+  const next = previous.catch(() => undefined).then(operation);
+  writes.set(scope, next);
+  void next.finally(() => {
+    if (writes.get(scope) === next) writes.delete(scope);
+  }).catch(() => undefined);
+  return next;
 }
 
-export interface QueuedReadingListAddMutation {
-  id: string;
-  type: 'reading_list_add';
-  paperId: string;
-  timestamp: number;
+async function readQueue(scope: string): Promise<QueuedMutation[]> {
+  const raw = await AsyncStorage.getItem(storageKey(scope));
+  if (!raw) return [];
+  const parsed = JSON.parse(raw);
+  if (!Array.isArray(parsed)) throw new Error('Offline changes could not be read.');
+  return parsed;
 }
 
-export interface QueuedReadingListRemoveMutation {
-  id: string;
-  type: 'reading_list_remove';
-  paperId: string;
-  timestamp: number;
+export function getOfflineQueue(scope = ''): Promise<QueuedMutation[]> {
+  return serialise(scope, () => readQueue(scope));
 }
 
-export interface QueuedNoteMutation {
-  id: string;
-  type: 'add_note';
-  paperId: string;
-  content: string;
-  noteType?: string;
-  timestamp: number;
+export function clearOfflineQueue(scope = ''): Promise<void> {
+  return serialise(scope, () => AsyncStorage.removeItem(storageKey(scope)));
 }
 
-export type QueuedMutation =
-  | QueuedRateMutation
-  | QueuedReadingListAddMutation
-  | QueuedReadingListRemoveMutation
-  | QueuedNoteMutation;
-
-export type NewQueuedMutation =
-  | (Omit<QueuedRateMutation, 'id' | 'timestamp'> & { id?: string; timestamp?: number })
-  | (Omit<QueuedReadingListAddMutation, 'id' | 'timestamp'> & { id?: string; timestamp?: number })
-  | (Omit<QueuedReadingListRemoveMutation, 'id' | 'timestamp'> & { id?: string; timestamp?: number })
-  | (Omit<QueuedNoteMutation, 'id' | 'timestamp'> & { id?: string; timestamp?: number });
-
-export async function getOfflineQueue(): Promise<QueuedMutation[]> {
-  try {
-    const raw = await AsyncStorage.getItem(OFFLINE_QUEUE_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (e) {
-    console.warn('Failed to retrieve offline mutation queue:', e);
-    return [];
-  }
-}
-
-export async function clearOfflineQueue(): Promise<void> {
-  try {
-    await AsyncStorage.removeItem(OFFLINE_QUEUE_STORAGE_KEY);
-  } catch (e) {
-    console.warn('Failed to clear offline mutation queue:', e);
-  }
-}
-
-export async function enqueueMutation(
-  mutation: NewQueuedMutation
-): Promise<QueuedMutation> {
-  const item: QueuedMutation = {
-    ...mutation,
-    id: mutation.id || `${mutation.type}_${mutation.paperId}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-    timestamp: mutation.timestamp || Date.now(),
-  } as QueuedMutation;
-
-  try {
-    const currentQueue = await getOfflineQueue();
-
-    // Coalesce mutations for the same paper where appropriate
-    let updatedQueue: QueuedMutation[];
-    if (item.type === 'rate') {
-      // Overwrite prior queued rating for this paper
-      updatedQueue = currentQueue.filter((q) => !(q.type === 'rate' && q.paperId === item.paperId));
-      updatedQueue.push(item);
-    } else if (item.type === 'reading_list_add' || item.type === 'reading_list_remove') {
-      // Replace prior reading list actions for this paper
-      updatedQueue = currentQueue.filter(
-        (q) => !( (q.type === 'reading_list_add' || q.type === 'reading_list_remove') && q.paperId === item.paperId )
-      );
-      updatedQueue.push(item);
-    } else {
-      // Notes are append-only
-      updatedQueue = [...currentQueue, item];
+export function enqueueMutation(mutation: NewQueuedMutation, scope = ''): Promise<QueuedMutation> {
+  return serialise(scope, async () => {
+    const item = {
+      ...mutation,
+      id: mutation.id || `${mutation.type}_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      timestamp: mutation.timestamp ?? Date.now(),
+    } as QueuedMutation;
+    const queue = await readQueue(scope);
+    // Coalesce only adjacent ratings. Reading-list operations are order dependent
+    // (add → read → remove), so retain their order even for the same paper.
+    const last = queue[queue.length - 1];
+    if (item.type === 'rate' && last?.type === 'rate' && last.paperId === item.paperId) {
+      queue.pop();
     }
-
-    await AsyncStorage.setItem(OFFLINE_QUEUE_STORAGE_KEY, JSON.stringify(updatedQueue));
+    queue.push(item);
+    await AsyncStorage.setItem(storageKey(scope), JSON.stringify(queue));
     return item;
-  } catch (e) {
-    console.warn('Failed to persist queued mutation:', e);
-    return item;
-  }
+  });
 }
 
-export async function removeMutationById(id: string): Promise<void> {
-  try {
-    const currentQueue = await getOfflineQueue();
-    const filtered = currentQueue.filter((item) => item.id !== id);
-    await AsyncStorage.setItem(OFFLINE_QUEUE_STORAGE_KEY, JSON.stringify(filtered));
-  } catch (e) {
-    console.warn(`Failed to remove mutation ${id} from queue:`, e);
-  }
+export function removeMutationById(id: string, scope = ''): Promise<void> {
+  return serialise(scope, async () => {
+    const queue = await readQueue(scope);
+    await AsyncStorage.setItem(storageKey(scope), JSON.stringify(queue.filter(item => item.id !== id)));
+  });
 }
 
 export interface FlushResult {
@@ -118,51 +74,65 @@ export interface FlushResult {
   failedCount: number;
   remainingCount: number;
 }
+interface ReplayClient {
+  ratePaper: (paperId: string, rating: number) => Promise<unknown>;
+  addToReadingList: (paperId: string) => Promise<unknown>;
+  removeFromReadingList: (paperId: string) => Promise<unknown>;
+  markAsRead?: (paperId: string) => Promise<unknown>;
+  addPaperNote: (paperId: string, content: string, noteType?: string, mutationId?: string) => Promise<unknown>;
+}
+const flushes = new Map<string, Promise<FlushResult>>();
 
-export async function flushOfflineQueue(apiClient: {
-  ratePaper: (paperId: string, rating: number) => Promise<any>;
-  addToReadingList: (paperId: string) => Promise<any>;
-  removeFromReadingList: (paperId: string) => Promise<any>;
-  addPaperNote: (paperId: string, content: string, noteType?: string) => Promise<any>;
-}): Promise<FlushResult> {
-  const queue = await getOfflineQueue();
-  if (queue.length === 0) {
-    return { total: 0, successCount: 0, failedCount: 0, remainingCount: 0 };
-  }
+export function flushOfflineQueue(client: ReplayClient, scope = ''): Promise<FlushResult> {
+  const existing = flushes.get(scope);
+  if (existing) return existing;
+  const flush = (async () => {
+    const queue = await getOfflineQueue(scope);
+    let successCount = 0;
+    let failedCount = 0;
+    for (const item of queue) {
+      // A newer rating may have replaced this one while an earlier request ran.
+      if (!(await getOfflineQueue(scope)).some(pending => pending.id === item.id)) continue;
+      try {
+        let result: any;
+        switch (item.type) {
+          case 'rate': result = await client.ratePaper(item.paperId, item.rating); break;
+          case 'reading_list_add': result = await client.addToReadingList(item.paperId); break;
+          case 'reading_list_remove': result = await client.removeFromReadingList(item.paperId); break;
+          case 'reading_list_read':
+            if (!client.markAsRead) throw new Error('Mark read replay unavailable');
+            result = await client.markAsRead(item.paperId); break;
+          case 'add_note': result = await client.addPaperNote(item.paperId, item.content, item.noteType, item.id); break;
+          default: throw new Error('Unknown offline action');
+        }
+        if (result?.status === 'queued_offline') throw new Error('Still offline');
+        await removeMutationById(item.id, scope);
+        successCount++;
+      } catch (err: any) {
+        // If it's a permanent client error (4xx other than 401/429), remove it from the queue
+        // so it doesn't act as a poison pill blocking all future offline mutations.
+        const isPermanentClientError =
+          typeof err?.status === 'number' &&
+          err.status >= 400 &&
+          err.status < 500 &&
+          err.status !== 401 &&
+          err.status !== 429;
 
-  let successCount = 0;
-  let failedCount = 0;
-  const remaining: QueuedMutation[] = [];
+        if (isPermanentClientError) {
+          await removeMutationById(item.id, scope);
+          failedCount++;
+          continue;
+        }
 
-  for (const item of queue) {
-    try {
-      if (item.type === 'rate') {
-        await apiClient.ratePaper(item.paperId, item.rating);
-      } else if (item.type === 'reading_list_add') {
-        await apiClient.addToReadingList(item.paperId);
-      } else if (item.type === 'reading_list_remove') {
-        await apiClient.removeFromReadingList(item.paperId);
-      } else if (item.type === 'add_note') {
-        await apiClient.addPaperNote(item.paperId, item.content, item.noteType);
+        // For transient/network errors, 401 auth issues, 429 rate limits, and 5xx errors:
+        // preserve order and stop flush so items can be retried later.
+        failedCount++;
+        break;
       }
-      successCount++;
-    } catch (e: any) {
-      console.warn(`Offline replay error for ${item.type} on ${item.paperId}:`, e);
-      failedCount++;
-      remaining.push(item);
     }
-  }
-
-  try {
-    await AsyncStorage.setItem(OFFLINE_QUEUE_STORAGE_KEY, JSON.stringify(remaining));
-  } catch (e) {
-    console.warn('Failed to update queue after flush:', e);
-  }
-
-  return {
-    total: queue.length,
-    successCount,
-    failedCount,
-    remainingCount: remaining.length,
-  };
+    return { total: queue.length, successCount, failedCount, remainingCount: (await getOfflineQueue(scope)).length };
+  })();
+  flushes.set(scope, flush);
+  void flush.finally(() => flushes.delete(scope)).catch(() => undefined);
+  return flush;
 }

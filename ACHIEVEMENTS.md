@@ -90,3 +90,14 @@ This document records the major architectural, algorithmic, infrastructure, and 
   * 196 passing automated unit and integration tests across core engine, database, web UI, mobile API, and tasks.
   * Strict linting and formatting enforced with `ruff`.
   * TypeScript compilation verified on the mobile application with zero type errors.
+
+
+## Mobile reliability and verification — 2026-10-14
+
+- Fixed real feed pagination and stale-response handling. The API reports stable totals/`has_more` within its 200-paper result window and includes high-star papers in the liked filter.
+- Preserved authentication through network outages; HTTP 401 invalidates the visible session. Server changes clear active credentials, and device token names are installation-specific.
+- Scoped offline caches/queues to server and user. Concurrent writes and replay preserve pending work; raw replay requests cannot silently requeue and discard actions. Reading lists, details and notes work from cached content, and mark-read can be queued.
+- Added note mutation IDs with a database uniqueness constraint and additive migration. Retrying after a lost response returns the existing note. Reading-list removal is also safe to replay.
+- Added error recovery screens, a render error boundary, screen interaction tests, coverage gates, and a real mobile-to-Flask/SQLite contract test in CI.
+- Verified Android JavaScript export and native prebuild. The release manifest explicitly supports HTTP home servers and disables app backup.
+- Documented key custody, release steps, data behavior, and remaining device/store verification in [mobile/RELEASE.md](mobile/RELEASE.md). No signed artifact or store release is claimed by these checks.

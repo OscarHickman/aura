@@ -172,7 +172,7 @@ def synthesize_related_work(
             + "\n\n".join(paper_summaries)
         )
 
-        result = _generate_generic_text(prompt)
+        result = _generate_generic_text(prompt, max_tokens=2500)
         if result and len(result.strip()) > 100:
             cleaned = result.strip()
             if cleaned.startswith("```latex"):

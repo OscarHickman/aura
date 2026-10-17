@@ -9,9 +9,11 @@ import {
   Dimensions,
   Alert,
 } from 'react-native';
-import { ThumbsUp, ThumbsDown, Bookmark, ExternalLink, Sparkles, RefreshCw, MessageSquare } from 'lucide-react-native';
+import { ThumbsUp, ThumbsDown, Bookmark, ExternalLink, Sparkles, RefreshCw, MessageSquare, RotateCcw } from 'lucide-react-native';
 import { theme } from '../constants/theme';
 import { api } from '../api/client';
+import { useFocusEffect } from '@react-navigation/native';
+import { RecoveryView } from '../components/RecoveryView';
 import { Paper } from '../types';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -21,35 +23,59 @@ interface TriageScreenProps {
 }
 
 export const TriageScreen: React.FC<TriageScreenProps> = ({ navigation }) => {
+  const [error, setError] = useState(false);
   const [papers, setPapers] = useState<Paper[]>([]);
   const [currentIndex, setCurrentIndex] = useState<number>(0);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isActing, setIsActing] = useState<boolean>(false);
+  const [lastAction, setLastAction] = useState<{
+    index: number;
+    paperId: string;
+    action: 'rate' | 'bookmark';
+    previousRating?: number | null;
+    previousInReadingList?: boolean;
+  } | null>(null);
 
   const loadPapers = useCallback(async () => {
     setIsLoading(true);
+    setError(false);
     try {
       const res = await api.getPapers({ filter: 'unrated', per_page: 40 });
       setPapers(res.papers || []);
       setCurrentIndex(0);
+      setLastAction(null);
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to load papers');
+      setError(true);
     } finally {
       setIsLoading(false);
     }
   }, []);
 
-  useEffect(() => {
-    loadPapers();
-  }, [loadPapers]);
+  useFocusEffect(
+    useCallback(() => {
+      // If we haven't loaded papers yet, load them
+      if (papers.length === 0 && !error) {
+        loadPapers();
+      }
+    }, [loadPapers, papers.length, error])
+  );
 
   const currentPaper = papers[currentIndex];
 
   const handleRate = async (rating: number) => {
     if (!currentPaper || isActing) return;
     setIsActing(true);
+    const paperId = currentPaper.arxiv_id;
+    const prevIdx = currentIndex;
+    const prevRating = currentPaper.rating;
     try {
-      await api.ratePaper(currentPaper.arxiv_id, rating);
+      await api.ratePaper(paperId, rating);
+      setLastAction({
+        index: prevIdx,
+        paperId,
+        action: 'rate',
+        previousRating: prevRating,
+      });
       setCurrentIndex((prev) => prev + 1);
     } catch (err: any) {
       Alert.alert('Rating Error', err.message);
@@ -58,18 +84,39 @@ export const TriageScreen: React.FC<TriageScreenProps> = ({ navigation }) => {
     }
   };
 
+  const handleUndo = async () => {
+    if (!lastAction || isActing) return;
+    setIsActing(true);
+    try {
+      if (lastAction.action === 'rate') {
+        // Revert rating to unrated (or previous rating)
+        await api.ratePaper(lastAction.paperId, lastAction.previousRating ?? 0);
+        setCurrentIndex(lastAction.index);
+        setLastAction(null);
+      }
+    } catch (err: any) {
+      Alert.alert('Undo Error', err.message);
+    } finally {
+      setIsActing(false);
+    }
+  };
+
   const handleToggleReadingList = async () => {
     if (!currentPaper || isActing) return;
     setIsActing(true);
+    const paperId = currentPaper.arxiv_id;
+    const wasInReadingList = Boolean(currentPaper.in_reading_list);
     try {
-      if (currentPaper.in_reading_list) {
-        await api.removeFromReadingList(currentPaper.arxiv_id);
-        currentPaper.in_reading_list = false;
+      if (wasInReadingList) {
+        await api.removeFromReadingList(paperId);
       } else {
-        await api.addToReadingList(currentPaper.arxiv_id);
-        currentPaper.in_reading_list = true;
+        await api.addToReadingList(paperId);
       }
-      setPapers([...papers]);
+      setPapers((prev) =>
+        prev.map((p, idx) =>
+          idx === currentIndex ? { ...p, in_reading_list: !wasInReadingList } : p
+        )
+      );
     } catch (err: any) {
       Alert.alert('Reading List Error', err.message);
     } finally {
@@ -85,6 +132,8 @@ export const TriageScreen: React.FC<TriageScreenProps> = ({ navigation }) => {
       </View>
     );
   }
+
+  if (error) return <RecoveryView onRetry={loadPapers} onSettings={() => navigation.navigate('SettingsTab')} />;
 
   if (!currentPaper || currentIndex >= papers.length) {
     return (
@@ -108,9 +157,31 @@ export const TriageScreen: React.FC<TriageScreenProps> = ({ navigation }) => {
     <View style={styles.container}>
       {/* Progress header */}
       <View style={styles.progressContainer}>
-        <Text style={styles.progressText}>
-          Card {currentIndex + 1} of {papers.length}
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+          <Text style={styles.progressText}>
+            Card {currentIndex + 1} of {papers.length}
+          </Text>
+          {lastAction && (
+            <TouchableOpacity
+              onPress={handleUndo}
+              disabled={isActing}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 4,
+                paddingHorizontal: 8,
+                paddingVertical: 4,
+                borderRadius: 6,
+                backgroundColor: theme.colors.surface,
+              }}
+            >
+              <RotateCcw size={14} color={theme.colors.primaryLight} />
+              <Text style={{ fontSize: theme.typography.xs, color: theme.colors.primaryLight, fontWeight: '600' }}>
+                Undo
+              </Text>
+            </TouchableOpacity>
+          )}
+        </View>
         <View style={styles.scoreBadge}>
           <Text style={styles.scoreText}>{scorePercent}% Match</Text>
         </View>
@@ -182,6 +253,7 @@ export const TriageScreen: React.FC<TriageScreenProps> = ({ navigation }) => {
             styles.bookmarkBtn,
             currentPaper.in_reading_list && styles.bookmarkBtnActive,
           ]}
+          accessibilityLabel={currentPaper.in_reading_list ? "Unsave paper" : "Save paper"}
           onPress={handleToggleReadingList}
           disabled={isActing}
         >
@@ -194,6 +266,7 @@ export const TriageScreen: React.FC<TriageScreenProps> = ({ navigation }) => {
         {/* Open Details / Ask */}
         <TouchableOpacity
           style={[styles.actionBtn, styles.detailBtn]}
+          accessibilityLabel="Read paper details"
           onPress={() => navigation.navigate('PaperDetail', { arxivId: currentPaper.arxiv_id })}
         >
           <MessageSquare size={22} color={theme.colors.primaryLight} />

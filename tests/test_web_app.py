@@ -795,17 +795,15 @@ class TestWebApp(unittest.TestCase):
 
     @patch("aura.embedder.embed_papers_batch")
     @patch("aura.fetcher.ArxivSource")
-    @patch("torch.sigmoid")
-    @patch("torch.tensor")
-    def test_extension_endpoints(self, mock_tensor, mock_sigmoid, mock_source_cls, mock_embed_batch):
+    def test_extension_endpoints(self, mock_source_cls, mock_embed_batch):
         # 1. Test check when paper exists in DB
         self.engine.db.get_paper.return_value = {"title": "Existing Paper", "summary": "A summary"}
         self.engine.db.get_latest_rating.return_value = 1
         self.engine.db.get_papers_with_embeddings.return_value = [("2401.00001", [0.1, 0.2, 0.3])]
         
         pref_model = Mock()
+        pref_model.predict.return_value = (0.92, 0.0)
         self.engine.get_user_preference_model.return_value = pref_model
-        mock_sigmoid.return_value.item.return_value = 0.92
         
         resp = self.client.get("/api/extension/check?arxiv_id=2401.00001")
         self.assertEqual(resp.status_code, 200)

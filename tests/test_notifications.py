@@ -52,17 +52,14 @@ class TestNotifications(unittest.TestCase):
 
     @patch("aura.notifications.send_slack_notification")
     @patch("aura.notifications.send_discord_notification")
-    @patch("torch.sigmoid")
-    @patch("torch.tensor")
-    def test_notify_high_scoring_papers(self, mock_tensor, mock_sigmoid, mock_discord, mock_slack):
+    def test_notify_high_scoring_papers(self, mock_discord, mock_slack):
         engine = Mock()
         engine.db.get_all_users.return_value = [{"id": 1, "email": "test@example.com"}]
         engine.db.get_papers_with_embeddings.return_value = [("2401.00001", [0.1, 0.2, 0.3])]
         
         pref_model = Mock()
+        pref_model.predict.return_value = (0.95, 0.0)
         engine.get_user_preference_model.return_value = pref_model
-        
-        mock_sigmoid.return_value.item.return_value = 0.95
         
         new_papers = [{"arxiv_id": "2401.00001", "title": "A Great Astro Paper"}]
         config = {

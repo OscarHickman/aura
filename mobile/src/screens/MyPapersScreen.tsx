@@ -23,6 +23,7 @@ import {
 } from 'lucide-react-native';
 import { theme } from '../constants/theme';
 import { api } from '../api/client';
+import { RecoveryView } from '../components/RecoveryView';
 import { MyPaper, CitationEvent } from '../types';
 
 interface MyPapersScreenProps {
@@ -30,6 +31,7 @@ interface MyPapersScreenProps {
 }
 
 export const MyPapersScreen: React.FC<MyPapersScreenProps> = ({ navigation }) => {
+  const [error, setError] = useState(false);
   const [papers, setPapers] = useState<MyPaper[]>([]);
   const [citationEvents, setCitationEvents] = useState<CitationEvent[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -44,6 +46,7 @@ export const MyPapersScreen: React.FC<MyPapersScreenProps> = ({ navigation }) =>
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
   const fetchData = useCallback(async () => {
+    setError(false);
     try {
       const [papersRes, eventsRes] = await Promise.all([
         api.getMyPapers(),
@@ -52,7 +55,7 @@ export const MyPapersScreen: React.FC<MyPapersScreenProps> = ({ navigation }) =>
       setPapers(papersRes.papers || []);
       setCitationEvents(eventsRes.events || []);
     } catch (err: any) {
-      console.warn('Failed to fetch My Papers data:', err);
+      setError(true);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -244,6 +247,8 @@ export const MyPapersScreen: React.FC<MyPapersScreenProps> = ({ navigation }) =>
       </View>
     );
   }
+
+  if (error) return <RecoveryView onRetry={fetchData} onSettings={() => navigation.navigate('Root', { screen: 'SettingsTab' })} />;
 
   return (
     <View style={styles.container}>

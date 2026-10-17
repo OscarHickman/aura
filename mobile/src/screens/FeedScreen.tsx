@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,8 @@ import {
 import { Search, Sparkles, Bookmark, ThumbsUp, ThumbsDown, ChevronRight } from 'lucide-react-native';
 import { theme } from '../constants/theme';
 import { api } from '../api/client';
+import { useFocusEffect } from '@react-navigation/native';
+import { RecoveryView } from '../components/RecoveryView';
 import { Paper } from '../types';
 
 interface FeedScreenProps {
@@ -24,45 +26,60 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ navigation }) => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
-  const [page, setPage] = useState<number>(1);
+  const page = useRef(0);
+  const requestId = useRef(0);
+  const loading = useRef(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [submittedQuery, setSubmittedQuery] = useState('');
 
-  const fetchPapers = useCallback(async (reset: boolean = false) => {
-    if (reset) {
-      setIsLoading(true);
-      setPage(1);
-    }
+  const fetchPapers = useCallback(async (reset = false) => {
+    if (!reset && (loading.current || !hasMore)) return;
+    const id = ++requestId.current;
+    loading.current = true;
+    if (reset) { setIsLoading(true); setPapers([]); }
+    else setLoadingMore(true);
+    setError(null);
+    const currentPage = reset ? 1 : page.current + 1;
     try {
-      const currentPage = reset ? 1 : page;
       const res = await api.getPapers({
-        filter: searchQuery ? undefined : filter,
-        q: searchQuery || undefined,
+        filter: submittedQuery ? undefined : filter,
+        q: submittedQuery || undefined,
         page: currentPage,
         per_page: 25,
       });
-      if (reset) {
-        setPapers(res.papers || []);
-      } else {
-        setPapers((prev) => [...prev, ...(res.papers || [])]);
-      }
-    } catch (e) {
-      console.warn('Failed to load feed:', e);
+      if (id !== requestId.current) return;
+      const incoming = res.papers || [];
+      setPapers(prev => reset ? incoming : [...new Map([...prev, ...incoming].map(p => [p.arxiv_id, p])).values()]);
+      page.current = currentPage;
+      // Older servers report only the number ranked so far; a full page may
+      // still have a successor. New servers provide an explicit has_more.
+      setHasMore(res.has_more ?? incoming.length === 25);
+    } catch {
+      if (id === requestId.current) setError('Check your connection and your AURA server, then try again.');
     } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
+      if (id === requestId.current) {
+        loading.current = false;
+        setIsLoading(false);
+        setLoadingMore(false);
+        setIsRefreshing(false);
+      }
     }
-  }, [filter, searchQuery, page]);
+  }, [filter, submittedQuery, hasMore]);
 
-  useEffect(() => {
-    fetchPapers(true);
-  }, [filter]);
+  const fetchRef = useRef(fetchPapers);
+  fetchRef.current = fetchPapers;
+  useFocusEffect(useCallback(() => {
+    void fetchRef.current(true);
+    return () => { requestId.current++; loading.current = false; };
+  }, [filter, submittedQuery]));
 
-  const onRefresh = () => {
-    setIsRefreshing(true);
-    fetchPapers(true);
-  };
-
+  const onRefresh = () => { setIsRefreshing(true); void fetchPapers(true); };
   const handleSearchSubmit = () => {
-    fetchPapers(true);
+    const query = searchQuery.trim();
+    if (query === submittedQuery) void fetchPapers(true);
+    else setSubmittedQuery(query);
   };
 
   const handleRate = async (arxivId: string, rating: number) => {
@@ -72,7 +89,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ navigation }) => {
         prev.map((p) => (p.arxiv_id === arxivId ? { ...p, rating } : p))
       );
     } catch (e) {
-      console.warn('Rate error:', e);
+      setError('Could not save your rating. Please try again.');
     }
   };
 
@@ -89,7 +106,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ navigation }) => {
         )
       );
     } catch (e) {
-      console.warn('Reading list error:', e);
+      setError('Could not update your reading list. Please try again.');
     }
   };
 
@@ -144,7 +161,8 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ navigation }) => {
           <View style={styles.actions}>
             <TouchableOpacity
               style={styles.actionIcon}
-              onPress={() => handleRate(item.arxiv_id, -1)}
+              accessibilityLabel="Dislike paper"
+              onPress={() => handleRate(item.arxiv_id, 0)}
             >
               <ThumbsDown
                 size={18}
@@ -154,6 +172,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ navigation }) => {
 
             <TouchableOpacity
               style={styles.actionIcon}
+              accessibilityLabel="Like paper"
               onPress={() => handleRate(item.arxiv_id, 1)}
             >
               <ThumbsUp
@@ -164,6 +183,7 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ navigation }) => {
 
             <TouchableOpacity
               style={styles.actionIcon}
+              accessibilityLabel={item.in_reading_list ? "Unsave paper" : "Save paper"}
               onPress={() => handleToggleReadingList(item.arxiv_id, item.in_reading_list)}
             >
               <Bookmark
@@ -212,13 +232,20 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ navigation }) => {
         ))}
       </View>
 
+      {error && papers.length > 0 && <TouchableOpacity onPress={() => fetchPapers(false)}><Text style={styles.emptyText}>{error} Tap to retry.</Text></TouchableOpacity>}
       {/* Feed list */}
       {isLoading ? (
         <View style={styles.centerContainer}>
           <ActivityIndicator size="large" color={theme.colors.primary} />
         </View>
+      ) : error && papers.length === 0 ? (
+        <RecoveryView onRetry={() => fetchPapers(true)} onSettings={() => navigation.navigate('SettingsTab')} />
       ) : (
         <FlatList
+          testID="paper-feed"
+          onEndReached={() => { if (!error) void fetchPapers(false); }}
+          onEndReachedThreshold={0.4}
+          ListFooterComponent={loadingMore ? <ActivityIndicator /> : null}
           data={papers}
           keyExtractor={(item) => item.arxiv_id}
           renderItem={renderItem}

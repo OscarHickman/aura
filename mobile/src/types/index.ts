@@ -29,6 +29,8 @@ export interface Paper {
 
 export interface Note {
   id: number;
+  pending?: boolean;
+  client_mutation_id?: string;
   content: string;
   arxiv_id?: string;
   note_type?: string;
@@ -82,6 +84,7 @@ export interface PapersResponse {
   papers: Paper[];
   page: number;
   per_page: number;
+  has_more?: boolean;
   total: number;
   filter: string;
 }

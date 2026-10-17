@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,10 +7,13 @@ import {
   TouchableOpacity,
   RefreshControl,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import { Bookmark, Check, Trash2, ChevronRight, BookOpen } from 'lucide-react-native';
 import { theme } from '../constants/theme';
 import { api } from '../api/client';
+import { useFocusEffect } from '@react-navigation/native';
+import { RecoveryView } from '../components/RecoveryView';
 import { Paper } from '../types';
 
 interface ReadingListScreenProps {
@@ -18,27 +21,37 @@ interface ReadingListScreenProps {
 }
 
 export const ReadingListScreen: React.FC<ReadingListScreenProps> = ({ navigation }) => {
+  const requestId = useRef(0);
+  const [error, setError] = useState(false);
+  const [offline, setOffline] = useState(false);
   const [papers, setPapers] = useState<Paper[]>([]);
   const [activeTab, setActiveTab] = useState<'unread' | 'read'>('unread');
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
   const fetchReadingList = useCallback(async () => {
+    const id = ++requestId.current;
     setIsLoading(true);
+    setError(false);
     try {
       const res = await api.getReadingList(activeTab);
+      if (id !== requestId.current) return;
       setPapers(res.papers || []);
+      setOffline(!!res.offline);
     } catch (e) {
-      console.warn('Failed to fetch reading list:', e);
+      if (id === requestId.current) setError(true);
     } finally {
-      setIsLoading(false);
-      setIsRefreshing(false);
+      if (id === requestId.current) {
+        setIsLoading(false);
+        setIsRefreshing(false);
+      }
     }
   }, [activeTab]);
 
-  useEffect(() => {
-    fetchReadingList();
-  }, [fetchReadingList]);
+  useFocusEffect(useCallback(() => {
+    void fetchReadingList();
+    return () => { requestId.current++; };
+  }, [fetchReadingList]));
 
   const onRefresh = () => {
     setIsRefreshing(true);
@@ -50,7 +63,7 @@ export const ReadingListScreen: React.FC<ReadingListScreenProps> = ({ navigation
       await api.markAsRead(arxivId);
       setPapers((prev) => prev.filter((p) => p.arxiv_id !== arxivId));
     } catch (e) {
-      console.warn('Mark read error:', e);
+      Alert.alert('Could not mark as read', 'Your change was not saved. Please try again.');
     }
   };
 
@@ -59,7 +72,7 @@ export const ReadingListScreen: React.FC<ReadingListScreenProps> = ({ navigation
       await api.removeFromReadingList(arxivId);
       setPapers((prev) => prev.filter((p) => p.arxiv_id !== arxivId));
     } catch (e) {
-      console.warn('Remove error:', e);
+      Alert.alert('Could not remove paper', 'Your change was not saved. Please try again.');
     }
   };
 
@@ -82,6 +95,7 @@ export const ReadingListScreen: React.FC<ReadingListScreenProps> = ({ navigation
         {activeTab === 'unread' && (
           <TouchableOpacity
             style={[styles.actionBtn, styles.checkBtn]}
+            accessibilityLabel="Mark as read"
             onPress={() => handleMarkAsRead(item.arxiv_id)}
           >
             <Check size={16} color={theme.colors.success} />
@@ -90,6 +104,7 @@ export const ReadingListScreen: React.FC<ReadingListScreenProps> = ({ navigation
 
         <TouchableOpacity
           style={[styles.actionBtn, styles.deleteBtn]}
+          accessibilityLabel="Remove saved paper"
           onPress={() => handleRemove(item.arxiv_id)}
         >
           <Trash2 size={16} color={theme.colors.danger} />
@@ -122,10 +137,13 @@ export const ReadingListScreen: React.FC<ReadingListScreenProps> = ({ navigation
         </TouchableOpacity>
       </View>
 
+      {offline && <Text style={styles.emptySubtitle}>Offline · Showing saved papers</Text>}
       {isLoading ? (
         <View style={styles.centerContainer}>
           <ActivityIndicator size="large" color={theme.colors.primary} />
         </View>
+      ) : error ? (
+        <RecoveryView onRetry={fetchReadingList} onSettings={() => navigation.navigate('SettingsTab')} />
       ) : (
         <FlatList
           data={papers}

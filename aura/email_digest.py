@@ -801,7 +801,7 @@ def _collect_network_papers(engine, user_id: int = 1, limit: int = 5) -> list[di
         LIMIT ?
     """
     try:
-        rows = engine.db.conn.execute(query, [1] + author_tags + [limit]).fetchall()
+        rows = engine.db.conn.execute(query, [user_id] + author_tags + [limit]).fetchall()
         papers = [engine.db._row_to_dict(row) for row in rows]
         seen = set()
         deduped = []
@@ -840,7 +840,7 @@ def _collect_group_papers(engine, user_id: int = 1, limit: int = 5) -> list[dict
         LIMIT ?
     """
     try:
-        rows = engine.db.conn.execute(query, [1] + author_tags + [limit]).fetchall()
+        rows = engine.db.conn.execute(query, [user_id] + author_tags + [limit]).fetchall()
         papers = [engine.db._row_to_dict(row) for row in rows]
         seen = set()
         deduped = []
@@ -886,4 +886,15 @@ def _collect_citing_papers(engine, user_id: int = 1, limit: int = 5) -> list[dic
     except Exception as e:
         logger.error(f"Failed to collect citing papers for email: {e}")
         return []
+
+
+def send_daily_digest(engine, config: dict) -> dict:
+    """Send the daily digest email using the active engine and config dictionary."""
+    return send_top_recommendations_email(
+        data_dir=str(config.get("data_dir", getattr(engine, "data_dir", "data"))),
+        categories=config.get("categories", getattr(engine, "categories", ["astro-ph.CO", "astro-ph.GA"])),
+        embedding_model=config.get("embedding_model", getattr(engine, "embedding_model", "all-MiniLM-L6-v2")),
+        top_n=int(config.get("email", {}).get("top_n", 5)),
+    )
+
 

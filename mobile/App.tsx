@@ -1,4 +1,6 @@
 import React from 'react';
+import { ActivityIndicator, View } from 'react-native';
+import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer, DarkTheme } from '@react-navigation/native';
@@ -7,7 +9,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Layers, Sparkles, Bookmark, Settings as SettingsIcon } from 'lucide-react-native';
 
 import { theme } from './src/constants/theme';
-import { AuthProvider } from './src/context/AuthContext';
+import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { TriageScreen } from './src/screens/TriageScreen';
 import { FeedScreen } from './src/screens/FeedScreen';
 import { ReadingListScreen } from './src/screens/ReadingListScreen';
@@ -93,11 +95,12 @@ function BottomTabs() {
   );
 }
 
-export default function App() {
+function AppNavigation() {
+  const { isLoading, isAuthenticated, serverUrl, token } = useAuth();
+  if (isLoading) return <View style={{ flex: 1, justifyContent: 'center', backgroundColor: theme.colors.background }}><ActivityIndicator /></View>;
   return (
-    <SafeAreaProvider>
-      <AuthProvider>
-        <NavigationContainer theme={navTheme}>
+        <NavigationContainer theme={navTheme} key={`${serverUrl}:${token}`}>
+
           <StatusBar style="light" />
           <Stack.Navigator
             screenOptions={{
@@ -111,6 +114,7 @@ export default function App() {
               headerBackVisible: true,
             }}
           >
+            {!isAuthenticated ? <Stack.Screen name="Connect" component={SettingsScreen} options={{ title: 'Connect to AURA' }} /> : <>
             <Stack.Screen
               name="Root"
               component={BottomTabs}
@@ -126,9 +130,12 @@ export default function App() {
               component={MyPapersScreen}
               options={{ title: 'My Publications' }}
             />
+            </>}
           </Stack.Navigator>
         </NavigationContainer>
-      </AuthProvider>
-    </SafeAreaProvider>
   );
+}
+
+export default function App() {
+  return <SafeAreaProvider><ErrorBoundary><AuthProvider><AppNavigation /></AuthProvider></ErrorBoundary></SafeAreaProvider>;
 }

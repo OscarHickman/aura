@@ -315,7 +315,7 @@
                       "type": "array",
                       "items": { "$ref": "#/components/schemas/Paper" }
                     },
-                    "total": { "type": "integer", "example": 100 },
+                    "total": { "type": "integer", "example": 100, "description": "Number of matches in the bounded 200-paper result window, before pagination." },
                     "page": { "type": "integer", "example": 1 },
                     "per_page": { "type": "integer", "example": 20 },
                     "has_more": { "type": "boolean", "example": true }
@@ -739,6 +739,11 @@
                   "content": {
                     "type": "string",
                     "example": "Key methodology references SBI pipelines."
+                  },
+                  "note_type": { "type": "string", "enum": ["general", "note", "critique", "idea", "summary"] },
+                  "client_mutation_id": {
+                    "type": "string", "minLength": 1, "maxLength": 128,
+                    "description": "Optional unique action ID. Replaying the same note with this ID returns its existing ID; reuse for different content returns 409. Scoped to the authenticated user."
                   }
                 }
               }
@@ -747,8 +752,10 @@
         },
         "responses": {
           "200": {
-            "description": "Note added successfully"
-          }
+            "description": "Note added successfully (or existing note returned on replay)"
+          },
+          "400": { "description": "Invalid content, note type, or mutation ID" },
+          "409": { "description": "Mutation ID already used for a different note" }
         }
       }
     },

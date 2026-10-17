@@ -667,22 +667,36 @@ def _register_routes(app: Flask) -> None:
         followed_set = {a["name"].lower().strip() for a in tracked_authors_list if a["relationship"] == "follow"}
         collab_set = {a["name"].lower().strip() for a in tracked_authors_list if a["relationship"] == "collaborator"}
 
-        for p in paper_list:
-            if "rating" not in p:
-                p["rating"] = engine.db.get_latest_rating(p["arxiv_id"], user_id=uid)
-            p["tags"] = engine.db.get_paper_tags(p["arxiv_id"], user_id=uid)
-            p["collections"] = engine.db.get_paper_collections(p["arxiv_id"], user_id=uid)
-            p["in_reading_list"] = engine.db.is_in_reading_list(p["arxiv_id"], user_id=uid)
-            p["cites_user_work"] = p["arxiv_id"] in citing_set if not isinstance(citing_set, Mock) else False
-            
-            p["from_followed_author"] = False
-            p["from_collaborator"] = False
-            for author in p.get("authors", []):
-                author_lower = author.strip().lower()
-                if author_lower in followed_set:
-                    p["from_followed_author"] = True
-                if author_lower in collab_set:
-                    p["from_collaborator"] = True
+        if engine and paper_list:
+            from unittest.mock import Mock
+            enriched = None
+            if hasattr(engine.db, "enrich_papers_batch"):
+                batch_res = engine.db.enrich_papers_batch(paper_list, user_id=uid)
+                if isinstance(batch_res, list) and not isinstance(batch_res, Mock):
+                    enriched = batch_res
+            if enriched is None:
+                enriched = []
+                for p in paper_list:
+                    p_copy = dict(p) if isinstance(p, dict) else {}
+                    aid = p_copy.get("arxiv_id", "")
+                    if "rating" not in p_copy:
+                        p_copy["rating"] = engine.db.get_latest_rating(aid, user_id=uid)
+                    p_copy["tags"] = engine.db.get_paper_tags(aid, user_id=uid)
+                    p_copy["collections"] = engine.db.get_paper_collections(aid, user_id=uid)
+                    p_copy["in_reading_list"] = engine.db.is_in_reading_list(aid, user_id=uid)
+                    enriched.append(p_copy)
+            paper_list = enriched
+
+            for p in paper_list:
+                p["cites_user_work"] = p.get("arxiv_id") in citing_set if not isinstance(citing_set, Mock) else False
+                p["from_followed_author"] = False
+                p["from_collaborator"] = False
+                for author in p.get("authors", []):
+                    author_lower = author.strip().lower()
+                    if author_lower in followed_set:
+                        p["from_followed_author"] = True
+                    if author_lower in collab_set:
+                        p["from_collaborator"] = True
 
         categories = app.config.get("AI_PAPERS", {}).get("categories", [])
         collections = engine.db.get_collections(user_id=uid) if engine else []
@@ -739,20 +753,32 @@ def _register_routes(app: Flask) -> None:
             papers = eng.db.get_collection_papers(collection_id, limit=API_RESULT_WINDOW, user_id=uid)
             return papers, f"collection: {collection_id}"
         if filter_type in ("liked", "disliked"):
-            wanted = 1 if filter_type == "liked" else 0
-            rated = eng.db.get_papers(limit=API_RESULT_WINDOW, offset=0, rated_only=True)
-            papers = [
-                {**p, "rating": eng.db.get_latest_rating(p["arxiv_id"], user_id=uid), "score": p.get("score", 0)}
-                for p in rated
-            ]
-            return [p for p in papers if p["rating"] == wanted], filter_type
+            from unittest.mock import Mock
+            wanted = (1, 4, 5) if filter_type == "liked" else (-1, 0, 2)
+            rated = eng.db.get_papers(limit=API_RESULT_WINDOW, offset=0, rated_only=True, user_id=uid)
+            if not isinstance(rated, list) or isinstance(rated, Mock):
+                rated = []
+            rated_papers: list[dict] | None = None
+            if hasattr(eng.db, "enrich_papers_batch"):
+                batch_res = eng.db.enrich_papers_batch(rated, user_id=uid)
+                if isinstance(batch_res, list) and not isinstance(batch_res, Mock):
+                    rated_papers = batch_res
+            if rated_papers is None:
+                rated_papers = [
+                    {**p, "rating": eng.db.get_latest_rating(p["arxiv_id"], user_id=uid), "score": p.get("score", 0)}
+                    for p in rated
+                ]
+            for p in rated_papers:
+                p["score"] = p.get("score", 0.0)
+            return [p for p in rated_papers if p.get("rating") in wanted], filter_type
         return eng.get_recommendations(
-            limit=per_page * page, unrated_only=(filter_type == "unrated"), user_id=uid
+            limit=API_RESULT_WINDOW, unrated_only=(filter_type == "unrated"), user_id=uid
         ), filter_type
 
     @app.route("/api/papers", methods=["GET"])
     @login_required
     def api_papers():
+        from unittest.mock import Mock
         uid = _get_current_user_id()
         page = max(request.args.get("page", 1, type=int) or 1, 1)
         per_page = min(max(request.args.get("per_page", 30, type=int) or 30, 1), API_MAX_PER_PAGE)
@@ -772,16 +798,34 @@ def _register_routes(app: Flask) -> None:
             if page_papers else set()
         )
 
+        batch_enriched = None
+        if hasattr(engine.db, "enrich_papers_batch"):
+            res = engine.db.enrich_papers_batch(page_papers, user_id=uid)
+            if isinstance(res, list) and not isinstance(res, Mock):
+                batch_enriched = res
+        if batch_enriched is None:
+            batch_enriched = []
+            for p in page_papers:
+                p_copy = dict(p) if isinstance(p, dict) else {}
+                aid = p_copy.get("arxiv_id", "")
+                batch_enriched.append({
+                    **p_copy,
+                    "rating": p_copy.get("rating") if "rating" in p_copy else engine.db.get_latest_rating(aid, user_id=uid),
+                    "tags": engine.db.get_paper_tags(aid, user_id=uid),
+                    "collections": engine.db.get_paper_collections(aid, user_id=uid),
+                    "in_reading_list": bool(engine.db.is_in_reading_list(aid, user_id=uid)),
+                })
+
         enriched = []
-        for p in page_papers:
+        for p in batch_enriched:
             authors = {a.strip().lower() for a in p.get("authors", [])}
             enriched.append({
                 **p,
-                "rating": p["rating"] if "rating" in p else engine.db.get_latest_rating(p["arxiv_id"], user_id=uid),
-                "tags": engine.db.get_paper_tags(p["arxiv_id"], user_id=uid),
-                "collections": engine.db.get_paper_collections(p["arxiv_id"], user_id=uid),
-                "in_reading_list": bool(engine.db.is_in_reading_list(p["arxiv_id"], user_id=uid)),
-                "cites_user_work": p["arxiv_id"] in citing,
+                "rating": p.get("rating"),
+                "tags": p.get("tags", []),
+                "collections": p.get("collections", []),
+                "in_reading_list": bool(p.get("in_reading_list", False)),
+                "cites_user_work": p.get("arxiv_id") in citing,
                 "from_followed_author": bool(authors & followed),
                 "from_collaborator": bool(authors & collaborators),
             })
@@ -791,6 +835,7 @@ def _register_routes(app: Flask) -> None:
             "page": page,
             "per_page": per_page,
             "total": len(paper_list),
+            "has_more": start + per_page < len(paper_list),
             "filter": filter_type,
         })
 
@@ -1152,15 +1197,29 @@ def _register_routes(app: Flask) -> None:
         if not engine:
             return jsonify({"error": "Engine not initialized"}), 500
             
+        stream = True
         if request.method == "POST":
-            data = request.get_json() or {}
-            question = data.get("question", "").strip()
+            data = request.get_json(silent=True) or {}
+            question = (data.get("question") or "").strip()
+            if "stream" in data:
+                stream = bool(data.get("stream"))
+            elif "text/event-stream" not in request.headers.get("Accept", ""):
+                stream = False
         else:
             question = request.args.get("question", "").strip()
+            if request.args.get("stream", "").lower() in ("0", "false"):
+                stream = False
             
         if not question:
             return jsonify({"error": "Question is required."}), 400
             
+        if not stream:
+            try:
+                chunks = list(engine.ask_paper_question(arxiv_id, question))
+                return jsonify({"arxiv_id": arxiv_id, "answer": "".join(chunks)})
+            except Exception as e:
+                return jsonify({"error": str(e)}), 500
+
         from flask import Response
         import json
         def generate():
@@ -1183,14 +1242,25 @@ def _register_routes(app: Flask) -> None:
     @login_required
     def add_paper_note(arxiv_id):
         uid = _get_current_user_id()
-        data = request.get_json() or {}
-        content = sanitise_input(data.get("content", ""))
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict) or not isinstance(data.get("content"), str):
+            return jsonify({"error": "content must be a string"}), 400
+        content = sanitise_input(data["content"])
         if not content:
             return jsonify({"error": "content is required"}), 400
         note_type = data.get("note_type")
+        if note_type is not None and (not isinstance(note_type, str) or note_type.lower() not in ("general", "note", "critique", "idea", "summary")):
+            return jsonify({"error": "invalid note_type"}), 400
         if note_type and note_type.lower() not in ("general", "note") and not content.lower().startswith(f"[{note_type.lower()}]"):
             content = f"[{note_type.capitalize()}] {content}"
-        note_id = engine.db.add_note(arxiv_id, content, user_id=uid) if engine else None
+        mutation_id = data.get("client_mutation_id")
+        if mutation_id is not None and (not isinstance(mutation_id, str) or not 1 <= len(mutation_id) <= 128):
+            return jsonify({"error": "client_mutation_id must be a string of 1-128 characters"}), 400
+        try:
+            kwargs = {"client_mutation_id": mutation_id} if mutation_id else {}
+            note_id = engine.db.add_note(arxiv_id, content, user_id=uid, **kwargs) if engine else None
+        except ValueError:
+            return jsonify({"error": "client_mutation_id was already used for a different note"}), 409
         if note_id is None:
             return jsonify({"error": "failed to add note"}), 500
         return jsonify({"status": "ok", "id": note_id})
@@ -1441,6 +1511,8 @@ def _register_routes(app: Flask) -> None:
     @app.route("/api/fetch", methods=["POST"])
     @login_required
     def fetch_papers():
+        if not current_user.is_admin:
+            return jsonify({"error": "Administrator access required"}), 403
         data = request.get_json() or {}
         max_results = data.get("max_results", 200)
         days_back = data.get("days_back", 2)
@@ -1454,6 +1526,8 @@ def _register_routes(app: Flask) -> None:
     @app.route("/api/summarize", methods=["POST"])
     @login_required
     def summarize_papers():
+        if not current_user.is_admin:
+            return jsonify({"error": "Administrator access required"}), 403
         data = request.get_json() or {}
         limit = data.get("limit", 20)
         only_missing = data.get("only_missing", False)
@@ -1487,7 +1561,6 @@ def _register_routes(app: Flask) -> None:
 
     @app.route("/api/papers/upload", methods=["POST"])
     @login_required
-    @csrf.exempt
     def upload_drag_drop_papers():
         """Upload BibTeX, PDF, or text files to scan key details and save papers for later."""
         if not engine:
@@ -2059,6 +2132,11 @@ def _register_routes(app: Flask) -> None:
                 if engine:
                     engine.db.update_user(uid, digest_frequency=freq)
 
+            # Everything below mutates the server-wide config (SMTP, API keys, categories).
+            if not current_user.is_admin:
+                flash("Digest preference updated. Only administrators can change server settings.", "info")
+                return redirect(url_for("settings"))
+
             config = app.config.get("AI_PAPERS", {})
 
             # Categories
@@ -2144,9 +2222,10 @@ def _register_routes(app: Flask) -> None:
 
     @app.route("/api/daily-job/run", methods=["POST"])
     @login_required
-    @csrf.exempt
     def run_daily_job_now():
         """Manually trigger the daily server job back-to-front."""
+        if not current_user.is_admin:
+            return jsonify({"error": "Administrator access required"}), 403
         if not engine:
             return jsonify({"error": "Engine not initialized"}), 500
 
@@ -2373,7 +2452,8 @@ def _register_routes(app: Flask) -> None:
             flash("Failed to delete event.", "danger")
         return redirect(url_for("settings_calendar"))
 
-    @app.route("/unsubscribe/<token>")
+    @app.route("/unsubscribe/<token>", methods=["GET", "POST"])
+    @csrf.exempt
     def unsubscribe(token):
         if not engine:
             return "Engine not initialized", 500
@@ -2384,31 +2464,32 @@ def _register_routes(app: Flask) -> None:
         # Turn off digest frequency
         engine.db.update_user(user_record["id"], digest_frequency="off")
         
-        html = f"""
+        template_str = """
         <html>
         <head>
             <title>Unsubscribed</title>
             <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
             <style>
-                body {{ background: #0f172a; color: #f8fafc; font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }}
-                .card {{ background: #1e293b; border: 1px solid #334155; padding: 2.5rem; border-radius: 12px; max-width: 450px; width: 100%; text-align: center; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06); }}
-                h2 {{ margin-bottom: 1rem; color: #38bdf8; }}
-                p {{ margin-bottom: 2rem; color: #94a3b8; font-size: 0.95rem; line-height: 1.5; }}
+                body { background: #0f172a; color: #f8fafc; font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+                .card { background: #1e293b; border: 1px solid #334155; padding: 2.5rem; border-radius: 12px; max-width: 450px; width: 100%; text-align: center; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06); }
+                h2 { margin-bottom: 1rem; color: #38bdf8; }
+                p { margin-bottom: 2rem; color: #94a3b8; font-size: 0.95rem; line-height: 1.5; }
             </style>
         </head>
         <body>
             <div class="card">
                 <h2>Unsubscribed Successfully</h2>
-                <p>You have been unsubscribed from the AURA daily digest emails for <strong>{user_record["email"]}</strong>.</p>
+                <p>You have been unsubscribed from the AURA daily digest emails for <strong>{{ user_email }}</strong>.</p>
                 <a href="/login" class="btn btn-primary w-100">Go to Sign in</a>
             </div>
         </body>
         </html>
         """
         from flask import render_template_string
-        return render_template_string(html)
+        return render_template_string(template_str, user_email=user_record["email"])
 
-    @app.route("/rate-direct")
+    @app.route("/rate-direct", methods=["GET", "POST"])
+    @csrf.exempt
     def rate_direct():
         if not engine:
             return "Engine not initialized", 500
@@ -2445,27 +2526,27 @@ def _register_routes(app: Flask) -> None:
         rating_str = "👍 Thumbs Up" if rating == 1 else "👎 Thumbs Down"
         badge_color = "#2e7d32" if rating == 1 else "#c62828"
         
-        html = f"""
+        template_str = """
         <html>
         <head>
             <title>Feedback Received</title>
             <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
             <style>
-                body {{ background: #0f172a; color: #f8fafc; font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }}
-                .card {{ background: #1e293b; border: 1px solid #334155; padding: 2.5rem; border-radius: 12px; max-width: 550px; width: 100%; text-align: center; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06); }}
-                h2 {{ margin-bottom: 1.5rem; color: #38bdf8; }}
-                .paper-box {{ background: #0f172a; border: 1px solid #1e293b; padding: 1.25rem; border-radius: 8px; margin-bottom: 1.5rem; text-align: left; }}
-                .paper-title {{ font-weight: 600; font-size: 1.05rem; margin-bottom: 0.5rem; color: #f8fafc; }}
-                .badge-rating {{ display: inline-block; padding: 0.35em 0.65em; font-size: .75em; font-weight: 700; line-height: 1; text-align: center; white-space: nowrap; vertical-align: baseline; border-radius: 0.375rem; background-color: {badge_color}; color: #fff; }}
-                p.info {{ margin-bottom: 2rem; color: #94a3b8; font-size: 0.95rem; line-height: 1.5; }}
+                body { background: #0f172a; color: #f8fafc; font-family: sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+                .card { background: #1e293b; border: 1px solid #334155; padding: 2.5rem; border-radius: 12px; max-width: 550px; width: 100%; text-align: center; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06); }
+                h2 { margin-bottom: 1.5rem; color: #38bdf8; }
+                .paper-box { background: #0f172a; border: 1px solid #1e293b; padding: 1.25rem; border-radius: 8px; margin-bottom: 1.5rem; text-align: left; }
+                .paper-title { font-weight: 600; font-size: 1.05rem; margin-bottom: 0.5rem; color: #f8fafc; }
+                .badge-rating { display: inline-block; padding: 0.35em 0.65em; font-size: .75em; font-weight: 700; line-height: 1; text-align: center; white-space: nowrap; vertical-align: baseline; border-radius: 0.375rem; background-color: {{ badge_color }}; color: #fff; }
+                p.info { margin-bottom: 2rem; color: #94a3b8; font-size: 0.95rem; line-height: 1.5; }
             </style>
         </head>
         <body>
             <div class="card">
                 <h2>Feedback Received</h2>
                 <div class="paper-box">
-                    <div class="paper-title">{paper_title}</div>
-                    <span class="badge-rating">{rating_str}</span>
+                    <div class="paper-title">{{ paper_title }}</div>
+                    <span class="badge-rating">{{ rating_str }}</span>
                 </div>
                 <p class="info">Thank you! Your feedback has been recorded, and AURA's recommendation models have been updated in real-time.</p>
                 <a href="/" class="btn btn-primary w-100">Go to Dashboard</a>
@@ -2474,7 +2555,12 @@ def _register_routes(app: Flask) -> None:
         </html>
         """
         from flask import render_template_string
-        return render_template_string(html)
+        return render_template_string(
+            template_str,
+            paper_title=paper_title,
+            rating_str=rating_str,
+            badge_color=badge_color,
+        )
 
     @app.route("/api/integrations/slack/command", methods=["POST"])
     @csrf.exempt
@@ -2547,6 +2633,7 @@ def _register_routes(app: Flask) -> None:
             })
 
     @app.route("/api/extension/check")
+    @login_required
     def extension_check():
         arxiv_id = request.args.get("arxiv_id")
         if not arxiv_id:
@@ -2557,6 +2644,12 @@ def _register_routes(app: Flask) -> None:
             
         uid = _get_current_user_id()
         
+        def _score_embedding(emb) -> float:
+            import numpy as np
+            pref_model = engine.get_user_preference_model(uid)
+            pred_score, _ = pref_model.predict(np.asarray(emb, dtype=np.float32), num_samples=1)
+            return float(pred_score)
+
         # Check database
         paper = engine.db.get_paper(arxiv_id)
         if paper:
@@ -2566,11 +2659,7 @@ def _register_routes(app: Flask) -> None:
             score = 0.5
             if papers_emb:
                 _, embedding = papers_emb[0]
-                import torch
-                pref_model = engine.get_user_preference_model(uid)
-                with torch.no_grad():
-                    emb_t = torch.tensor(embedding, dtype=torch.float32).unsqueeze(0)
-                    score = float(torch.sigmoid(pref_model(emb_t)).item())
+                score = _score_embedding(embedding)
                     
             return jsonify({
                 "exists": True,
@@ -2592,11 +2681,7 @@ def _register_routes(app: Flask) -> None:
             
             score = 0.5
             if len(embeddings) > 0:
-                import torch
-                pref_model = engine.get_user_preference_model(uid)
-                with torch.no_grad():
-                    emb_t = torch.tensor(embeddings[0], dtype=torch.float32).unsqueeze(0)
-                    score = float(torch.sigmoid(pref_model(emb_t)).item())
+                score = _score_embedding(embeddings[0])
                     
             return jsonify({
                 "exists": False,
@@ -2607,7 +2692,7 @@ def _register_routes(app: Flask) -> None:
             })
 
     @app.route("/api/extension/add", methods=["POST"])
-    @csrf.exempt
+    @login_required
     def extension_add():
         if not engine:
             return jsonify({"error": "Engine not initialized"}), 500

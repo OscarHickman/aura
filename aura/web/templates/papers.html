@@ -561,14 +561,20 @@ async function rateSelectedPaper(rating) {
     if (selectedPaperIndex === -1 || selectedPaperIndex >= paperCards.length) return;
     
     const card = paperCards[selectedPaperIndex];
-    const arxivId = card.closest('.col-12').id.replace('paper-', '');
+    const wrapper = card.closest('[data-arxiv-id]');
+    const arxivId = wrapper ? wrapper.getAttribute('data-arxiv-id') : null;
+    if (!arxivId) return;
     
-    // Find the appropriate button to mimic a click
-    const btnSelector = rating === 1 ? '.btn-outline-success' : '.btn-outline-danger';
+    // Find star or button: rating 1 -> 5 stars or thumbs up; rating 0 -> skip or 1 star
+    const btnSelector = rating === 1
+        ? '.btn-rate-star[data-rating="5"], .btn-outline-success, .btn-success'
+        : '.btn-rate-skip, .btn-rate-star[data-rating="1"], .btn-outline-danger, .btn-danger';
     const btn = card.querySelector(btnSelector);
     
     if (btn) {
-        ratePaper(arxivId, rating, btn);
+        btn.click();
+    } else {
+        ratePaper(arxivId, rating, null);
     }
 }
 

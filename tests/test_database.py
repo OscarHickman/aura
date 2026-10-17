@@ -29,6 +29,40 @@ class TestPaperDatabase(unittest.TestCase):
         self.db.close()
         self.tmp.cleanup()
 
+    def test_note_replay_is_idempotent_and_scoped_to_user(self):
+        first = self.db.add_note("paper", "A note", user_id=1, client_mutation_id="device-action-1")
+        replay = self.db.add_note("paper", "A note", user_id=1, client_mutation_id="device-action-1")
+        other = self.db.add_note("paper", "A note", user_id=2, client_mutation_id="device-action-1")
+        self.assertEqual(first, replay)
+        self.assertNotEqual(first, other)
+        self.assertEqual(len(self.db.get_paper_notes("paper", user_id=1)), 1)
+        with self.assertRaises(ValueError):
+            self.db.add_note("paper", "Changed content", user_id=1, client_mutation_id="device-action-1")
+        with self.assertRaises(ValueError):
+            self.db.add_note("another-paper", "A note", user_id=1, client_mutation_id="device-action-1")
+
+    def test_note_schema_upgrade_preserves_existing_notes(self):
+        note_id = self.db.add_note("paper", "Existing note")
+        self.db.conn.execute("DROP INDEX idx_notes_client_mutation")
+        self.db.conn.execute("ALTER TABLE notes DROP COLUMN client_mutation_id")
+        self.db.conn.commit()
+        self.db.close()
+        self.db = PaperDatabase(Path(self.tmp.name) / "papers.db")
+        self.assertEqual(self.db.get_paper_notes("paper")[0]["id"], note_id)
+        first = self.db.add_note("paper", "New note", client_mutation_id="upgrade-test")
+        self.assertEqual(first, self.db.add_note("paper", "New note", client_mutation_id="upgrade-test"))
+
+    def test_reading_list_removal_can_be_replayed(self):
+        self.db.add_paper(make_paper())
+        self.db.add_to_reading_list("2401.00001")
+        self.assertTrue(self.db.remove_from_reading_list("2401.00001"))
+        self.assertTrue(self.db.remove_from_reading_list("2401.00001"))
+
+    def test_notes_without_mutation_ids_remain_append_only(self):
+        first = self.db.add_note("paper", "A note")
+        second = self.db.add_note("paper", "A note")
+        self.assertNotEqual(first, second)
+
     def test_add_and_get_paper_roundtrip(self):
         emb = np.array([0.1, 0.2, 0.3], dtype=np.float32)
         inserted = self.db.add_paper(make_paper(), embedding=emb, summary="good")

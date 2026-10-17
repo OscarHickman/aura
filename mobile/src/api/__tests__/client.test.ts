@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { api, DEFAULT_SERVER_URL } from '../client';
+import { api, ApiError, DEFAULT_SERVER_URL } from '../client';
 
 describe('AuraApiClient', () => {
   const originalFetch = (globalThis as any).fetch;
@@ -7,7 +7,9 @@ describe('AuraApiClient', () => {
   beforeEach(async () => {
     await AsyncStorage.clear();
     await api.setServerUrl(DEFAULT_SERVER_URL);
-    await api.setToken(null);
+    await AsyncStorage.setItem('@aura_auth_token', 'test-token');
+    await AsyncStorage.setItem('@aura_auth_user', JSON.stringify({ id: 1, email: 'test@aura.test' }));
+    await api.init();
     jest.clearAllMocks();
   });
 
@@ -17,6 +19,7 @@ describe('AuraApiClient', () => {
 
   describe('configuration & storage', () => {
     it('initialises with default server URL and null token when storage is empty', async () => {
+      await AsyncStorage.clear();
       const state = await api.init();
       expect(state.serverUrl).toBe(DEFAULT_SERVER_URL);
       expect(state.token).toBeNull();
@@ -292,5 +295,108 @@ describe('AuraApiClient', () => {
       const refreshRes = await api.refreshMyPapersCitations();
       expect(refreshRes.status).toBe('ok');
     });
+  });
+});
+
+describe('Authenticated offline lifecycle', () => {
+  const user = { id: 1, email: 'user@aura.test', is_admin: false };
+  const paper = { arxiv_id: '2401.00001', title: 'Cached paper', authors: [], categories: [], abstract: 'Abstract' };
+  const ok = (data: unknown) => ({ ok: true, json: async () => data });
+  beforeEach(async () => {
+    await AsyncStorage.clear();
+    await api.setServerUrl(DEFAULT_SERVER_URL);
+    await AsyncStorage.setItem('@aura_auth_token', 'token');
+    await AsyncStorage.setItem('@aura_auth_user', JSON.stringify(user));
+    await api.init();
+  });
+
+  it('keeps failed replayed notes without duplicating or discarding them', async () => {
+    globalThis.fetch = jest.fn().mockRejectedValue(new TypeError('Network request failed'));
+    await api.addPaperNote(paper.arxiv_id, 'Important idea', 'idea');
+    await api.flushOfflineMutations();
+    expect(await api.getOfflineQueueCount()).toBe(1);
+    globalThis.fetch = jest.fn().mockResolvedValue(ok({ status: 'ok' }));
+    expect(await api.flushOfflineMutations()).toMatchObject({ successCount: 1, remainingCount: 0 });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('restores cached reading and detail views offline and projects mark-read', async () => {
+    globalThis.fetch = jest.fn().mockResolvedValue(ok({ papers: [paper] }));
+    await api.getReadingList();
+    globalThis.fetch = jest.fn().mockRejectedValue(new TypeError('Network request failed'));
+    expect(await api.getReadingList()).toMatchObject({ offline: true, papers: [paper] });
+    expect(await api.getPaper(paper.arxiv_id)).toEqual(paper);
+    expect(await api.markAsRead(paper.arxiv_id)).toEqual({ status: 'queued_offline' });
+    expect((await api.getReadingList()).papers).toEqual([]);
+    expect((await api.getReadingList('read')).papers.map(p => p.arxiv_id)).toEqual([paper.arxiv_id]);
+  });
+
+  it('shows newly saved papers and pending notes before a reading-list cache exists', async () => {
+    globalThis.fetch = jest.fn().mockResolvedValue(ok({ papers: [paper], total: 1 }));
+    await api.getPapers();
+    globalThis.fetch = jest.fn().mockRejectedValue(new TypeError('Network request failed'));
+    await api.addToReadingList(paper.arxiv_id);
+    await api.addPaperNote(paper.arxiv_id, 'Offline thought', 'idea');
+    expect((await api.getReadingList()).papers.map(p => p.arxiv_id)).toEqual([paper.arxiv_id]);
+    expect((await api.getPaperNotes(paper.arxiv_id)).notes[0]).toMatchObject({ pending: true, content: 'Offline thought' });
+  });
+
+  it('does not expose cached papers or replay changes to a different account', async () => {
+    globalThis.fetch = jest.fn().mockResolvedValue(ok({ papers: [paper] }));
+    await api.getReadingList();
+    globalThis.fetch = jest.fn().mockRejectedValue(new TypeError('Network request failed'));
+    await api.ratePaper(paper.arxiv_id, 5);
+    await api.logout();
+    globalThis.fetch = jest.fn().mockResolvedValue(ok({ token: 'token-2', user: { ...user, id: 2 } }));
+    await api.login('other@aura.test', 'password');
+    expect(await api.getOfflineQueueCount()).toBe(0);
+    globalThis.fetch = jest.fn().mockRejectedValue(new TypeError('Network request failed'));
+    await expect(api.getReadingList()).rejects.toThrow('Network request failed');
+  });
+
+  it('clears credentials before changing servers and validates addresses', async () => {
+    await expect(api.setServerUrl('ftp://example.com')).rejects.toThrow('HTTP');
+    expect(api.getToken()).toBe('token');
+    await api.setServerUrl('https://new-server.test/aura');
+    expect(api.getToken()).toBeNull();
+    expect(api.getCachedUser()).toBeNull();
+  });
+
+  it('notifies the app of a 401 but does not queue HTTP errors labelled timeout', async () => {
+    const listener = jest.fn();
+    const unsubscribe = api.onUnauthorized(listener);
+    globalThis.fetch = jest.fn().mockResolvedValue({ ok: false, status: 400, json: async () => ({ error: 'timeout invalid' }) });
+    await expect(api.ratePaper(paper.arxiv_id, 99)).rejects.toBeInstanceOf(ApiError);
+    expect(await api.getOfflineQueueCount()).toBe(0);
+    globalThis.fetch = jest.fn().mockResolvedValue({ ok: false, status: 401, json: async () => ({ error: 'Expired' }) });
+    await expect(api.getMe()).rejects.toMatchObject({ status: 401 });
+    expect(api.getToken()).toBeNull();
+    expect(listener).toHaveBeenCalledTimes(1);
+    unsubscribe();
+  });
+
+  it('uses a persistent installation-specific device name when logging in', async () => {
+    globalThis.fetch = jest.fn().mockResolvedValue(ok({ token: 'new-token', user }));
+    await api.login(user.email, 'password');
+    await api.login(user.email, 'password');
+    const calls = jest.mocked(globalThis.fetch).mock.calls;
+    const name = JSON.parse(calls[0][1]?.body as string).token_name;
+    expect(name).toMatch(/^AURA Phone .+/);
+    expect(JSON.parse(calls[1][1]?.body as string).token_name).toBe(name);
+  });
+
+  it('aborts hung requests and clears connection timers on rejection', async () => {
+    jest.useFakeTimers();
+    globalThis.fetch = jest.fn((_url: RequestInfo | URL, options?: RequestInit) => new Promise((_resolve, reject) => {
+      options?.signal?.addEventListener('abort', () => reject(new Error('aborted')));
+    }));
+    const pending = expect(api.getMe()).rejects.toThrow('aborted');
+    await jest.advanceTimersByTimeAsync(15000);
+    await pending;
+    expect(api.getToken()).toBe('token');
+    globalThis.fetch = jest.fn().mockRejectedValue(new Error('Network request failed'));
+    await api.testConnection();
+    expect(jest.getTimerCount()).toBe(0);
+    jest.useRealTimers();
   });
 });

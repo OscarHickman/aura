@@ -1,13 +1,19 @@
 import React from 'react';
 import { renderHook, act, waitFor } from '@testing-library/react-native';
 import { AuthProvider, useAuth } from '../AuthContext';
-import { api, DEFAULT_SERVER_URL } from '../../api/client';
+import { api, ApiError, DEFAULT_SERVER_URL } from '../../api/client';
 
 jest.mock('../../api/client', () => {
   return {
+    ApiError: jest.requireActual('../../api/client').ApiError,
     DEFAULT_SERVER_URL: 'http://100.88.127.35/aura',
     api: {
       init: jest.fn(),
+      onUnauthorized: jest.fn(() => jest.fn()),
+      getCachedUser: jest.fn(() => null),
+      getServerUrl: jest.fn(),
+      getToken: jest.fn(() => null),
+      flushOfflineMutations: jest.fn().mockResolvedValue({}),
       getMe: jest.fn(),
       login: jest.fn(),
       logout: jest.fn(),
@@ -77,7 +83,7 @@ describe('AuthContext', () => {
       serverUrl: DEFAULT_SERVER_URL,
       token: 'stale_token',
     });
-    mockApi.getMe.mockRejectedValue(new Error('401 Unauthorized'));
+    mockApi.getMe.mockRejectedValue(new ApiError('Unauthorized', 401));
 
     const { result } = await renderHook(() => useAuth(), { wrapper });
 
@@ -142,6 +148,7 @@ describe('AuthContext', () => {
       expect(result.current.isLoading).toBe(false);
     });
 
+    mockApi.getServerUrl.mockReturnValue('https://custom-server.org/aura');
     await act(async () => {
       await result.current.updateServerUrl('https://custom-server.org/aura');
     });
@@ -149,4 +156,37 @@ describe('AuthContext', () => {
     expect(mockApi.setServerUrl).toHaveBeenCalledWith('https://custom-server.org/aura');
     expect(result.current.serverUrl).toBe('https://custom-server.org/aura');
   });
+  it('keeps the stored login and cached user when starting offline', async () => {
+    const cached = { id: 7, email: 'offline@aura.test', is_admin: false };
+    mockApi.init.mockResolvedValue({ serverUrl: DEFAULT_SERVER_URL, token: 'saved-token' });
+    mockApi.getCachedUser.mockReturnValueOnce(cached);
+    mockApi.getMe.mockRejectedValue(new TypeError('Network request failed'));
+    const { result } = await renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.token).toBe('saved-token');
+    expect(result.current.user).toEqual(cached);
+    expect(mockApi.setToken).not.toHaveBeenCalled();
+    await act(async () => { await result.current.refreshUser(); });
+    expect(result.current.isAuthenticated).toBe(true);
+  });
+
+  it('updates visible auth state when a request reports an expired token', async () => {
+    mockApi.init.mockResolvedValue({ serverUrl: DEFAULT_SERVER_URL, token: 'saved-token' });
+    mockApi.getMe.mockResolvedValue({ id: 1, email: 'test@aura.test', is_admin: false });
+    const { result } = await renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await act(async () => { mockApi.onUnauthorized.mock.calls[0][0](); });
+    expect(result.current.isAuthenticated).toBe(false);
+    expect(result.current.user).toBeNull();
+  });
+
+  it('resets the loading state and propagates a failed login', async () => {
+    const { result } = await renderHook(() => useAuth(), { wrapper });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    mockApi.login.mockRejectedValueOnce(new ApiError('Incorrect password', 401));
+    await act(async () => { await expect(result.current.login('user', 'bad')).rejects.toThrow('Incorrect password'); });
+    expect(result.current.isLoading).toBe(false);
+    expect(result.current.isAuthenticated).toBe(false);
+  });
+
 });

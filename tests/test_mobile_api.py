@@ -140,6 +140,37 @@ class TestMobileAPI(unittest.TestCase):
         self.assertEqual(data["total"], 2)
         self.assertEqual([p["arxiv_id"] for p in data["papers"]], ["2401.00003"])
 
+    def test_recommendation_total_is_stable_across_pages(self):
+        self.engine.db.get_user_by_token.return_value = USER_ROW
+        self.engine.db.get_user_by_id.return_value = USER_ROW
+        papers = [{"arxiv_id": f"paper-{i}", "authors": []} for i in range(3)]
+        self.engine.get_recommendations.side_effect = lambda limit, **kw: papers[:limit]
+        for page, expected_more in ((1, True), (2, False)):
+            response = self.client.get(f"/api/papers?page={page}&per_page=2", headers=BEARER)
+            data = response.get_json()
+            self.assertEqual(data["total"], 3)
+            self.assertEqual(data["has_more"], expected_more)
+            self.assertEqual(len(data["papers"]), 2 if page == 1 else 1)
+
+    def test_liked_filter_includes_high_star_ratings(self):
+        self.engine.db.get_user_by_token.return_value = USER_ROW
+        self.engine.db.get_user_by_id.return_value = USER_ROW
+        self.engine.db.get_papers.return_value = [{"arxiv_id": str(i), "authors": []} for i in range(6)]
+        self.engine.db.get_latest_rating.side_effect = lambda aid, user_id: int(aid)
+        data = self.client.get("/api/papers?filter=liked", headers=BEARER).get_json()
+        self.assertEqual([p["rating"] for p in data["papers"]], [1, 4, 5])
+
+    def test_note_rejects_invalid_payloads_and_id_reuse(self):
+        self.engine.db.get_user_by_token.return_value = USER_ROW
+        self.engine.db.get_user_by_id.return_value = USER_ROW
+        for payload in (["bad"], {"content": {}}, {"content": "ok", "note_type": 7},
+                        {"content": "ok", "client_mutation_id": ""}):
+            response = self.client.post("/api/papers/paper/notes", json=payload, headers=BEARER)
+            self.assertEqual(response.status_code, 400)
+        self.engine.db.add_note.side_effect = ValueError("reused")
+        response = self.client.post("/api/papers/paper/notes", json={"content": "ok", "client_mutation_id": "id"}, headers=BEARER)
+        self.assertEqual(response.status_code, 409)
+
     def test_bad_paging_params_are_clamped(self):
         self.engine.db.get_user_by_token.return_value = USER_ROW
         self.engine.db.get_user_by_id.return_value = USER_ROW

@@ -158,7 +158,9 @@ class RecommendationEngine:
     def get_user_preference_model(self, user_id: int) -> PreferenceModel:
         """Return the preference model for a given user, creating it if needed."""
         if user_id in self._user_models:
-            return self._user_models[user_id]
+            model = self._user_models[user_id]
+            model.reload_if_stale()
+            return model
         models_dir = self.data_dir / "models"
         models_dir.mkdir(exist_ok=True)
         model = PreferenceModel(
@@ -171,7 +173,9 @@ class RecommendationEngine:
     def get_user_shadow_model(self, user_id: int) -> PreferenceModel:
         """Return the shadow preference model for a given user, creating it if needed."""
         if user_id in self._user_shadow_models:
-            return self._user_shadow_models[user_id]
+            model = self._user_shadow_models[user_id]
+            model.reload_if_stale()
+            return model
         models_dir = self.data_dir / "models"
         models_dir.mkdir(exist_ok=True)
         model = PreferenceModel(
@@ -480,7 +484,7 @@ class RecommendationEngine:
         """
         from datetime import datetime
 
-        papers = self.db.get_papers(limit=500, unrated_only=unrated_only)
+        papers = self.db.get_papers(limit=500, unrated_only=unrated_only, user_id=user_id)
         if not papers:
             return []
 
@@ -501,12 +505,12 @@ class RecommendationEngine:
                 embeddings.append(emb_map[paper["arxiv_id"]])
                 scorable_papers.append(paper)
 
-        # Get preference model scores
+        # Get preference model scores (num_samples=1 for fast single evaluation forward pass)
         pref_model = self.get_user_preference_model(user_id)
         shadow_model = self.get_user_shadow_model(user_id)
         if embeddings:
-            model_scores, uncertainties = pref_model.predict_batch(embeddings)
-            shadow_scores, _ = shadow_model.predict_batch(embeddings)
+            model_scores, uncertainties = pref_model.predict_batch(embeddings, num_samples=1)
+            shadow_scores, _ = shadow_model.predict_batch(embeddings, num_samples=1)
             for paper, score, unc, sh_score in zip(scorable_papers, model_scores, uncertainties, shadow_scores):
                 paper["model_score"] = float(score)
                 paper["model_uncertainty"] = float(unc)
@@ -527,7 +531,7 @@ class RecommendationEngine:
                 scorable_papers.append(paper)
 
         # Get rated papers to identify liked ones
-        rated_papers = self.db.get_rated_papers()
+        rated_papers = self.db.get_rated_papers(user_id=user_id)
         liked_arxiv_ids = [p["arxiv_id"] for p, emb, rating in rated_papers if rating >= 4 or rating == 1]
         liked_citations_map = self.db.get_liked_citations_counts(liked_arxiv_ids)
         liked_references_map = self.db.get_liked_references_counts(liked_arxiv_ids)
@@ -769,11 +773,7 @@ class RecommendationEngine:
             }
 
         pref_model = self.get_user_preference_model(user_id)
-        pref_model = PreferenceModel(
-            model_path=pref_model.model_path,
-            embedding_dim=self._embedding_dim,
-        )
-        self._user_models[user_id] = pref_model
+        pref_model.reset()
         if user_id == 1:
             self.preference_model = pref_model
 
@@ -783,13 +783,7 @@ class RecommendationEngine:
 
         # Retrain shadow model
         shadow_model = self.get_user_shadow_model(user_id)
-        shadow_model = PreferenceModel(
-            model_path=shadow_model.model_path,
-            embedding_dim=self._embedding_dim,
-            learning_rate=5e-4,
-            hidden_dims=[64, 32],
-        )
-        self._user_shadow_models[user_id] = shadow_model
+        shadow_model.reset()
         shadow_model.train_step(
             embeddings, labels, epochs=epochs, progress_callback=None, use_scheduler=True
         )

@@ -13,13 +13,19 @@ import {
   flushOfflineQueue,
   FlushResult,
   getOfflineQueue,
+  NewQueuedMutation,
 } from './offlineQueue';
 
-function isNetworkError(error: any): boolean {
+export class ApiError extends Error {
+  constructor(message: string, public readonly status: number) { super(message); }
+}
+
+export function isNetworkError(error: any): boolean {
+  if (error instanceof ApiError) return false;
   if (!error) return false;
   const msg = (error.message || '').toLowerCase();
   return (
-    msg.includes('network request failed') ||
+    msg.includes('network') ||
     msg.includes('aborted') ||
     msg.includes('failed to fetch') ||
     msg.includes('networkerror') ||
@@ -30,7 +36,8 @@ function isNetworkError(error: any): boolean {
 const STORAGE_KEYS = {
   SERVER_URL: '@aura_server_url',
   AUTH_TOKEN: '@aura_auth_token',
-  SAVED_PAPERS: '@aura_cached_papers',
+  USER: '@aura_auth_user',
+  DEVICE_ID: '@aura_device_id',
 };
 
 // Default to user's Tailscale host or local fallback
@@ -39,15 +46,66 @@ export const DEFAULT_SERVER_URL = 'http://100.88.127.35/aura';
 class AuraApiClient {
   private serverUrl: string = DEFAULT_SERVER_URL;
   private token: string | null = null;
+  private user: User | null = null;
+  private authListeners = new Set<() => void>();
+
+  onUnauthorized(listener: () => void): () => void {
+    this.authListeners.add(listener);
+    return () => { this.authListeners.delete(listener); };
+  }
+
+  getCachedUser(): User | null { return this.user; }
+
+  private getScope(): string {
+    if (!this.token || !this.user) throw new Error('Sign in to save changes on this device.');
+    return `${this.serverUrl}|${this.user.id}`;
+  }
+
+  private async saveUser(user: User): Promise<void> {
+    this.user = user;
+    await AsyncStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(user));
+  }
+
+  private cacheKey(scope: string, key: string): string {
+    return `@aura_cache:${encodeURIComponent(scope)}:${key}`;
+  }
+
+  private async cache<T>(scope: string, key: string, value: T): Promise<void> {
+    try { await AsyncStorage.setItem(this.cacheKey(scope, key), JSON.stringify(value)); }
+    catch { /* Online reads can succeed even when the cache is full. */ }
+  }
+
+  private async readCache<T>(scope: string, key: string): Promise<T | null> {
+    const raw = await AsyncStorage.getItem(this.cacheKey(scope, key));
+    return raw ? JSON.parse(raw) : null;
+  }
+
+  private async mutate(mutation: NewQueuedMutation, endpoint: string, options: RequestInit): Promise<any> {
+    const scope = this.getScope();
+    // Keep new actions behind older unsent actions, even after reconnecting.
+    if ((await getOfflineQueue(scope)).length) {
+      await enqueueMutation(mutation, scope);
+      return { status: 'queued_offline' };
+    }
+    if (this.getScope() !== scope) throw new Error('Account changed before saving');
+    try { return await this.request(endpoint, options); }
+    catch (error) {
+      if (!isNetworkError(error)) throw error;
+      await enqueueMutation(mutation, scope);
+      return { status: 'queued_offline' };
+    }
+  }
 
   async init(): Promise<{ serverUrl: string; token: string | null }> {
     try {
-      const [storedUrl, storedToken] = await Promise.all([
+      const [storedUrl, storedToken, storedUser] = await Promise.all([
         AsyncStorage.getItem(STORAGE_KEYS.SERVER_URL),
         AsyncStorage.getItem(STORAGE_KEYS.AUTH_TOKEN),
+        AsyncStorage.getItem(STORAGE_KEYS.USER),
       ]);
-      if (storedUrl) this.serverUrl = storedUrl.replace(/\/+$/, '');
-      if (storedToken) this.token = storedToken;
+      this.serverUrl = (storedUrl || DEFAULT_SERVER_URL).replace(/\/+$/, '');
+      this.token = storedToken;
+      this.user = storedToken && storedUser ? JSON.parse(storedUser) : null;
     } catch (e) {
       console.warn('Failed to restore auth from storage:', e);
     }
@@ -60,6 +118,11 @@ class AuraApiClient {
 
   async setServerUrl(url: string): Promise<void> {
     const cleanUrl = url.trim().replace(/\/+$/, '');
+    const parsed = new URL(cleanUrl);
+    if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password || parsed.search || parsed.hash) {
+      throw new Error('Enter an HTTP or HTTPS server address without credentials, a query or a fragment.');
+    }
+    if (cleanUrl !== this.serverUrl) await this.setToken(null);
     this.serverUrl = cleanUrl;
     await AsyncStorage.setItem(STORAGE_KEYS.SERVER_URL, cleanUrl);
   }
@@ -73,11 +136,14 @@ class AuraApiClient {
     if (token) {
       await AsyncStorage.setItem(STORAGE_KEYS.AUTH_TOKEN, token);
     } else {
-      await AsyncStorage.removeItem(STORAGE_KEYS.AUTH_TOKEN);
+      this.user = null;
+      await AsyncStorage.multiRemove([STORAGE_KEYS.AUTH_TOKEN, STORAGE_KEYS.USER]);
     }
   }
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+    const requestToken = this.token;
+    const requestServer = this.serverUrl;
     const url = `${this.serverUrl}${endpoint.startsWith('/') ? '' : '/'}${endpoint}`;
     const headers: Record<string, string> = {
       'Accept': 'application/json',
@@ -107,7 +173,11 @@ class AuraApiClient {
         } catch {
           // ignore non-json error responses
         }
-        throw new Error(errorMsg);
+        if (response.status === 401 && endpoint !== '/api/auth/login' && requestToken === this.token && requestServer === this.serverUrl) {
+          await this.setToken(null);
+          this.authListeners.forEach(listener => listener());
+        }
+        throw new ApiError(errorMsg, response.status);
       }
 
       return await response.json();
@@ -118,26 +188,33 @@ class AuraApiClient {
 
   async testConnection(customUrl?: string): Promise<{ ok: boolean; status?: string; error?: string }> {
     const targetUrl = customUrl ? customUrl.trim().replace(/\/+$/, '') : this.serverUrl;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
     try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 6000);
       const res = await fetch(`${targetUrl}/health`, { signal: controller.signal });
-      clearTimeout(timeout);
       if (res.ok) {
         return { ok: true, status: 'Connected successfully' };
       }
       return { ok: false, error: `HTTP ${res.status}` };
     } catch (e: any) {
       return { ok: false, error: e.message || 'Connection failed' };
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
   async login(email: string, password: string): Promise<{ token: string; user: User }> {
+    let deviceId = await AsyncStorage.getItem(STORAGE_KEYS.DEVICE_ID);
+    if (!deviceId) {
+      deviceId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+      await AsyncStorage.setItem(STORAGE_KEYS.DEVICE_ID, deviceId);
+    }
     const data = await this.request<{ status: string; token: string; user: User }>('/api/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ email, password, token_name: 'AURA Android Phone' }),
+      body: JSON.stringify({ email, password, token_name: `AURA Phone ${deviceId}` }),
     });
     await this.setToken(data.token);
+    await this.saveUser(data.user);
     return { token: data.token, user: data.user };
   }
 
@@ -153,7 +230,12 @@ class AuraApiClient {
   }
 
   async getMe(): Promise<User> {
-    return await this.request<User>('/api/auth/me');
+    const token = this.token;
+    const server = this.serverUrl;
+    const user = await this.request<User>('/api/auth/me');
+    if (token !== this.token || server !== this.serverUrl) throw new Error('Account changed');
+    await this.saveUser(user);
+    return user;
   }
 
   async getPapers(params: {
@@ -172,65 +254,125 @@ class AuraApiClient {
 
     const queryString = query.toString();
     const endpoint = `/api/papers${queryString ? `?${queryString}` : ''}`;
-    return await this.request<PapersResponse>(endpoint);
+    const scope = this.user && this.token ? this.getScope() : null;
+    let response: PapersResponse;
+    try {
+      response = await this.request<PapersResponse>(endpoint);
+      if (scope) {
+        await this.cache(scope, `feed:${endpoint}`, response);
+        await Promise.all(response.papers.map(paper => this.cache(scope, `paper:${paper.arxiv_id}`, paper)));
+      }
+    } catch (error) {
+      if (scope && isNetworkError(error)) {
+        const cached = await this.readCache<PapersResponse>(scope, `feed:${endpoint}`);
+        if (cached) {
+          response = cached;
+        } else {
+          throw error;
+        }
+      } else {
+        throw error;
+      }
+    }
+
+    if (scope) {
+      const queue = await getOfflineQueue(scope);
+      if (queue.length > 0) {
+        const ratingMap = new Map<string, number>();
+        const readingMap = new Map<string, boolean>();
+        for (const item of queue) {
+          if (item.type === 'rate') ratingMap.set(item.paperId, item.rating);
+          else if (item.type === 'reading_list_add') readingMap.set(item.paperId, true);
+          else if (item.type === 'reading_list_remove') readingMap.set(item.paperId, false);
+        }
+        response = {
+          ...response,
+          papers: response.papers.map(p => ({
+            ...p,
+            rating: ratingMap.has(p.arxiv_id) ? ratingMap.get(p.arxiv_id) : p.rating,
+            in_reading_list: readingMap.has(p.arxiv_id) ? Boolean(readingMap.get(p.arxiv_id)) : p.in_reading_list,
+          })),
+        };
+      }
+    }
+
+    return response;
   }
 
   async getPaper(arxivId: string): Promise<Paper> {
-    return await this.request<Paper>(`/api/papers/${arxivId}`);
+    const scope = this.getScope();
+    let paper: Paper | null = null;
+    try {
+      paper = await this.request<Paper>(`/api/papers/${arxivId}`);
+      await this.cache(scope, `paper:${arxivId}`, paper);
+    } catch (error) {
+      if (isNetworkError(error)) {
+        paper = await this.readCache<Paper>(scope, `paper:${arxivId}`);
+        if (!paper) throw error;
+      } else {
+        throw error;
+      }
+    }
+
+    if (paper && scope) {
+      const queue = await getOfflineQueue(scope);
+      for (const item of queue) {
+        if (item.paperId === arxivId) {
+          if (item.type === 'rate') paper = { ...paper, rating: item.rating };
+          else if (item.type === 'reading_list_add') paper = { ...paper, in_reading_list: true };
+          else if (item.type === 'reading_list_remove') paper = { ...paper, in_reading_list: false };
+        }
+      }
+    }
+
+    return paper;
   }
 
   async ratePaper(arxivId: string, rating: number): Promise<{ status: string; score?: number }> {
-    try {
-      return await this.request<{ status: string; score?: number }>('/api/rate', {
-        method: 'POST',
-        body: JSON.stringify({ arxiv_id: arxivId, rating }),
-      });
-    } catch (e: any) {
-      if (isNetworkError(e)) {
-        await enqueueMutation({ type: 'rate', paperId: arxivId, rating });
-        return { status: 'queued_offline', score: rating };
-      }
-      throw e;
-    }
-  }
-
-  async addToReadingList(arxivId: string): Promise<{ status: string }> {
-    try {
-      return await this.request<{ status: string }>('/api/reading-list', {
-        method: 'POST',
-        body: JSON.stringify({ arxiv_id: arxivId }),
-      });
-    } catch (e: any) {
-      if (isNetworkError(e)) {
-        await enqueueMutation({ type: 'reading_list_add', paperId: arxivId });
-        return { status: 'queued_offline' };
-      }
-      throw e;
-    }
-  }
-
-  async removeFromReadingList(arxivId: string): Promise<{ status: string }> {
-    try {
-      return await this.request<{ status: string }>(`/api/reading-list/${arxivId}`, {
-        method: 'DELETE',
-      });
-    } catch (e: any) {
-      if (isNetworkError(e)) {
-        await enqueueMutation({ type: 'reading_list_remove', paperId: arxivId });
-        return { status: 'queued_offline' };
-      }
-      throw e;
-    }
-  }
-
-  async markAsRead(arxivId: string): Promise<{ status: string }> {
-    return await this.request<{ status: string }>(`/api/reading-list/${arxivId}/read`, {
-      method: 'PUT',
+    return this.mutate({ type: 'rate', paperId: arxivId, rating }, '/api/rate', {
+      method: 'POST', body: JSON.stringify({ arxiv_id: arxivId, rating }),
     });
   }
 
-  async getReadingList(filter: 'unread' | 'read' = 'unread'): Promise<{ papers: Paper[] }> {
-    return await this.request<{ papers: Paper[] }>(`/api/reading-list?filter=${filter}`);
+  async addToReadingList(arxivId: string): Promise<{ status: string }> {
+    return this.mutate({ type: 'reading_list_add', paperId: arxivId }, '/api/reading-list', {
+      method: 'POST', body: JSON.stringify({ arxiv_id: arxivId }),
+    });
+  }
+
+  async removeFromReadingList(arxivId: string): Promise<{ status: string }> {
+    return this.mutate({ type: 'reading_list_remove', paperId: arxivId }, `/api/reading-list/${arxivId}`, { method: 'DELETE' });
+  }
+
+  async markAsRead(arxivId: string): Promise<{ status: string }> {
+    return this.mutate({ type: 'reading_list_read', paperId: arxivId }, `/api/reading-list/${arxivId}/read`, { method: 'PUT' });
+  }
+
+  async getReadingList(filter: 'unread' | 'read' = 'unread'): Promise<{ papers: Paper[]; offline?: boolean }> {
+    const scope = this.getScope();
+    let result: { papers: Paper[]; offline?: boolean };
+    try {
+      result = await this.request<{ papers: Paper[] }>(`/api/reading-list?filter=${filter}`);
+      await this.cache(scope, `reading:${filter}`, result);
+      await Promise.all(result.papers.map(paper => this.cache(scope, `paper:${paper.arxiv_id}`, paper)));
+    } catch (error) {
+      if (!isNetworkError(error)) throw error;
+      const cached = await this.readCache<{ papers: Paper[] }>(scope, `reading:${filter}`);
+      const other = await this.readCache<{ papers: Paper[] }>(scope, `reading:${filter === 'read' ? 'unread' : 'read'}`);
+      const pending = await getOfflineQueue(scope);
+      if (!cached && !other && !pending.some(item => item.type === 'reading_list_add')) throw error;
+      result = { papers: cached?.papers || [], offline: true };
+    }
+    const papers = new Map(result.papers.map(paper => [paper.arxiv_id, paper]));
+    for (const item of await getOfflineQueue(scope)) {
+      if (item.type === 'reading_list_remove' || (item.type === 'reading_list_read' && filter === 'unread')) {
+        papers.delete(item.paperId);
+      } else if ((item.type === 'reading_list_add' && filter === 'unread') || (item.type === 'reading_list_read' && filter === 'read')) {
+        const paper = await this.readCache<Paper>(scope, `paper:${item.paperId}`);
+        if (paper) papers.set(item.paperId, { ...paper, in_reading_list: true });
+      }
+    }
+    return { ...result, papers: [...papers.values()] };
   }
 
   async askPaper(arxivId: string, question: string): Promise<{ answer: string }> {
@@ -249,11 +391,24 @@ class AuraApiClient {
 
   // Notes API
   async getPaperNotes(arxivId: string): Promise<{ notes: Note[] }> {
-    const res = await this.request<any>(`/api/papers/${arxivId}/notes`);
-    if (Array.isArray(res)) {
-      return { notes: res };
+    const scope = this.getScope();
+    let notes: Note[];
+    try {
+      const response = await this.request<Note[] | { notes: Note[] }>(`/api/papers/${arxivId}/notes`);
+      notes = Array.isArray(response) ? response : response.notes || [];
+      await this.cache(scope, `notes:${arxivId}`, notes);
+    } catch (error) {
+      if (!isNetworkError(error)) throw error;
+      notes = await this.readCache<Note[]>(scope, `notes:${arxivId}`) || [];
     }
-    return { notes: res?.notes || [] };
+    const queue = await getOfflineQueue(scope);
+    queue.forEach((item, index) => {
+      if (item.type === 'add_note' && item.paperId === arxivId && !notes.some(note => note.client_mutation_id === item.id)) {
+        notes.push({ id: -(index + 1), content: item.content, note_type: item.noteType,
+          created_at: new Date(item.timestamp).toISOString(), pending: true, client_mutation_id: item.id });
+      }
+    });
+    return { notes };
   }
 
   async addPaperNote(
@@ -261,25 +416,13 @@ class AuraApiClient {
     content: string,
     noteType?: string
   ): Promise<{ status: string; note_id?: number; id?: number }> {
-    try {
-      const res = await this.request<{ status: string; note_id?: number; id?: number }>(
-        `/api/papers/${arxivId}/notes`,
-        {
-          method: 'POST',
-          body: JSON.stringify({ content, note_type: noteType }),
-        }
-      );
-      return {
-        ...res,
-        note_id: res.note_id ?? res.id,
-      };
-    } catch (e: any) {
-      if (isNetworkError(e)) {
-        await enqueueMutation({ type: 'add_note', paperId: arxivId, content, noteType });
-        return { status: 'queued_offline' };
-      }
-      throw e;
-    }
+    const mutationId = `note_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const result = await this.mutate(
+      { id: mutationId, type: 'add_note', paperId: arxivId, content, noteType },
+      `/api/papers/${arxivId}/notes`,
+      { method: 'POST', body: JSON.stringify({ content, note_type: noteType, client_mutation_id: mutationId }) },
+    );
+    return { ...result, note_id: result.note_id ?? result.id };
   }
 
   async deletePaperNote(noteId: number): Promise<{ status: string }> {
@@ -357,11 +500,25 @@ class AuraApiClient {
 
   // Offline queue utilities
   async flushOfflineMutations(): Promise<FlushResult> {
-    return await flushOfflineQueue(this);
+    const scope = this.getScope();
+    const token = this.token;
+    const replay = (endpoint: string, options: RequestInit) => {
+      if (this.token !== token || this.getScope() !== scope) throw new Error('Account changed during sync');
+      return this.request(endpoint, options);
+    };
+    // Use raw requests: public mutation methods would queue a failed replay again.
+    return flushOfflineQueue({
+      ratePaper: (id, rating) => replay('/api/rate', { method: 'POST', body: JSON.stringify({ arxiv_id: id, rating }) }),
+      addToReadingList: id => replay('/api/reading-list', { method: 'POST', body: JSON.stringify({ arxiv_id: id }) }),
+      removeFromReadingList: id => replay(`/api/reading-list/${id}`, { method: 'DELETE' }),
+      markAsRead: id => replay(`/api/reading-list/${id}/read`, { method: 'PUT' }),
+      addPaperNote: (id, content, noteType, mutationId) => replay(`/api/papers/${id}/notes`, { method: 'POST', body: JSON.stringify({ content, note_type: noteType, client_mutation_id: mutationId }) }),
+    }, scope);
   }
 
   async getOfflineQueueCount(): Promise<number> {
-    const queue = await getOfflineQueue();
+    if (!this.token || !this.user) return 0;
+    const queue = await getOfflineQueue(this.getScope());
     return queue.length;
   }
 }

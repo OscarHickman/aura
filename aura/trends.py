@@ -87,7 +87,7 @@ def save_topics(data_dir: str | Path, topics: dict[str, list[str]] | list[str]):
     path.write_text(json.dumps(topics, indent=2))
 
 
-def _generate_generic_text(prompt: str) -> str:
+def _generate_generic_text(prompt: str, max_tokens: int = 300) -> str:
     """A generic wrapper to send an arbitrary prompt to the preferred LLM."""
     providers_to_try = _load_providers_order()
     
@@ -103,7 +103,7 @@ def _generate_generic_text(prompt: str) -> str:
                 message = client.chat.completions.create(
                     messages=[{"role": "user", "content": prompt}],
                     model="llama-3.1-8b-instant",
-                    max_tokens=300,
+                    max_tokens=max_tokens,
                     temperature=0.5,
                 )
                 content = message.choices[0].message.content
@@ -120,7 +120,7 @@ def _generate_generic_text(prompt: str) -> str:
                 openai_response = openai_client.chat.completions.create(
                     model="gpt-4o-mini",
                     messages=[{"role": "user", "content": prompt}],
-                    max_tokens=300,
+                    max_tokens=max_tokens,
                     temperature=0.5,
                 )
                 return (openai_response.choices[0].message.content or "").strip()
@@ -135,7 +135,7 @@ def _generate_generic_text(prompt: str) -> str:
                 client = anthropic.Anthropic(api_key=api_key)
                 message = client.messages.create(
                     model="claude-3-haiku-20240307",
-                    max_tokens=300,
+                    max_tokens=max_tokens,
                     messages=[{"role": "user", "content": prompt}],
                 )
                 return message.content[0].text.strip()
@@ -155,7 +155,7 @@ def _generate_generic_text(prompt: str) -> str:
                 )
                 payload: dict = {
                     "contents": [{"parts": [{"text": prompt}]}],
-                    "generationConfig": {"temperature": 0.5, "maxOutputTokens": 300},
+                    "generationConfig": {"temperature": 0.5, "maxOutputTokens": max_tokens},
                 }
                 resp = _requests.post(endpoint, json=payload, timeout=30)
                 resp.raise_for_status()

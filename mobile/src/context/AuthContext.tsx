@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { api, DEFAULT_SERVER_URL } from '../api/client';
+import { AppState } from 'react-native';
+import { api, ApiError, DEFAULT_SERVER_URL } from '../api/client';
 import { User } from '../types';
 
 interface AuthContextType {
@@ -23,20 +24,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
   useEffect(() => {
+    const unsubscribe = api.onUnauthorized(() => {
+      setToken(null);
+      setUser(null);
+    });
     const bootstrap = async () => {
       try {
         const { serverUrl: savedUrl, token: savedToken } = await api.init();
         setServerUrl(savedUrl);
         setToken(savedToken);
+        setUser(api.getCachedUser());
 
         if (savedToken) {
           try {
             const me = await api.getMe();
             setUser(me);
           } catch (e) {
-            console.warn('Stored token is invalid or expired:', e);
-            await api.setToken(null);
-            setToken(null);
+            if (e instanceof ApiError && e.status === 401) {
+              await api.setToken(null);
+              setToken(null);
+              setUser(null);
+            }
           }
         }
       } catch (err) {
@@ -47,7 +55,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     bootstrap();
+    return unsubscribe;
   }, []);
+
+  useEffect(() => {
+    if (!token || !user) return;
+    const sync = () => {
+      if (AppState.currentState === 'active') void api.flushOfflineMutations().catch(() => undefined);
+    };
+    sync();
+    const timer = setInterval(sync, 30000);
+    const subscription = AppState.addEventListener('change', state => { if (state === 'active') sync(); });
+    return () => { clearInterval(timer); subscription.remove(); };
+  }, [token, user?.id]);
 
   const login = async (email: string, pass: string) => {
     setIsLoading(true);
@@ -68,7 +88,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const updateServerUrl = async (newUrl: string) => {
     await api.setServerUrl(newUrl);
-    setServerUrl(newUrl);
+    setServerUrl(api.getServerUrl());
+    setToken(api.getToken());
+    setUser(api.getCachedUser());
   };
 
   const refreshUser = async () => {
@@ -76,8 +98,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const me = await api.getMe();
       setUser(me);
-    } catch {
-      await logout();
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        setToken(null);
+        setUser(null);
+      }
     }
   };
 

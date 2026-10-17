@@ -415,6 +415,11 @@ class PaperDatabase:
         self._add_column_if_missing("papers", "citation_count", "INTEGER DEFAULT 0")
         self._add_column_if_missing("ratings", "user_id", "INTEGER DEFAULT 1")
         self._add_column_if_missing("notes", "user_id", "INTEGER DEFAULT 1")
+        self._add_column_if_missing("notes", "client_mutation_id", "TEXT")
+        self.conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_notes_client_mutation "
+            "ON notes(user_id, client_mutation_id)"
+        )
         self._add_column_if_missing("collections", "user_id", "INTEGER DEFAULT 1")
         self._add_column_if_missing("collections", "is_public", "INTEGER DEFAULT 0")
         self._add_column_if_missing("collections", "slug", "TEXT")
@@ -465,9 +470,6 @@ class PaperDatabase:
 
         # Seed default events
         self._seed_events()
-
-        # Auto-tag any existing papers for simulations
-        self.auto_tag_all_existing_papers_simulations()
 
 
     def _add_column_if_missing(self, table: str, column: str, definition: str) -> None:
@@ -722,28 +724,141 @@ class PaperDatabase:
         offset: int = 0,
         unrated_only: bool = False,
         rated_only: bool = False,
+        user_id: Optional[int] = None,
     ) -> list[dict]:
         """Get papers with optional filtering."""
         if unrated_only:
-            query = """
-                SELECT p.* FROM papers p
-                LEFT JOIN ratings r ON p.arxiv_id = r.arxiv_id
-                WHERE r.id IS NULL
-                ORDER BY p.published DESC
-                LIMIT ? OFFSET ?
-            """
+            if user_id is not None:
+                query = """
+                    SELECT p.* FROM papers p
+                    LEFT JOIN ratings r ON p.arxiv_id = r.arxiv_id AND r.user_id = ?
+                    WHERE r.id IS NULL
+                    ORDER BY p.published DESC
+                    LIMIT ? OFFSET ?
+                """
+                rows = self.conn.execute(query, (user_id, limit, offset)).fetchall()
+            else:
+                query = """
+                    SELECT p.* FROM papers p
+                    LEFT JOIN ratings r ON p.arxiv_id = r.arxiv_id
+                    WHERE r.id IS NULL
+                    ORDER BY p.published DESC
+                    LIMIT ? OFFSET ?
+                """
+                rows = self.conn.execute(query, (limit, offset)).fetchall()
         elif rated_only:
-            query = """
-                SELECT DISTINCT p.* FROM papers p
-                INNER JOIN ratings r ON p.arxiv_id = r.arxiv_id
-                ORDER BY p.published DESC
-                LIMIT ? OFFSET ?
-            """
+            if user_id is not None:
+                query = """
+                    SELECT DISTINCT p.* FROM papers p
+                    INNER JOIN ratings r ON p.arxiv_id = r.arxiv_id AND r.user_id = ?
+                    ORDER BY p.published DESC
+                    LIMIT ? OFFSET ?
+                """
+                rows = self.conn.execute(query, (user_id, limit, offset)).fetchall()
+            else:
+                query = """
+                    SELECT DISTINCT p.* FROM papers p
+                    INNER JOIN ratings r ON p.arxiv_id = r.arxiv_id
+                    ORDER BY p.published DESC
+                    LIMIT ? OFFSET ?
+                """
+                rows = self.conn.execute(query, (limit, offset)).fetchall()
         else:
             query = "SELECT * FROM papers ORDER BY published DESC LIMIT ? OFFSET ?"
+            rows = self.conn.execute(query, (limit, offset)).fetchall()
 
-        rows = self.conn.execute(query, (limit, offset)).fetchall()
         return [self._row_to_dict(row) for row in rows]
+
+    def enrich_papers_batch(self, papers: list[dict], user_id: int = 1) -> list[dict]:
+        """Enrich a batch of papers with user-specific ratings, tags, collections, and reading list status.
+
+        Performs batch lookups in O(1) database queries instead of O(N) queries per paper.
+        """
+        if not papers:
+            return []
+
+        arxiv_ids = [p["arxiv_id"] for p in papers if p.get("arxiv_id")]
+        if not arxiv_ids:
+            return papers
+
+        placeholders = ",".join("?" for _ in arxiv_ids)
+
+        # 1. Latest ratings
+        ratings_map: dict[str, int] = {}
+        try:
+            query_ratings = f"""
+                SELECT r.arxiv_id, r.rating
+                FROM ratings r
+                INNER JOIN (
+                    SELECT arxiv_id, MAX(rated_at) as max_rated
+                    FROM ratings
+                    WHERE user_id = ? AND arxiv_id IN ({placeholders})
+                    GROUP BY arxiv_id
+                ) latest ON r.arxiv_id = latest.arxiv_id AND r.rated_at = latest.max_rated AND r.user_id = ?
+            """
+            rows = self.conn.execute(query_ratings, [user_id, *arxiv_ids, user_id]).fetchall()
+            for row in rows:
+                ratings_map[row["arxiv_id"]] = row["rating"]
+        except Exception as e:
+            logger.warning(f"Failed to batch fetch ratings: {e}")
+
+        # 2. Tags
+        tags_map: dict[str, list[str]] = {aid: [] for aid in arxiv_ids}
+        try:
+            query_tags = f"""
+                SELECT arxiv_id, tag
+                FROM tags
+                WHERE ((user_id = ?) OR (user_id = 1 AND source != 'user')) AND arxiv_id IN ({placeholders})
+                ORDER BY tag ASC
+            """
+            rows = self.conn.execute(query_tags, [user_id, *arxiv_ids]).fetchall()
+            for row in rows:
+                if row["tag"] not in tags_map[row["arxiv_id"]]:
+                    tags_map[row["arxiv_id"]].append(row["tag"])
+        except Exception as e:
+            logger.warning(f"Failed to batch fetch tags: {e}")
+
+        # 3. Collections
+        collections_map: dict[str, list[dict]] = {aid: [] for aid in arxiv_ids}
+        try:
+            query_cols = f"""
+                SELECT cp.arxiv_id, c.id, c.name, c.description, c.user_id, c.is_public, c.slug, c.created_at
+                FROM collections c
+                INNER JOIN collection_papers cp ON c.id = cp.collection_id
+                WHERE c.user_id = ? AND cp.arxiv_id IN ({placeholders})
+                ORDER BY c.name ASC
+            """
+            rows = self.conn.execute(query_cols, [user_id, *arxiv_ids]).fetchall()
+            for row in rows:
+                collections_map[row["arxiv_id"]].append(dict(row))
+        except Exception as e:
+            logger.warning(f"Failed to batch fetch collections: {e}")
+
+        # 4. Reading list
+        reading_list_set: set[str] = set()
+        try:
+            query_rl = f"""
+                SELECT arxiv_id
+                FROM reading_list
+                WHERE user_id = ? AND arxiv_id IN ({placeholders})
+            """
+            rows = self.conn.execute(query_rl, [user_id, *arxiv_ids]).fetchall()
+            reading_list_set = {row["arxiv_id"] for row in rows}
+        except Exception as e:
+            logger.warning(f"Failed to batch fetch reading list: {e}")
+
+        enriched = []
+        for p in papers:
+            aid = p.get("arxiv_id", "")
+            item = dict(p)
+            if "rating" not in item:
+                item["rating"] = ratings_map.get(aid)
+            item["tags"] = tags_map.get(aid, [])
+            item["collections"] = collections_map.get(aid, [])
+            item["in_reading_list"] = aid in reading_list_set
+            enriched.append(item)
+
+        return enriched
 
     def get_papers_needing_summary(
         self, limit: int = 100, include_failed: bool = True
@@ -1459,15 +1574,24 @@ class PaperDatabase:
             ).fetchone()
         return dict(row) if row else None
 
-    def add_note(self, arxiv_id: str, content: str, user_id: int = 1) -> Optional[int]:
+    def add_note(self, arxiv_id: str, content: str, user_id: int = 1, client_mutation_id: str | None = None) -> Optional[int]:
         """Add a note to a paper for a user. Returns the note ID."""
         now = utcnow().isoformat()
         try:
             cursor = self.conn.execute(
-                "INSERT INTO notes (user_id, arxiv_id, content, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-                (user_id, arxiv_id, content, now, now),
+                "INSERT INTO notes (user_id, arxiv_id, content, created_at, updated_at, client_mutation_id) "
+                "VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(user_id, client_mutation_id) DO NOTHING",
+                (user_id, arxiv_id, content, now, now, client_mutation_id),
             )
             self.conn.commit()
+            if cursor.rowcount == 0 and client_mutation_id:
+                row = self.conn.execute(
+                    "SELECT id, arxiv_id, content FROM notes WHERE user_id = ? AND client_mutation_id = ?",
+                    (user_id, client_mutation_id),
+                ).fetchone()
+                if row and row["arxiv_id"] == arxiv_id and row["content"] == content:
+                    return row["id"]
+                raise ValueError("client_mutation_id was already used for a different note")
             return cursor.lastrowid
         except sqlite3.Error as e:
             logger.error(f"Failed to add note to paper {arxiv_id}: {e}")
@@ -1582,12 +1706,12 @@ class PaperDatabase:
     def remove_from_reading_list(self, arxiv_id: str, user_id: int = 1) -> bool:
         """Remove a paper from a user's reading list."""
         try:
-            cursor = self.conn.execute(
+            self.conn.execute(
                 "DELETE FROM reading_list WHERE user_id = ? AND arxiv_id = ?",
                 (user_id, arxiv_id),
             )
             self.conn.commit()
-            return cursor.rowcount > 0
+            return True
         except sqlite3.Error as e:
             logger.error(f"Failed to remove paper {arxiv_id} from reading list: {e}")
             return False

@@ -10,6 +10,8 @@ import {
   Linking,
   Alert,
   Modal,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import {
   Sparkles,
@@ -28,6 +30,7 @@ import {
 } from 'lucide-react-native';
 import { theme } from '../constants/theme';
 import { api } from '../api/client';
+import { RecoveryView } from '../components/RecoveryView';
 import { Paper, Note, Collection } from '../types';
 
 interface PaperDetailScreenProps {
@@ -37,6 +40,7 @@ interface PaperDetailScreenProps {
 
 export const PaperDetailScreen: React.FC<PaperDetailScreenProps> = ({ route, navigation }) => {
   const { arxivId } = route.params;
+  const [error, setError] = useState(false);
   const [paper, setPaper] = useState<Paper | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
@@ -66,11 +70,12 @@ export const PaperDetailScreen: React.FC<PaperDetailScreenProps> = ({ route, nav
 
   const loadPaper = useCallback(async () => {
     setIsLoading(true);
+    setError(false);
     try {
       const data = await api.getPaper(arxivId);
       setPaper(data);
     } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to fetch paper details');
+      setError(true);
     } finally {
       setIsLoading(false);
     }
@@ -176,6 +181,8 @@ export const PaperDetailScreen: React.FC<PaperDetailScreenProps> = ({ route, nav
     Linking.openURL(url).catch((e) => console.warn('Could not open link:', e));
   };
 
+  if (error) return <RecoveryView onRetry={loadPaper} onSettings={() => navigation.navigate('Root', { screen: 'SettingsTab' })} />;
+
   if (isLoading || !paper) {
     return (
       <View style={styles.centerContainer}>
@@ -188,7 +195,11 @@ export const PaperDetailScreen: React.FC<PaperDetailScreenProps> = ({ route, nav
   const pdfUrl = `https://arxiv.org/pdf/${paper.arxiv_id}.pdf`;
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <KeyboardAvoidingView
+      style={{ flex: 1, backgroundColor: theme.colors.background }}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* Header bar */}
       <View style={styles.headerBar}>
         <View style={styles.badgeRow}>
@@ -216,12 +227,19 @@ export const PaperDetailScreen: React.FC<PaperDetailScreenProps> = ({ route, nav
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.iconButton, paper.rating === 0 && styles.iconActiveDanger]}
+            style={[
+              styles.iconButton,
+              (paper.rating === 0 || paper.rating === -1) && styles.iconActiveDanger,
+            ]}
             onPress={() => handleRate(-1)}
           >
             <ThumbsDown
               size={20}
-              color={paper.rating === 0 ? theme.colors.danger : theme.colors.textMuted}
+              color={
+                paper.rating === 0 || paper.rating === -1
+                  ? theme.colors.danger
+                  : theme.colors.textMuted
+              }
             />
           </TouchableOpacity>
 
@@ -348,13 +366,13 @@ export const PaperDetailScreen: React.FC<PaperDetailScreenProps> = ({ route, nav
                   >
                     <Text style={styles.noteTypeText}>{displayType.toUpperCase()}</Text>
                   </View>
-                  <TouchableOpacity
+                  {note.pending ? <Text style={styles.noteDateText}>Waiting to sync</Text> : <TouchableOpacity
                     style={styles.deleteNoteBtn}
                     onPress={() => handleDeleteNote(note.id)}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
                     <Trash2 size={15} color={theme.colors.textMuted} />
-                  </TouchableOpacity>
+                  </TouchableOpacity>}
                 </View>
                 <Text style={styles.noteContentText}>{displayContent}</Text>
                 {note.created_at ? (
@@ -462,6 +480,7 @@ export const PaperDetailScreen: React.FC<PaperDetailScreenProps> = ({ route, nav
         </View>
       </Modal>
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 };
 

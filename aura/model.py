@@ -74,6 +74,7 @@ class PreferenceModel:
         # Training stats
         self.total_trained = 0
         self.train_history: list[dict] = []
+        self.loaded_at_mtime: float = 0.0
         
         # Experience replay buffer
         self.replay_buffer: list[tuple] = []
@@ -246,6 +247,7 @@ class PreferenceModel:
             os.close(fd)
             torch.save(checkpoint, tmp_path)
             os.replace(tmp_path, self.model_path)
+            self.loaded_at_mtime = self.model_path.stat().st_mtime if self.model_path.exists() else 0.0
             logger.info(f"Model saved atomically to {self.model_path}")
         except Exception as e:
             if os.path.exists(tmp_path):
@@ -256,6 +258,7 @@ class PreferenceModel:
             logger.error(f"Failed to save model atomically to {self.model_path}: {e}")
             # Fall back to standard save as a last resort
             torch.save(checkpoint, self.model_path)
+            self.loaded_at_mtime = self.model_path.stat().st_mtime if self.model_path.exists() else 0.0
             logger.info(f"Fallback model saved directly to {self.model_path}")
 
     def load(self):
@@ -293,9 +296,31 @@ class PreferenceModel:
         self.learning_rate = checkpoint.get("learning_rate", self.learning_rate)
         self.train_history = checkpoint.get("train_history", [])
         self.replay_buffer = checkpoint.get("replay_buffer", [])
+        self.loaded_at_mtime = self.model_path.stat().st_mtime if self.model_path.exists() else 0.0
         logger.info(
             f"Model loaded from {self.model_path} (total_trained={self.total_trained}, hidden_dims={self.hidden_dims})"
         )
+
+    def reload_if_stale(self) -> bool:
+        """Reload weights if model file on disk was modified by another worker or process."""
+        try:
+            if self.model_path.exists():
+                mtime = self.model_path.stat().st_mtime
+                if mtime > getattr(self, "loaded_at_mtime", 0.0):
+                    self.load()
+                    return True
+        except Exception as e:
+            logger.debug(f"Could not check mtime for {self.model_path}: {e}")
+        return False
+
+    def reset(self) -> None:
+        """Reset model weights and optimizer to initial state from scratch."""
+        self.model = PaperPreferenceNet(self.embedding_dim, self.hidden_dims, self.dropout).to(self.device)
+        self.optimizer = torch.optim.Adam(self.model.parameters(), lr=self.learning_rate)
+        self.total_trained = 0
+        self.train_history = []
+        self.replay_buffer = []
+        self.loaded_at_mtime = 0.0
 
     def get_stats(self) -> dict:
         """Return model training statistics."""

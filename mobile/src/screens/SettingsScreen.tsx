@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -20,6 +20,7 @@ import {
   BookOpen,
   RefreshCw,
 } from 'lucide-react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { theme } from '../constants/theme';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
@@ -53,16 +54,20 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
     }
   }, []);
 
-  useEffect(() => {
-    checkPendingMutations();
-  }, [checkPendingMutations]);
+  useFocusEffect(useCallback(() => {
+    void checkPendingMutations();
+    const timer = setInterval(checkPendingMutations, 5000);
+    return () => clearInterval(timer);
+  }, [checkPendingMutations]));
 
   const handleFlushOffline = async () => {
     setIsSyncingOffline(true);
     try {
       const res = await api.flushOfflineMutations();
       await checkPendingMutations();
-      if (res.successCount > 0) {
+      if (res.remainingCount > 0) {
+        Alert.alert('Changes still waiting', `${res.successCount} saved. ${res.remainingCount} still waiting to sync. Check your connection and try again.`);
+      } else if (res.successCount > 0) {
         Alert.alert(
           'Synchronisation Complete',
           `Successfully replayed ${res.successCount} offline action(s).`
@@ -253,6 +258,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
         )}
       </View>
 
+      {isAuthenticated && <>
       {/* Research Tracking */}
       <View style={styles.card}>
         <View style={styles.cardHeader}>
@@ -279,7 +285,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
         </View>
         <Text style={styles.aboutText}>
           {pendingMutations > 0
-            ? `${pendingMutations} pending mutation${pendingMutations > 1 ? 's' : ''} queued locally.`
+            ? `${pendingMutations} change${pendingMutations > 1 ? 's' : ''} waiting to sync.`
             : 'All ratings, reading list actions, and notes are synchronised.'}
         </Text>
         {pendingMutations > 0 && (
@@ -297,12 +303,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
         )}
       </View>
 
-      {/* About & Deployment info */}
+      </>}
+      {/* About */}
       <View style={styles.aboutCard}>
         <Text style={styles.aboutTitle}>AURA Mobile for Android</Text>
         <Text style={styles.aboutText}>
-          Connected to your personal research engine. Tagged releases automatically
-          build standalone binaries and deploy backend updates to your home server.
+          Discover research, save papers for later, and keep your notes with your own AURA server.
         </Text>
       </View>
     </ScrollView>

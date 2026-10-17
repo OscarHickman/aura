@@ -123,3 +123,7 @@ mobile/ios/
 # Local tooling / machine-specific notes
 .playwright-mcp/
 SERVER.md
+
+# Mobile test coverage and local runtime data
+mobile/coverage/
+mobile/data/

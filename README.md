@@ -21,7 +21,7 @@ A powerful research discovery and organization tool. AURA fetches papers from **
 - **Modern UI:** Responsive dark-mode interface with infinite scrolling and keyboard shortcuts.
 - **Daily Digest:** Automated daily email digests with AI summaries of top papers.
 - **Weekly Research Briefs:** Synthesised weekly briefs outlining top recommended papers, emerging topics, notable authors, and methodology trends (viewable at `/briefs` and delivered via email).
-- **Android Mobile App:** React Native & Expo companion app with card swipe triaging, offline reading lists, mobile paper reader, and Google Play Store deployment ([mobile/](mobile/)).
+- **Android Mobile App:** React Native & Expo companion app with paper triaging, offline reading lists, a mobile paper reader, and a Google Play build pipeline ([mobile/](mobile/)).
 
 See [ACHIEVEMENTS.md](ACHIEVEMENTS.md) for the complete milestone and verification log, and [ROADMAP.md](ROADMAP.md) for upcoming phases.
 

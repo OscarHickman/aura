@@ -90,7 +90,7 @@ Key Papers:
 """
 
     logger.info(f"Generating weekly research brief for {date_str} using LLM")
-    html_content = _generate_generic_text(prompt)
+    html_content = _generate_generic_text(prompt, max_tokens=2500)
     
     if not html_content or html_content == "No AI provider available to generate trends.":
         logger.warning("LLM brief generation failed or returned empty. Using fallback template.")

@@ -1,332 +1,341 @@
-# AURA Roadmap — From Research Tool to Full Product
+# AURA Master Development Plan & Architectural Roadmap
 
-**Current state:** Production-grade research discovery and intelligence platform auto-deployed to home server via Tailscale. Features multi-source discovery (arXiv, NASA ADS, Semantic Scholar), PyTorch online preference neural network, Qdrant/ChromaDB vector backends, full-text PDF deep summaries, interactive LLM Q&A, astronomy domain tracking, and a companion Android mobile app. The Google Play pipeline is written but has not yet completed a real release (Phase 14).
+**Current State (v1.3.x — October 2026):**
+AURA (Automated Understanding of Research Articles) is a full-stack research discovery and intelligence platform tailored for astrophysics, cosmology, and machine learning. It spans a Flask + Gunicorn web server, a PyTorch online preference neural network (`PaperPreferenceNet`), sentence-transformer embeddings (`all-MiniLM-L6-v2` / `all-mpnet-base-v2`), SQLite + FTS5 + optional Qdrant vector storage, multi-source ingestion (arXiv, NASA ADS, Semantic Scholar, bioRxiv, RSS), multi-provider LLM synthesis (Groq, OpenAI, Anthropic, Gemini), a Manifest V3 browser extension (`extension/`), and a React Native / Expo (SDK 57) Android companion app (`mobile/`) with an offline-first mutation queue and Google Play CI/CD pipeline.
 
-**Goal:** A self-hostable, feature-rich research discovery platform that a lab or individual researcher would reach for every day.
-
----
-
-## Phase 8 — Scale & Production Hardening
-
-*Make it reliable enough to run on a server.*
-
-### 8.1 Vector Database Migration (Optional)
-**Why it matters:** SQLite BLOB storage for embeddings works up to ~50k papers but becomes slow for similarity queries at scale.
-
-- [x] Add optional ChromaDB or Qdrant backend (feature-flagged)
-- [x] Migrate existing embeddings on startup if vector DB is configured
-- [x] Fall back to numpy cosine similarity if no vector DB is configured
-
-### 8.2 Rate Limiting & Security
-- [x] Add `flask-limiter` to all API endpoints (100 req/min per IP default)
-- [x] Add CSRF protection to all form-based routes via `flask-wtf`
-- [x] Add `Content-Security-Policy` and other security headers via `flask-talisman`
-- [x] Sanitize all user input before storing (tags, collection names, notes)
-- [x] Add SQL injection audit (parameterized queries are used, but verify fully)
-
-### 8.4 Monitoring & Health
-- [x] Add Grafana dashboard JSON to `deploy/`
-- [x] Add container health check in `Dockerfile`
-
-### 8.5 Horizontal Scaling
-- [x] Move preference model save/load to atomic file replace (prevent race conditions with multiple workers)
-- [x] Add `user_id` partitioning so model files don't contend
-- [x] Validate Gunicorn multi-worker correctness (SQLite `check_same_thread=False` is already set, but test under load)
+**Objective of This Document:**
+Following a full-system audit of the backend, web UI, mobile app, database, ML pipeline, deployment stack, and test suites (228 backend tests + 58 mobile unit tests + live mobile-to-Flask contract test), this roadmap records:
+1. **Completed Foundations (Phases 8–18)**
+2. **Audit Findings & Critical Remediation Plan (Phases 19–22)** — exact file-and-line bugs, security vulnerabilities, multi-worker/database bottlenecks, and mobile contract mismatches discovered during review.
+3. **Testing & MCP Verification Strategy (Phase 23)** — end-to-end Puppeteer MCP browser testing, expanded mobile screen/contract coverage, and property-based testing.
+4. **Next-Generation Platform Maximisation (Phases 24–26)** — hybrid cross-encoder ranking, active learning, section-aware PDF RAG, mobile UX polish, and ecosystem expansion.
 
 ---
 
-## Phase 9 — Advanced AI Features
+## Summary of Completed Foundations (Phases 8–18)
 
-*The differentiating features that make AURA a research assistant, not just a filter.*
+### Phase 8 — Scale & Production Hardening (Completed)
+- [x] Optional Qdrant vector backend (`aura/vector_store.py`) with automatic startup migration and NumPy fallback.
+- [x] `flask-limiter` rate limiting, `flask-wtf` CSRF protection, and `flask-talisman` CSP/security headers (`aura/web/app.py`).
+- [x] Grafana dashboard JSON (`deploy/grafana_dashboard.json`) and Docker `HEALTHCHECK` (`Dockerfile`).
+- [x] Atomic file replacement (`os.replace`) for preference model weights (`aura/model.py`) and per-user model partitioning (`preference_model_u{id}.pt`).
 
-### 9.1 Deep Dive Summaries
-**Why it matters:** Current summaries are 2-3 sentences from the abstract only. A real research assistant reads the methods and results.
+### Phase 9 — Advanced AI Features (Completed)
+- [x] Full-text PDF download and extraction (`aura/pdf_scanner.py`) with structured Deep Dive Summaries (*Background / Methods / Results / Significance*) in `grad_student` and `expert` personas (`aura/llm.py`).
+- [x] Streaming Server-Sent Events (SSE) Research Q&A (`/api/papers/<id>/ask`).
+- [x] Visual Trend Radar (`/trends`) with weekly topic heatmaps, velocity sparklines, and spike alerts (`aura/trends.py`).
+- [x] Semantic Scholar Citation Graph integration (`citations` table, bidirectional citation UI, and citation-based score boosting).
+- [x] Weekly Research Briefs (`/briefs` and email delivery via `aura/briefs.py`).
 
-- [x] Add PDF download + text extraction (PyMuPDF or pdfminer)
-- [x] Generate structured summaries: Background / Methods / Results / Significance
-- [x] Cache full-paper summaries separately from abstract summaries
-- [x] Add "explain like I'm a grad student" vs "expert" summary modes
+### Phase 10 — Distribution & Ecosystem (Completed)
+- [x] Interactive OpenAPI 3.0 documentation at `/api/docs` (`aura/web/static/openapi.json`).
+- [x] Formal `PaperSource` plugin interface and entry-point registry (`aura/fetcher.py`, `docs/custom_sources.md`).
+- [x] Multi-container `docker-compose.yml`, interactive `setup.sh`, and `run.py init` / `doctor` / `import` / `export` CLI commands.
 
-### 9.2 Research Q&A
-- [x] Add `/papers/{id}/ask` endpoint: "What dataset did they use?", "Did they compare to X?"
-- [x] Use LLM with the paper's full text as context (RAG over the stored paper text)
-- [x] Stream responses via Server-Sent Events
+### Phase 11 & 12 — Astronomy & Computational Cosmology Intelligence (Completed)
+- [x] NASA ADS integration (`ADSSource`) with `bibcode`, `citation_count`, `read_count`, and `refereed` status tracking.
+- [x] Survey & mission tracking (`surveys` table: DESI, Euclid, Rubin LSST, SKA, Simons Observatory, CMB-S4, HSC, DES, Planck).
+- [x] Cosmological observable, dataset, and inference method extraction (SBI, neural posterior estimation, MCMC, emulators).
+- [x] Tracked authors and collaborator network badges (`/settings/authors`, BibTeX author import).
+- [x] GitHub repository release detection and live star/commit metadata (`aura/github.py`).
 
-### 9.3 Trend Radar
-**Why it matters:** The `trends.py` module generates monthly trend summaries but they're buried in the email. There's no visual trend view in the UI.
-
-- [x] Add `/trends` page showing topic heatmap (papers per week per topic)
-- [x] Plot publication velocity per topic as a sparkline
-- [x] Alert user when a tracked topic spikes significantly
-- [x] Compare trend velocity against a configurable baseline period
-
-### 9.4 Citation Graph Integration
-- [x] Pull citation and reference data from Semantic Scholar for stored papers
-- [x] Store in a `citations` table (`citing_arxiv_id`, `cited_arxiv_id`)
-- [x] Add "papers that cite this" and "papers cited by this" to the detail page
-- [x] Use citation graph for recommendation boosting (a paper cited by many liked papers is likely good)
-
-### 9.5 Research Brief Generation
-- [x] Weekly auto-generated brief: "Here's what happened in your fields this week"
-- [x] Structured: top papers, emerging topics, notable authors, methodology trends
-- [x] Delivered via email and viewable at `/briefs/{date}`
-
----
-
-## Phase 10 — Distribution & Ecosystem
-
-*Make AURA something others can build on.*
-
-### 10.1 REST API Documentation
-- [x] Add `flask-restx` or generate OpenAPI 3.0 spec from existing routes
-- [x] Serve interactive docs at `/api/docs`
-- [x] Document all endpoints, request/response schemas, error codes
-
-### 10.2 Plugin / Source SDK
-- [x] Define a formal `PaperSource` plugin interface (from Phase 4.1)
-- [x] Document how to write a custom source as a Python package
-- [x] Create a `PaperSource` registry: sources register via `entry_points` in `setup.cfg`
-
-### 10.3 One-Click Deploy
-- [x] Add `docker-compose.yml` that bundles AURA + Redis + optional Qdrant
-- [x] Add a `setup.sh` that walks through config interactively
-- [x] Add a Coolify / Railway / Render deploy button to README
-- [x] Publish Docker image to Docker Hub in addition to GHCR
-
-### 10.4 CLI Improvements
-- [x] Add `aura init` wizard that generates a valid `config.yaml` interactively
-- [x] Add `aura doctor` command to validate environment and config
-- [x] Add `aura import <bibtex_file>` to seed the database from an existing library
-- [x] Add `aura export <format>` for bulk export
+### Phase 13–18 — Mobile Platform, API Hardening, Resilience & Research Workflow (Mostly Completed)
+- [x] React Native + Expo SDK 57 Android app (`mobile/`) with Triage Deck, Feed, Paper Reader, Q&A, Reading List, My Papers, and Server Connection Manager.
+- [x] Hardened Bearer token lifecycle (`expires_at`, per-device rotation, revocation on logout, SHA/token management, 5/min IP + per-email login lockouts, opt-in CORS allow-list).
+- [x] API versioning (`/api/v1/*`, `X-API-Version`, `X-Min-App-Version`).
+- [x] Scoped offline mutation queue (`${serverUrl}|${userId}`) with serialised storage writes, idempotent note replay (`client_mutation_id` unique constraint), offline reading-list/note projection, and `ErrorBoundary` + `RecoveryView`.
+- [x] Jest + React Native Testing Library suite (58 unit/component tests, >88% statement coverage on `src/api` and `src/context`) and live mobile-to-Flask/SQLite IPC contract test (`mobile/src/api/__tests__/contract.test.js`).
+- [x] "My Papers" citation diffing (`citation_events`, `citation_history` sparklines, auto-ingestion of citing papers) and LaTeX/BibTeX thesis chapter export (`aura/latex_export.py`).
+- [x] Production Android `.aab` / `.apk` signing and initial upload to Google Play Console Internal Testing track (`com.oscarhickman.aura`, documented in `mobile/RELEASE.md`).
 
 ---
 
-## Phase 11 — Astronomy Domain Intelligence
+## Phase 19 — Critical Bug & Security Remediation (P0 Immediate)
 
-*Purpose-built for the workflows of astronomers and cosmologists.*
+*Resolve concrete runtime crashes, security vulnerabilities, and broken features discovered during the October 2026 codebase audit.*
 
-### 11.1 NASA ADS Integration
-- [x] Implement `ADSSource` using the ADS API (`ui.adsabs.harvard.edu/api`)
-- [x] Map ADS fields to the `Paper` schema: `bibcode`, `citation_count`, `read_count`, `refereed` flag
-- [x] Add `refereed` boolean column to `papers` table
-- [x] Daily background job to refresh ADS citation counts for stored papers
-- [x] Surface citation count and refereed badge on paper cards
-- [x] Use ADS `read_count` as an optional secondary ranking signal
+### 19.1 Fix `PreferenceModel` Call Crash & Double-Sigmoid Bug
+**Audit finding:** `aura/web/app.py:2585, 2611` (`extension_check`) and `aura/notifications.py:138` (`notify_high_scoring_papers`) call `pref_model(emb_t)` directly on `PreferenceModel` (which is a wrapper class in `aura/model.py:44`, not an `nn.Module`, raising `TypeError: 'PreferenceModel' object is not callable`) and then pass the result through `torch.sigmoid()`, even though `PaperPreferenceNet` (`aura/model.py:40`) already terminates with `nn.Sigmoid()`. In `notifications.py:139`, a broad `except Exception:` silently swallows this crash on every run so high-score notifications never fire.
+- [x] Replace `raw_score = pref_model(emb_t)` + `torch.sigmoid(raw_score)` in `aura/web/app.py:2585, 2611` and `aura/notifications.py:138` with `pref_model.predict(emb_np)`.
+- [x] Add unit tests for `/api/extension/check` (both cached-embedding and live-arXiv-fetch branches) and `notify_high_scoring_papers` with a trained `PreferenceModel`.
 
-### 11.2 Survey & Mission Paper Tracking
-- [x] Add `surveys` table: `id`, `name`, `keywords` (JSON list of trigger terms)
-- [x] Auto-tag papers that mention a tracked survey in title or abstract
-- [x] Default survey list: DESI, Euclid, Rubin LSST, SKA, Simons Observatory, CMB-S4, HSC, DES, Planck
-- [x] UI: filter papers view by survey/instrument tag
-- [x] Digest: include a "From the surveys" sub-section in the email
+### 19.2 Fix Mobile `askPaper` SSE vs JSON Protocol Mismatch
+**Audit finding:** `mobile/src/api/client.ts:327–332` calls `this.request<{ answer: string }>('/api/papers/${arxivId}/ask')`, which invokes `await response.json()` (`client.ts:183`). However, `aura/web/app.py:1150–1174` (`ask_paper_question`) unconditionally returns `Response(generate(), mimetype="text/event-stream")` formatted as `data: {"chunk": "..."}\n\n`. Every mobile Q&A query throws a JSON `SyntaxError` at runtime.
+- [x] Update `ask_paper_question` in `aura/web/app.py:1150–1174` so that when `request.headers.get("Accept") == "application/json"` or `data.get("stream") is False`, it collects chunks and returns `jsonify({"answer": full_answer, "arxiv_id": arxiv_id})`, while preserving SSE streaming for the web UI.
+- [ ] Alternatively (or additionally), support incremental SSE chunk reading in `mobile/src/screens/PaperDetailScreen.tsx` for real-time mobile streaming.
+- [x] Add `askPaper` to the live Flask contract test (`mobile/src/api/__tests__/contract.test.js` and `tests/support/mobile_contract_bridge.py`).
 
-### 11.3 Cosmological Statistics & Method Extraction
-- [x] LLM-powered metadata extraction pass running after fetch (before embedding):
-  - **Observable:** power spectrum, correlation function, bispectrum, void statistics, CMB temperature/polarization, weak lensing, shear
-  - **Dataset:** BOSS, DESI, HSC, DES, Planck, SPT, ACT, IllustrisTNG, CAMELS, EAGLE
-  - **Method:** MCMC, nested sampling, SBI, neural posterior estimation, emulator, N-body, semi-analytic model
-- [x] Store extracted tags in the `tags` table with `source='auto'`
-- [x] Use extracted method/dataset tags to boost recommendation precision
-- [x] Filter UI: show papers by observable or method type
+### 19.3 Fix Broken Scheduler Import & Background Task Execution Pipeline
+**Audit finding:**
+1. `aura/scheduler.py:79` executes `from aura.email_digest import send_daily_digest`, which does not exist in `aura/email_digest.py` (the function is `send_digest`), crashing `daily_job` with `ImportError`.
+2. `deploy/docker-compose.yml:22` sets `CELERY_BROKER_URL=redis://redis:6379/0`. When set, `/api/fetch` (`app.py:1461`), `/api/summarize` (`app.py:1473`), `/api/retrain` (`app.py:1637`), and `scheduler.py:106, 130` enqueue Celery tasks via `.delay()`, but **no Celery worker container is defined** in `docker-compose.yml` or `deploy/docker-compose.yml`. Tasks sit in Redis `PENDING` forever.
+3. Furthermore, `Dockerfile` starts `cron` (`docker/crontab`), while `run.py serve --scheduler` runs `APScheduler`, creating duplicate/conflicting scheduling systems.
+- [x] Fix `aura/scheduler.py:79` to import and call `send_digest` with the appropriate config arguments.
+- [ ] Add a dedicated `aura-worker` (Celery worker) service to `docker-compose.yml` and `deploy/docker-compose.yml` (or unset `CELERY_BROKER_URL` by default until the worker service is enabled so `_dispatch_background_task` falls back cleanly to background threads).
+- [ ] Unify `aura/tasks.py` (`fetch_papers_page_task`) with `engine.fetch_new_papers()` so Celery fetches include all configured sources (NASA ADS, Semantic Scholar, bioRxiv, RSS), survey/cosmology tagging, GitHub metadata, Qdrant indexing, and notifications—not just arXiv.
+- [ ] Consolidate scheduling to a single source of truth (either Celery Beat / `cron` in Docker or `APScheduler` in standalone mode, never both simultaneously).
 
-### 11.4 Author & Research Group Tracking
-- [x] Add `tracked_authors` table: `id`, `name`, `orcid` (optional), `affiliation` (optional), `relationship` (`follow` | `collaborator`)
-- [x] At fetch time, flag papers where any tracked author appears in the author list
-- [x] UI: "From authors you follow" badge on paper cards
-- [x] `/settings/authors` page to add/remove tracked authors
-- [x] Digest: "From your network" section for papers by tracked authors
-- [x] Import collaborators in bulk from a BibTeX file's `author` fields
+### 19.4 Eliminate SSTI, Stored XSS, CSRF Gaps & Privilege Escalation
+**Audit finding:**
+1. **SSTI & XSS (`aura/web/app.py:2421, 2489`):** `unsubscribe_digest()` and `rate_direct()` interpolate `{user_record["email"]}`, `{paper_title}`, and `{arxiv_id}` into Python f-strings and pass the result to `render_template_string(html)`. Any paper title containing `{{ ... }}` executes server-side Jinja2 expressions (SSTI), and unescaped HTML triggers XSS. Both endpoints also mutate state on `GET` requests (vulnerable to email link prefetchers).
+2. **Stored XSS in Templates (`papers.html:315, 480`, `paper_detail.html:2, 39, 422, 449, 472, 497, 545, 631`, `brief_detail.html:27`):** `{{ paper.title | safe }}` and `{{ paper.abstract | safe }}` render unescaped HTML from external feeds/uploads, and LLM outputs are injected via `.innerHTML` / `| safe` without sanitisation.
+3. **Unauthenticated & Under-Authorised Routes (`aura/web/app.py`):**
+   - `/api/extension/check` (`L2561`) and `/api/extension/add` (`L2621`, `@csrf.exempt`) lack `@login_required`, defaulting to `user_id = 1` and allowing unauthenticated callers to inject arbitrary papers into the database.
+   - `/api/integrations/slack/command` (`L2491`, `@csrf.exempt`) does not verify Slack signing secrets.
+   - `/settings` (`L2064, 2135`), `/settings/authors` (`L2185`), `/api/fetch` (`L1453`), `/api/summarize` (`L1466`), and `/api/daily-job/run` (`L2157`) check `@login_required` instead of `current_user.is_admin`, allowing any non-admin user to overwrite global `config.yaml` (including SMTP credentials and API keys).
+   - `/api/papers/upload` (`L1502`) and `/api/daily-job/run` (`L2159`) have `@csrf.exempt` while accepting cookie session auth.
+4. **Plaintext API Tokens & Unenforced Scopes (`aura/database.py:1776`, `aura/web/app.py:293`):** API tokens are stored in plaintext in `api_tokens.token`, and `token_scopes` (`read`, `write`, `admin`) are never enforced on routes.
+- [x] Replace `render_template_string(f"...")` in `/unsubscribe/<token>` and `/rate-direct` with parameterised `render_template_string(template_str, email=..., paper_title=...)` (auto-escaped) and require a `POST` confirmation step (or `List-Unsubscribe-Post` one-click POST header) for state changes.
+- [ ] Remove `| safe` from `paper.title` and `paper.abstract` across all templates; for FTS5 `<mark>` highlights (`aura/database.py:1129`), HTML-escape the underlying text before wrapping matches in `<mark>`, and sanitise all LLM/Markdown HTML with `nh3` / `bleach` or client-side DOMPurify.
+- [x] Require `@login_required` on `/api/extension/check` and `/api/extension/add`, require `current_user.is_admin` on `/settings`, `/settings/authors`, `/api/fetch`, `/api/summarize`, and `/api/daily-job/run`, verify `X-Slack-Signature` on `/api/integrations/slack/command`, and enforce `_csrf_exempt_with_bearer` instead of unconditional `@csrf.exempt` on `/api/papers/upload` and `/api/daily-job/run`.
+- [ ] Hash API tokens with SHA-256 at rest (`token_hash` column with prefix lookup) and enforce `read` / `write` / `admin` scopes in a request decorator.
 
-### 11.5 arXiv Category Expansion for Computational Cosmology
-- [x] Add `astro-ph.IM` to `config.example.yaml` defaults
-- [x] Document optional `cs.LG` and `stat.ML` categories in `config.example.yaml`
-- [x] Add cross-listing deduplication: a paper in both `astro-ph.CO` and `cs.LG` stores once with both category labels
+### 19.5 Fix Weekly Brief & LaTeX Synthesis 300-Token Truncation
+**Audit finding:** `generate_weekly_brief()` (`aura/briefs.py:93`) and `synthesize_related_work()` (`aura/latex_export.py:175`) call `_generate_generic_text(prompt)` in `aura/trends.py:90–160`, which hardcodes `max_tokens=300` for Groq, OpenAI, and Anthropic. Multi-section weekly research briefs and LaTeX related-work chapters are truncated mid-sentence after ~220 words.
+- [x] Add a `max_tokens: int = 300` parameter to `_generate_generic_text(prompt, max_tokens=300)` in `aura/trends.py:90`.
+- [x] Pass `max_tokens=2500` in `aura/briefs.py:93` and `aura/latex_export.py:175`.
 
----
-
-## Phase 12 — Simulation-Based Inference & Computational Cosmology
-
-### 12.1 Code & Data Release Detection
-- [x] Optionally fetch the linked GitHub repo metadata (stars, last commit, language)
-
-### 12.2 SBI & Neural Inference Topic Seeds
-- [x] Add to `DEFAULT_TOPICS`: `"neural posterior estimation"`, `"normalizing flows cosmology"`, `"field level inference"`, `"neural compression"`, `"likelihood free inference"`, `"implicit likelihood inference"`, `"amortized inference"`
-- [x] Add to `DEFAULT_TOPICS`: `"two point statistics"`, `"galaxy power spectrum"`, `"higher order statistics cosmology"`, `"summary statistics inference"`
-- [x] Group topics in `research_topics.json` by section (`sbi`, `galaxy_statistics`, `ml_methods`)
+### 19.6 Fix Uncommitted Working Tree & Repository Hygiene
+**Audit finding:** The repository currently has 30 modified files and 6 untracked paths (`git status`), plus an accidentally generated `mobile/data/.secret_key` file from running Flask tests inside `mobile/`, and documentation drift between `mobile/RELEASE.md`, `mobile/README.md`, and `ROADMAP.md`.
+- [x] Delete `mobile/data/.secret_key` and add `mobile/data/` to `.gitignore`.
+- [ ] Replace `datetime.utcnow()` and `datetime.utcfromtimestamp()` in `aura/logging_config.py:19` and `tests/` with timezone-aware `datetime.now(timezone.utc)` / `datetime.fromtimestamp(..., timezone.utc)` (eliminating 1,358 pytest deprecation warnings).
+- [ ] Commit the mobile offline queue, contract test bridge, Alembic migration (`d813f210abcd_add_note_mutation_ids.py`), and API fixes as clean, atomic conventional commits.
 
 ---
 
-## Phase 13 — Mobile Platform & App Store Publishing
+## Phase 20 — Database, Multi-User Isolation & Multi-Worker Architecture (P1)
 
-*Native mobile workflow for on-the-go research triaging and discovery.*
+*Eliminate N+1 query bottlenecks, startup full-table scans, multi-user data leaks, and multi-worker state corruption.*
 
-### 13.1 Android Companion App (`mobile/`)
-- [x] Modern TypeScript application built with React Native and Expo (SDK 52)
-- [x] Card swipe triage deck for rapid, one-handed paper rating and skipping
-- [x] Infinite-scroll recommendation feed with pull-to-refresh and search
-- [x] Full mobile paper reader with structured AI summaries and arXiv/PDF links
-- [x] Interactive mobile Q&A assistant ("Ask Paper") querying backend LLM
-- [x] Reading list management (Unread / Read History) with offline caching
-- [x] Home server connection manager with live ping diagnostics and Bearer token auth
+### 20.1 Eliminate Full-Table Scans on `PaperDatabase.__init__()` & Paper Ingestion
+**Audit finding:**
+1. `PaperDatabase.__init__()` (`aura/database.py:27`) runs `self.auto_tag_all_existing_papers_simulations()`, which scans `SELECT arxiv_id, title, abstract FROM papers` across the entire database on every app startup, every CLI invocation, every Celery task, and every `/trends` page view (`aura/trends.py:187, 390`).
+2. `add_paper()` (`database.py:598`) and `add_papers_batch()` (`database.py:684`) call `self.update_weekly_velocity_history()` on every call, recomputing historical weekly velocity across all papers, and `add_papers_batch()` (`L676–678`) calls `self.add_tag()`, which executes `self.conn.commit()` on every tag inside the batch loop.
+- [ ] Remove `auto_tag_all_existing_papers_simulations()` from `PaperDatabase.__init__()`; run it only via an explicit one-time migration flag in `system_meta` or CLI command.
+- [ ] Remove `update_weekly_velocity_history()` from `add_paper()` / `add_papers_batch()` and invoke it once at the end of `engine.fetch_new_papers()`.
+- [ ] Add `commit: bool = True` to `add_tag()` so `add_papers_batch()` executes inside a single atomic transaction with one `conn.commit()`.
 
-### 13.2 Backend Mobile API
-- [x] Token authentication exchange (`POST /api/auth/login`) returning persistent Bearer tokens
-- [x] Session verification endpoint (`GET /api/auth/me`)
-- [x] Dedicated mobile feed endpoint (`GET /api/papers`) with pagination and rankings
-- [x] Reading list API (`GET /api/reading-list`)
-- [x] Universal CORS support and CSRF exemptions for all `/api/*` endpoints
+### 20.2 Fix Multi-User Data Isolation Leaks Across Database, Recommender & Digests
+**Audit finding:**
+1. `PaperDatabase.get_papers(unrated_only=True)` (`aura/database.py:732–745`) joins `ratings` without filtering by `user_id` (`LEFT JOIN ratings r ON p.arxiv_id = r.arxiv_id WHERE r.id IS NULL`). Once User 1 rates a paper, it disappears from User 2's unrated recommendations!
+2. `RecommendationEngine.get_recommendations()` (`aura/recommender.py:530`) calls `self.db.get_rated_papers()` without `user_id=user_id`, so "Because you liked" explanations for all users are computed against User 1's ratings.
+3. `get_similar_liked_papers()` (`recommender.py:697`), `get_similar_papers()` (`L844`), `semantic_search()` (`L863`), and `email_digest.py:804, 843` (`_collect_network_papers`, `_collect_group_papers`) hardcode `user_id=1`.
+4. `get_group_paper_feed()` (`database.py:2020–2030`) joins `ratings` without deduplicating to the latest rating per user/paper.
+- [ ] Add `user_id: int = 1` parameter to `db.get_papers()` and scope the `LEFT JOIN ratings` / `INNER JOIN ratings` clauses by `r.user_id = ?`.
+- [ ] Pass `user_id=user_id` to `self.db.get_papers()`, `self.db.get_rated_papers()`, `get_similar_liked_papers()`, `get_similar_papers()`, `semantic_search()`, and `email_digest.py` queries.
+- [ ] Fix `get_group_paper_feed()` to join only the latest rating (`MAX(id)`) per `(user_id, arxiv_id)`.
+- [ ] Add a dedicated multi-user isolation test suite (`tests/test_multi_user_isolation.py`) verifying that User A's ratings, reading list, notes, and explanations never leak into User B's feed or digest.
 
-### 13.3 Automated Google Play Pipeline
-- [x] Automated Android App Bundle (`.aab`) and release `.apk` compilation via Gradle in GitHub Actions
-- [x] Dynamic semantic versioning and build code incrementing (`github.run_number`)
-- [x] Cryptographic release keystore signing via `r0adkll/sign-android-release`
-- [x] Automated Google Play Console publishing via `r0adkll/upload-google-play`
-- [x] Simultaneous home server deployment and release asset attachment on git tags
+### 20.3 Eliminate N+1 Queries on `/papers`, `/api/papers`, and `/reading-list`
+**Audit finding:** Rendering `/papers` (`aura/web/app.py:670–676`), `/api/papers` (`L776–787`), or `/reading-list` (`L923–928`) loops over up to 200 papers and runs 4 separate SQL queries per paper (`get_latest_rating`, `get_paper_tags`, `get_paper_collections`, `is_in_reading_list`), generating up to 800 SQL queries per HTTP request.
+- [x] Implement `PaperDatabase.enrich_papers_batch(papers: list[dict], user_id: int) -> list[dict]` using 4 bulk `WHERE arxiv_id IN (...)` queries for ratings, tags, collections, and reading-list status.
+- [x] Replace the per-paper enrichment loops in `aura/web/app.py` with `db.enrich_papers_batch(papers, user_id)`.
+- [x] Fix HTML `/papers` `liked` and `disliked` filters (`app.py:631–646`) to filter in SQL (including 4–5 star ratings for `liked` and `-1, 0, 2` for `disliked`) *before* `LIMIT/OFFSET` pagination.
 
----
+### 20.4 SQLite Thread-Safety, Connection Lifecycle & Alembic Unification
+**Audit finding:**
+1. `PaperDatabase` shares a single `sqlite3.Connection` (`check_same_thread=False`) across threads without a `busy_timeout` PRAGMA or thread-local cursor/transaction isolation, risking `ProgrammingError` or interleaved commits under concurrent requests.
+2. `aura/trends.py:187, 390` creates `PaperDatabase(db_path)` on every `/trends` request and never calls `db.close()`.
+3. `migrations/versions/5b0234fff970_initial_schema.py` is a no-op (`pass`), so running `alembic upgrade head` on a blank DB before `PaperDatabase._create_tables()` fails, and `docker/entrypoint.sh:14` calls `python run.py migrate --check` which does not exist.
+- [ ] Configure `PRAGMA busy_timeout=5000;` and `PRAGMA foreign_keys=ON;` on connection creation, and use `threading.local()` connections (or a thread-safe connection context manager) inside `PaperDatabase`.
+- [ ] Close `PaperDatabase` connections in `aura/trends.py:187, 390` via `try/finally` (or pass `engine.db` directly).
+- [ ] Unify `PaperDatabase._create_tables()` and Alembic so `python run.py migrate` cleanly bootstraps base tables, stamps/runs revisions, and supports `--check` as invoked by `docker/entrypoint.sh`.
 
-## Phase 14 — Ship the Mobile Release
-
-*Take the Phase 13 work from "written" to "installed on a phone from the Play Store".*
-
-### 14.1 Land the Uncommitted Work
-- [x] Review and commit the mobile app, mobile API, CI and deploy changes as focused conventional commits
-- [x] Scrub `ACHIEVEMENTS.md` of absolute `file:///home/...` links (use repo-relative links)
-- [x] Decide whether `SERVER.md` and the Tailscale IP belong in the repo; if not, move to `.gitignore`d local notes
-- [ ] Run `/code-review` + security review on the `aura/web/app.py` mobile API diff before merge
-
-### 14.2 Release Secrets & One-Time Setup
-- [ ] Generate the upload keystore; store `ANDROID_KEYSTORE_BASE`, `KEYSTORE_PASSWORD`, `KEY_ALIAS`, `KEY_PASSWORD` as repo secrets
-- [ ] Create a Play Console service account; store `GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`
-- [x] Add `DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` (or make the Docker Hub push step skip cleanly when absent)
-- [ ] Perform the first manual `.aab` upload in Play Console (required before API uploads work)
-- [ ] Document the keystore backup and recovery procedure (losing it locks the app listing)
-
-### 14.3 Pipeline Dry Runs
-- [x] Add a `workflow_dispatch` trigger that builds and signs without publishing, to test the pipeline without cutting a tag
-- [ ] Verify `expo prebuild` + `./gradlew bundleRelease assembleRelease` locally at least once
-- [ ] Publish to the Play **internal testing** track first; promote to production manually
-- [x] Make `versionCode` monotonic across workflow re-runs (e.g. derive from tag, not only `run_number`)
-- [ ] Cut `v1.0.0` and confirm: server redeploys, GitHub release has `.apk` + `.aab`, Play internal track shows the build
-
-### 14.4 Store Listing
-- [ ] App icon, feature graphic, and phone screenshots of Triage / Feed / Reader / Reading List
-- [x] Privacy policy page (served by the Flask app, e.g. `/privacy`) — required by Play
-- [ ] Data safety form: document that the app talks only to the user's own server
+### 20.5 Multi-Worker Gunicorn Synchronisation & Memory Optimisation
+**Audit finding:** `Dockerfile:33` and `deploy/systemd/aura.service:9` start 4 Gunicorn workers (`-w 4`). Each worker loads its own copy of PyTorch + `sentence-transformers` (~4x RAM), keeps independent in-memory `PreferenceModel` instances in `engine._user_models` (causing Worker B to overwrite Worker A's newly trained weights on disk), and keeps separate `memory://` rate-limit buckets.
+- [x] Track `model_path.stat().st_mtime` in `RecommendationEngine._get_user_model(user_id)`: before predicting or training, reload `PreferenceModel` from disk if `st_mtime` has changed since the worker last loaded it.
+- [ ] Configure `Flask-Limiter` to use `REDIS_URL` / `CELERY_BROKER_URL` storage when Redis is available, falling back to `memory://` only in local single-process dev.
+- [ ] Wire `QDRANT_HOST` / `QDRANT_PORT` (and `QDRANT_URL`) environment variables in `aura/config.py` so the Qdrant container in `docker-compose.yml` is automatically used when present.
+- [ ] Update `Dockerfile` to run Gunicorn under a non-root `aura` user and tune worker/thread topology (`--workers 2 --threads 4` or `--preload` with lazy CUDA/fork-safe PyTorch init) to cut memory footprint in half.
 
 ---
 
-## Phase 15 — Mobile API Hardening
+## Phase 21 — ML Engine, Recommendation Quality & RAG Upgrade (P1/P2)
 
-*The mobile API was built for one trusted user; make it safe to expose to a lab.*
+*Transform the ML and LLM pipeline from a prototype into a fast, calibrated, full-paper intelligence system.*
 
-### 15.1 Token Lifecycle
-- [x] Add `expires_at` to `api_tokens`; enforce expiry in Bearer auth
-- [x] Reuse or rotate the token per device instead of minting a new one on every `POST /api/auth/login`
-- [x] Add `POST /api/auth/logout` that revokes the calling token
-- [x] Show mobile device tokens (name, last used) on the tokens settings page with a revoke button
+### 21.1 Cut `/papers` Inference Latency by 20x & Calibrate `PaperPreferenceNet`
+**Audit finding:**
+1. On every `/papers` and `/api/papers` load, `get_recommendations()` (`aura/recommender.py:508–509`) runs `user_pref_model.predict_batch(embeddings_batch, n_iter=10)` (10 MC-Dropout passes) **plus** `self.shadow_model.predict_batch(embeddings_batch, n_iter=10)` (10 more passes = **20 forward passes** over 500 papers), yet `model_uncertainty` and `shadow_score` are unused in ranking or UI (`recommender.py:639–641`).
+2. `PaperPreferenceNet` (`aura/model.py:36–40`) applies `nn.Sigmoid()` inside the network and trains with `nn.BCELoss()`, and runs 10 epochs of Adam (`lr=1e-3`) on every single rating click (`train_single`), causing severe weight saturation during cold start (<10 rated papers).
+3. `retrain_full()` (`aura/recommender.py:772–783`) instantiates `PreferenceModel(model_path=target_path)`, which immediately calls `self.load()` in `__init__` (`aura/model.py:83–84`), failing to reset weights before full retraining!
+4. `get_recommendations()` (`aura/recommender.py:483`) truncates the candidate pool at `self.db.get_papers(limit=500)` ordered by `published DESC`, starving older relevant papers.
+- [x] Change `predict_batch()` default on standard feed loads to a single deterministic `model.eval()` forward pass (`n_iter=1`) and make `shadow_model` + MC-Dropout opt-in (e.g. for an explicit "Exploration / Active Learning" feed mode), cutting CPU inference time on `/papers` by **20x**.
+- [x] Fix `retrain_full()` by adding `pref_model.reset()` and `shadow_model.reset()` when resetting for a full retrain.
+- [ ] Scale online training steps in `train_single()` proportionally to replay buffer size (e.g. 1–2 gradient steps with weight decay when `len(replay_buffer) < 15`) to prevent cold-start overfitting.
+- [ ] Expand candidate generation in `get_recommendations()` to combine recent papers with Qdrant / vector-store top-K nearest neighbours of the user's positive centroids, so older high-relevance papers are never lost beyond the 500-paper recency window.
 
-### 15.2 Abuse Protection
-- [x] Strict per-IP rate limit on `POST /api/auth/login` (5/min), separate from the global 100/min default
-- [x] Add a per-email login limit / lockout (per-IP alone lets a distributed attacker keep guessing)
-- [x] Replace `Access-Control-Allow-Origin: *` with a configurable allow-list (native apps don't need CORS; only browser clients do)
-- [x] Audit every CSRF-exempt `/api/*` route to confirm it requires a Bearer token or session auth
+### 21.2 Decouple Synchronous LLM Metadata Extraction from `fetch_new_papers()`
+**Audit finding:** `engine.fetch_new_papers()` (`aura/recommender.py:237`) unconditionally calls `self._extract_and_save_metadata(new_papers)` even when `generate_summaries=False`. Fetching 200 papers triggers 200 sequential synchronous LLM requests (`extract_cosmology_metadata`), blocking `fetch` for several minutes and exhausting rate limits.
+- [ ] Gate LLM cosmology metadata extraction behind a config flag (`summaries.extract_metadata_on_fetch: false` by default, or run asynchronously via a background task / batched multi-paper LLM prompt) while keeping fast deterministic regex tagging (surveys, simulation codes, methods) synchronous during fetch.
 
-### 15.3 API Contract
-- [x] Add the mobile endpoints to the OpenAPI spec served at `/api/docs`
-- [x] Version the mobile API (`/api/v1/...` or an `X-API-Version` header) so older app builds keep working after server upgrades
-- [x] Return a minimum-supported-app-version from `/api/auth/me` so the app can prompt for updates
+### 21.3 Section-Aware PDF Chunking & True Embedding RAG for Q&A and Deep Summaries
+**Audit finding:** `generate_full_summary()` (`aura/llm.py:445`) and `stream_ask_paper()` (`aura/llm.py:557`) download the PDF with no size cap and slice `full_text[:40000]`. For 15–40 page astrophysics/ML papers, the results, discussion, conclusions, and appendices beyond char 40,000 are completely discarded.
+- [ ] Enforce a maximum streaming download size (e.g. 50 MB) and cache extracted text on disk (`data/pdf_text/{safe_id}.txt`) so repeated Q&A questions do not re-download and re-parse the PDF on every question.
+- [ ] Implement section-aware chunking in `aura/pdf_scanner.py` (splitting on headings such as *Introduction, Data, Methods, Results, Discussion, Conclusion* into ~1,500-char overlapping chunks).
+- [ ] For `stream_ask_paper()`, embed the chunks with `Embedder` (cached per paper) and retrieve the top-K most relevant chunks for the user's question + the abstract/conclusion, enabling accurate RAG across the entire paper length.
+- [ ] For `generate_full_summary()`, perform a map-reduce or section-targeted extraction (Abstract + Introduction + Methods + Results + Conclusion sections) rather than blind prefix truncation.
 
----
-
-## Phase 16 — Mobile Quality & Testing
-
-*CI only type-checks the app today. Add real tests before adding features.*
-
-### 16.1 Unit & Component Tests
-- [x] Add Jest (`jest-expo` preset) + React Native Testing Library and a `test` script in `mobile/package.json`
-- [x] Unit test `src/api/client.ts`: auth header injection, error mapping, timeout, 401 → logout
-- [x] Unit test `AuthContext`: token persistence in AsyncStorage, restore on launch, sign-out
-- [ ] Component tests for Triage (swipe → rate call), Feed (pagination, search), Reading List (filter toggle, mark read)
-- [ ] Coverage target: 80% for `src/api` and `src/context`
-
-### 16.2 CI
-- [x] Run `pnpm test` and ESLint alongside `tsc --noEmit` in the `mobile-check` job
-- [ ] Contract test: run the mobile client against the Flask test app in CI to catch API drift
-
-### 16.3 Resilience
-- [x] Queue ratings/reading-list changes and notes made offline and replay on reconnect
-- [ ] Error boundary + friendly "server unreachable" screen (Tailscale down is the common failure)
-- [ ] Optional crash reporting (Sentry, opt-in, self-hosted DSN configurable)
+### 21.4 Cache `/trends` Topic Embeddings
+**Audit finding:** Every `GET /trends` request synchronously re-encodes all topic strings through `SentenceTransformer` and reloads all paper embeddings from SQLite (`aura/trends.py:361–493`).
+- [ ] Cache computed `/trends` data in memory/SQLite with a 1-hour TTL (invalidated on `fetch_new_papers` or topic config edits).
 
 ---
 
-## Phase 17 — Mobile Feature Parity
+## Phase 22 — Web UI, Mobile App & Browser Extension Polish (P1/P2)
 
-*Bring the web features people actually use daily onto the phone.*
+*Fix concrete UI defects across the web dashboard, Android app, OpenAPI spec, and Chrome extension.*
 
-### 17.1 Notes & My Papers on Mobile
-- [x] Notes: view / add / delete research notes and classify by type (`general`, `critique`, `idea`, `summary`) on the mobile paper reader
-- [x] My Papers: list registered publications, citation count metrics, citation refresh, and new citation alert banner
-- [x] Collections: browse collections and add papers to collections directly from the mobile paper reader
+### 22.1 Web UI & Service Worker Fixes
+**Audit finding:**
+1. `aura/web/static/sw.js` intercepts all non-API `GET` requests with a **cache-first** strategy (`caches.match(event.request).then(response => response || fetch(event.request))`), serving stale dashboard HTML on `/` after papers or ratings change.
+2. Keyboard shortcuts `u` and `d` in `aura/web/templates/papers.html:560–594` look for removed `.btn-outline-success` / `.btn-outline-danger` selectors and corrupt `arxiv_id` by stripping `paper-` from the sanitised DOM `id`.
+3. `aura/web/templates/paper_detail.html:325–329` displays all ratings `!= 1` (including 2–5 stars and `-1` skip) as "Thumbs Down".
+4. `aura/web/static/openapi.json` has schema drift on `/api/papers/{arxiv_id}/deep-summary` (`mode` enum `grad` vs `grad_student`), `/api/explain/{arxiv_id}`, and `/api/reading-list`.
+- [x] Switch `aura/web/static/sw.js` to **network-first** for HTML navigation requests and **cache-first** only for versioned static assets (`/static/*`).
+- [x] Fix keyboard shortcuts (`j`, `k`, `u`/`l`, `d`, `b`, `o`) in `papers.html` to read `card.dataset.arxivId` and trigger the 5-star / bookmark handlers accurately.
+- [ ] Fix rating history badge rendering in `paper_detail.html:325–329` to render 1–5 star ratings, skips (`-1`), and dislikes (`0`) accurately.
+- [ ] Align `aura/web/static/openapi.json` with the exact request/response payloads of `aura/web/app.py` and add an automated schema conformance test in `tests/test_web_app.py`.
 
-### 17.2 Push Notifications
-- [ ] Integrate `expo-notifications`; register Expo push tokens via a new `POST /api/devices` endpoint
-- [ ] Store device push tokens per user; remove on logout / token revoke
-- [ ] Push the daily digest ("5 new papers for you") after the scheduled fetch
-- [ ] Push high-score paper alerts, reusing the thresholds in `notifications.notify_high_scoring_papers`
-- [ ] Per-user notification preferences (digest / high-score / citation alerts / quiet hours)
+### 22.2 Mobile App Bug Fixes (`mobile/`)
+**Audit finding:**
+1. **Dislike Highlight Bug (`PaperDetailScreen.tsx:224–230`):** Pressing ThumbsDown sends `handleRate(-1)`, setting `paper.rating = -1`, but the active style checks `paper.rating === 0`, so the ThumbsDown button never highlights! Also, backend `_api_paper_list` (`app.py:742`) filters `disliked` by `wanted = (0, 2)` (excluding `-1`).
+2. **Offline Queue 4xx Poison Pill (`mobile/src/api/offlineQueue.ts:93–117`):** In `flushOfflineQueue`, any thrown error breaks the replay loop and leaves the item at the head of the queue. A permanent 4xx error (`400`, `404`, `409`) permanently wedges all subsequent offline mutations for that user.
+3. **Missing Offline Queue Projection on `getPapers` / `getPaper` (`mobile/src/api/client.ts:241–278`):** Unlike `getReadingList` and `getPaperNotes`, `getPapers` and `getPaper` do not overlay pending `rate`, `reading_list_add`, or `reading_list_remove` mutations from `getOfflineQueue(scope)`.
+4. **In-Place State Mutation & Stale Focus in `TriageScreen.tsx` (`L45–47, 68–75`):** `TriageScreen` mutates `currentPaper.in_reading_list` directly and does not refresh state on screen focus when returning from `PaperDetailScreen`.
+5. **Keyboard Occlusion (`PaperDetailScreen.tsx:301, 399`):** Q&A and Note `TextInput` fields at the bottom of `ScrollView` lack a `KeyboardAvoidingView`.
+- [x] Update `PaperDetailScreen.tsx:224, 229` to check `(paper.rating === 0 || paper.rating === -1)` and update `aura/web/app.py:742` to `wanted = (-1, 0, 2)` for `disliked`.
+- [x] Update `flushOfflineQueue` in `mobile/src/api/offlineQueue.ts` so permanent client errors (`ApiError` with status `400`, `404`, `409`, `422`) are dropped/quarantined rather than blocking the queue, while `401`, `429`, `5xx`, and network errors halt and retry later.
+- [x] Project pending offline `rate` and `reading_list_*` mutations onto `getPaper()` and `getPapers()` results in `mobile/src/api/client.ts`, and cache the most recent feed page for offline browsing.
+- [x] Replace direct object mutation in `TriageScreen.tsx:68–75` with immutable state updates, sync state on focus, and add an **Undo Last Triage** button in the header.
+- [x] Wrap `PaperDetailScreen.tsx` in `<KeyboardAvoidingView>`.
 
-### 17.3 iOS Build
-- [ ] Verify the app on the iOS simulator; fix platform-specific layout issues
-- [ ] Add EAS Build (or `expo prebuild` + Xcode on a macOS runner) for iOS
-- [ ] TestFlight distribution via `workflow_dispatch`
+### 22.3 High-Leverage Mobile Feature Completion (`mobile/`)
+- [ ] **Swipe Gesture Deck (`TriageScreen.tsx`):** Add `PanResponder` / `Animated` horizontal swipe gestures (swipe right = Like, swipe left = Skip, swipe up = Bookmark) alongside the existing action buttons.
+- [ ] **On-Demand AI Summaries & Deep Summaries (`PaperDetailScreen.tsx`):** Wire the existing `api.summarizePaper(arxivId)` method and a new `api.getDeepSummary(arxivId, mode)` method (`GET /api/papers/<id>/deep-summary?mode=grad_student|expert`) to buttons in `PaperDetailScreen` so users can generate missing summaries and toggle between Abstract, Grad Student, and Expert deep summaries on mobile.
+- [ ] **Similar Papers, Tags & Collection Management (`PaperDetailScreen.tsx`, `FeedScreen.tsx`):**
+  - Render `paper.similar_papers` (already returned by `GET /api/papers/<id>`) as tappable cards at the bottom of `PaperDetailScreen`.
+  - Render `paper.tags` and `paper.collections` chips on `PaperDetailScreen` with support for removing a paper from a collection (`api.removePaperFromCollection`) and creating a new collection (`POST /api/collections`).
+  - Add collection and tag filter chips to `FeedScreen.tsx`.
+- [ ] **Tappable Citation Alerts & Sparklines (`MyPapersScreen.tsx`):** Make citation event banners tappable to navigate to `PaperDetail` for `ev.citing_arxiv_id`, and render citation history (`api.getCitationHistory(paperId)`) on tracked publications.
+- [ ] **Deep Linking & Version Check (`App.tsx`, `AuthContext.tsx`):** Configure React Navigation `linking` for the `aura://` URL scheme (`aura://papers/:arxivId`, `aura://my-papers`, `aura://triage`) and surface an update banner when `min_app_version` from `/api/auth/me` exceeds the installed app version.
+
+### 22.4 Browser Extension Upgrade (`extension/`)
+- [ ] Add an Extension Options / Settings view in `extension/popup.html` + `popup.js` using `chrome.storage.sync` so users can configure their AURA server URL (e.g. `http://100.88.127.35/aura` or custom domain) and personal Bearer API token (`aura_...`), instead of hardcoding `http://127.0.0.1:5000`.
+- [ ] Pass `Authorization: Bearer <token>` on `/api/extension/check` and `/api/extension/add` requests from `popup.js` and `content.js`.
 
 ---
 
-## Phase 18 — Research Workflow Depth
+## Phase 23 — Comprehensive Testing, Contract Verification & MCP Browser Testing
 
-*Build on existing My Papers and Notes features so AURA covers more of the research workflow.*
+*Maximise confidence across backend, web UI, and mobile through automated unit, contract, and live MCP browser testing.*
 
-### 18.1 "My Papers" Citation Alerts
-My Papers and a daily ADS citation refresh (`refresh_my_papers_citations`) already exist, but nothing tells the user when something changes.
-- [x] Diff citations before/after each refresh and record new citing papers in a `citation_events` table
-- [x] "New citations of your work" section in the email digest and weekly brief
-- [x] Deliver alerts via Slack/Discord webhooks and mobile publication feed
-- [x] Show a citation-count-over-time sparkline per paper on `/my-papers` and track history in `citation_history`
-- [x] Auto-add new citing papers to the database so they get embedded and ranked
+### 23.1 Mobile Screen Coverage & ESLint Gate
+**Audit finding:** `mobile/jest.config.js` only collects coverage from `src/api/*.ts` and `src/context/*.tsx`, while `PaperDetailScreen.tsx` (877 lines), `MyPapersScreen.tsx` (617 lines), `SettingsScreen.tsx` (469 lines), and `App.tsx` (142 lines) have **0% test coverage**, and `mobile/` has no ESLint configuration.
+- [ ] Add dedicated React Native Testing Library suites:
+  - `mobile/src/screens/__tests__/PaperDetailScreen.test.tsx`: rating, bookmarking, Q&A submission/response, note creation/deletion with `[critique|idea|summary]` prefixes, collection modal, summary generation, and similar-paper navigation.
+  - `mobile/src/screens/__tests__/MyPapersScreen.test.tsx`: tracked publication list, add-paper modal validation, delete confirmation, citation refresh, and citation alert tap navigation.
+  - `mobile/src/screens/__tests__/SettingsScreen.test.tsx`: server URL validation, live `/health` ping diagnostics, login/logout flows, and manual offline queue sync.
+- [ ] Expand `collectCoverageFrom` in `mobile/jest.config.js` to include `src/screens/**/*.tsx` and `src/components/**/*.tsx` with enforced CI coverage thresholds.
+- [ ] Add ESLint (`eslint`, `@typescript-eslint/*`) and a `pnpm lint` step in `.github/workflows/ci.yml`.
 
-### 18.2 Notes → Thesis Export
-Notes exist per paper and export per collection as Markdown with BibTeX.
-- [x] Export a collection's notes as a LaTeX chapter skeleton with a matching `.bib` file
-- [x] Stable citation keys (`AuthorYear` style) that stay the same across exports
-- [x] Export notes across all collections filtered by tag (e.g. every note tagged `chapter-2`)
-- [x] Optional LLM-assisted "related work" draft from a collection's notes, clearly marked as a draft
+### 23.2 Expanded Mobile-to-Flask Contract Testing
+**Audit finding:** `mobile/src/api/__tests__/contract.test.js` did not test `askPaper`, `summarizePaper`, `getCollections` / `addPaperToCollection` / `removePaperFromCollection`, or `getMyPapers` / `addMyPaper` / `deleteMyPaper` / `getCitationEvents` / `getCitationHistory`, which allowed the `askPaper` SSE/JSON mismatch to go unnoticed.
+- [ ] Expand `contract.test.js` and `tests/support/mobile_contract_bridge.py` to exercise every single method on `AuraApiClient` against the real Flask application and SQLite database, including 4xx poison-pill resilience in `flushOfflineQueue`.
+
+### 23.3 Live Puppeteer MCP Browser & E2E Visual Verification
+**Why it matters:** Backend `FlaskClient` tests (`tests/test_web_app.py`, `tests/test_e2e.py`) verify HTTP status codes and HTML strings, but they do not execute browser JavaScript (`window.fetch` subpath proxy wrapper in `base.html`, SSE streaming reader in `paper_detail.html`, Chart/heatmap rendering in `trends.html`, Service Worker registration in `sw.js`, or keyboard shortcuts in `papers.html`).
+- [x] Build and run the **Puppeteer MCP Verification Harness** (verified against local server with registration, login, onboarding 5-star rating, feed keyboard navigation 'j' / 'u' / 'd', and paper detail live Q&A submission).
+
+### 23.4 Backend Coverage & Property-Based Testing
+- [ ] Raise `.github/workflows/ci.yml` pytest coverage gate from `--cov-fail-under=65` to `80%`.
+- [ ] Enable `mypy --check-untyped-defs` across `aura/` (resolving the 4 untyped function notes in `aura/web/app.py:1237, 1260, 1261, 2004`).
 
 ---
 
-## Priority Order (Suggested)
+## Phase 24 — Next-Generation Push, Mobile & Cross-Platform Ecosystem
 
-| Priority | Item | Reason |
-|----------|------|--------|
-| 1 | 14.1 Land the uncommitted work | Large uncommitted diff is a risk; blocks everything else |
-| 2 | 15.1–15.2 Token lifecycle & login rate limit | Non-expiring tokens and an unthrottled login endpoint are the main security gaps in the new API |
-| 3 | 14.2–14.3 Release secrets & dry runs | Pipeline has never run end to end |
-| 4 | 16.1–16.2 Mobile tests in CI | Needed before the app grows further |
-| 5 | 14.4 Store listing & privacy policy | Required before a public Play release |
-| 6 | 18.1 My Papers citation alerts | High value, mostly backend, reuses the existing ADS refresh |
-| 7 | 17.2 Push notifications | Turns the app from "open it to check" into a daily-use tool |
-| 8 | 17.1 Notes & My Papers on mobile | Backend mostly exists; mostly UI work |
-| 9 | 18.2 Thesis export | High value for PhD students; builds on existing notes export |
-| 10 | 15.3 API versioning & docs | Matters once more than one app version is in the wild |
-| 11 | 16.3 Offline queue & resilience | Polish |
-| 12 | 17.3 iOS build | Only if there's demand; needs macOS runner / Apple account |
+*Complete the mobile release lifecycle and turn AURA into a proactive daily companion.*
+
+### 24.1 Production Google Play Rollout & Store Listing Completion
+- [ ] Complete store listing assets: high-res app icon, feature graphic, and annotated phone screenshots (Triage Deck, Ranked Feed, Paper Reader + Q&A, Reading List, My Papers Citation Alerts).
+- [ ] Complete Google Play Data Safety declaration (documenting self-hosted home-server architecture and opt-in telemetry).
+- [ ] Promote `com.oscarhickman.aura` from the Google Play **Internal Testing** track (verified on 2026-10-14) to **Closed/Production** track on tag `v1.4.0`.
+
+### 24.2 Native Push Notifications (`expo-notifications`)
+- [ ] Add `device_push_tokens` table (`id`, `user_id`, `token_id`, `expo_push_token`, `platform`, `created_at`, `quiet_hours_json`) and `POST /api/devices` / `DELETE /api/devices` endpoints.
+- [ ] Register Expo push tokens in `mobile/` after login and automatically unregister on `POST /api/auth/logout` or token revocation.
+- [ ] Extend `aura/notifications.py` to dispatch push notifications alongside Slack/Discord webhooks for:
+  - Daily digest ready ("5 new high-match papers today")
+  - High-score paper alert (`score >= threshold`)
+  - New citation alert on user's tracked publications (`citation_events`)
+- [ ] Deep-link push notification taps directly to `aura://papers/:arxivId` or `aura://my-papers`.
+
+### 24.3 Mobile Trends, Weekly Briefs & Audio Digest ("Podcast Mode")
+- [ ] Add JSON endpoints `GET /api/briefs` / `GET /api/briefs/<id>` and `GET /api/trends` so weekly research briefs and rising topic alerts can be read natively inside the mobile app.
+- [ ] **Audio Briefings (TTS):** Optional generation of a 3–5 minute daily audio summary MP3 from the daily digest / weekly brief (using OpenAI TTS / ElevenLabs / local Piper TTS), playable with background audio controls in the mobile app during a commute.
+
+### 24.4 iOS Build & Tablet/Foldable Responsive Layout
+- [ ] Verify layout on iOS Simulator and Android tablets/foldables (two-pane master-detail view for Feed + PaperDetail on wide screens).
+- [ ] Add iOS `expo prebuild` job on `macos-latest` in GitHub Actions for TestFlight distribution.
+
+---
+
+## Phase 25 — Frontier Research Intelligence & Academic Ecosystem Integration
+
+*High-leverage differentiators that make AURA indispensable for an academic research group.*
+
+### 25.1 Two-Stage Ranking (Bi-Encoder Retrieval + Cross-Encoder Re-Ranking) & Active Learning
+- [ ] **Multi-Interest User Prototypes:** Instead of a single MLP score or single mean vector, cluster the user's positively rated papers into $K$ sub-field prototypes (e.g. *Simulation-Based Inference*, *Weak Lensing*, *21cm Cosmology*) so papers matching any distinct research interest receive high similarity explanations.
+- [ ] **Active Learning / Uncertainty Triage Mode:** Use the calibrated epistemic uncertainty from `PaperPreferenceNet` (`model_uncertainty`) in `TriageScreen` to offer an **"Explore Boundary"** mode that surfaces papers where the model is most uncertain, rapidly improving preference boundaries with minimal ratings.
+- [ ] **Implicit Negative & Dwell-Time Signals:** Incorporate explicit skips (`rating = -1`) with configurable lower weight (`0.25`) vs explicit dislikes (`rating = 0`, weight `1.0`) so skipping a paper gently nudges the model without over-penalising an entire sub-field.
+
+### 25.2 Two-Way Reference Manager Sync (Zotero & BibTeX Watch)
+- [ ] **Zotero Web API Sync:** Optional two-way integration with Zotero (`pyzotero` / REST API):
+  - Automatically push bookmarked (`reading_list`) or 5-star papers—along with AURA's AI summary and user research notes—into a designated Zotero collection.
+  - Pull existing Zotero collections to bootstrap and continuously update the user's `PreferenceModel` and `tracked_authors`.
+- [ ] **Overleaf / Git Export Webhook:** One-click push of a collection's generated `.bib` and LaTeX related-work skeleton (`aura/latex_export.py`) to a linked Git repository or Overleaf Git bridge.
+
+### 25.3 Multi-Paper Comparative Synthesis ("Compare Papers" Matrix)
+- [ ] Select 2–10 papers (or an entire collection) and generate a structured **Literature Comparison Matrix** comparing:
+  - *Research Objective / Cosmological Probe*
+  - *Dataset / Survey Release (e.g. DESI DR1 vs SDSS BOSS)*
+  - *Methodology / Model Architecture*
+  - *Key Quantitative Constraints (e.g. $\sigma_8$, $S_8$, $H_0$)*
+  - *Code / Data Availability*
+- [ ] Exportable as Markdown, CSV, or a LaTeX `tabular` environment for direct inclusion in a paper or thesis.
+
+### 25.4 Local-First LLM Support (Ollama / vLLM / llama.cpp)
+- [ ] Add an OpenAI-compatible local endpoint configuration (`LLM_BASE_URL`, e.g. `http://localhost:11434/v1` for Ollama) in `aura/llm.py` so self-hosters with a local GPU can run summarization, cosmology metadata extraction, and full-text RAG Q&A with **zero external API cost and 100% data privacy**.
+
+---
+
+## Execution Priority Matrix
+
+| Priority | Phase / Item | Impact | Effort | Rationale |
+|----------|--------------|--------|--------|-----------|
+| **P0.1** | **19.1** Fix `PreferenceModel` call crash & double sigmoid | Critical | S | Fixes HTTP 500 in `/api/extension/check` and broken high-score notifications |
+| **P0.2** | **19.2** Fix mobile `askPaper` SSE vs JSON mismatch | Critical | S | Fixes broken Q&A feature on the mobile app immediately |
+| **P0.3** | **19.3** Fix `send_daily_digest` import & Celery worker / task dispatch | Critical | M | Restores scheduled daily digests and background `/api/fetch`, `/api/summarize`, `/api/retrain` |
+| **P0.4** | **19.4** Fix SSTI, Stored XSS, CSRF exemptions & admin RBAC checks | Critical | M | Closes SSTI in `/rate-direct` & `/unsubscribe`, XSS in templates, and non-admin config overwrite |
+| **P0.5** | **19.5** Fix 300-token truncation in Weekly Briefs & LaTeX synthesis | High | XS | Unlocks complete multi-section weekly briefs and LaTeX related-work chapters |
+| **P0.6** | **19.6** Clean up `mobile/data/.secret_key`, UTC warnings & commit tree | High | S | Secures working tree and eliminates 1,358 deprecation warnings |
+| **P1.1** | **20.1 & 20.3** Remove `__init__` full-table scan & fix N+1 queries | High | M | Cuts `/papers` & `/api/papers` SQL queries from ~800 to 5 and speeds up every CLI/task startup |
+| **P1.2** | **20.2** Multi-user isolation across DB, recommender & digests | High | M | Prevents User 1's ratings from hiding or explaining papers for User 2 |
+| **P1.3** | **20.4 & 20.5** SQLite thread-local safety & Gunicorn worker model sync | High | M | Prevents lost weight updates across Gunicorn workers and SQLite thread contention |
+| **P1.4** | **21.1** Cut 20x redundant forward passes on `/papers` & fix `retrain_full` | High | S | 20x faster CPU inference on feed loads; ensures `retrain` actually resets weights |
+| **P1.5** | **22.2** Fix mobile dislike highlight (`-1` vs `0`), 4xx queue poison pill & offline overlay | High | S | Makes mobile rating visuals and offline sync queue rock-solid |
+| **P2.1** | **23.1–23.3** Mobile screen tests, full contract tests & Puppeteer MCP suite | High | M | Brings screen test coverage to >80% and verifies live browser JS/SSE/CSP via MCP |
+| **P2.2** | **21.2 & 21.3** Async metadata extraction & section-aware full-PDF RAG | High | L | Makes `fetch` fast and enables full-paper Q&A beyond the 40k-char prefix limit |
+| **P2.3** | **22.1, 22.3 & 22.4** Web shortcuts/SW fix, mobile gestures/deep summaries, extension auth | Medium | M | Completes day-to-day UX polish across web, mobile, and browser extension |
+| **P3.1** | **24.1–24.4** Play Store production track, Expo push notifications & mobile briefs | Medium | M | Turns the mobile app into a proactive daily companion |
+| **P3.2** | **25.1–25.4** Active learning, Zotero 2-way sync, comparative matrix & Ollama support | Medium | L | Differentiates AURA as a complete lab-grade research workspace |
 
 ---
 
 ## Non-Goals (Explicitly Out of Scope)
 
-- Full PDF viewer / annotation inside AURA (too complex; use Zotero for that)
-- Social network / follower model (this is a research tool, not a social platform)
-- Paper submission or authoring tools
-- Replacing arXiv, Semantic Scholar, or any upstream source
+- Full interactive PDF canvas annotation editor inside AURA (use Zotero / tablet PDF readers synced via Phase 25.2).
+- Public social network or public follower graph (AURA is a private personal/lab research intelligence platform).
+- Full manuscript authoring environment (export skeletons to LaTeX/Overleaf instead).
+- Replacing arXiv, NASA ADS, or Semantic Scholar as canonical archival repositories.
