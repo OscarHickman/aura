@@ -135,12 +135,22 @@
                                 <span class="fw-bold">{{ topic.topic }}</span>
                                 <div class="small text-muted mt-1" style="font-size: 0.75rem;">
                                     Section: 
-                                    {% if topic.section == 'sbi' %}
-                                    <span class="badge border border-info text-info bg-transparent">SBI</span>
-                                    {% elif topic.section == 'galaxy_statistics' %}
-                                    <span class="badge border border-success text-success bg-transparent">Galaxy Stats</span>
-                                    {% else %}
+                                    {% if topic.section == 'sbi' or topic.section == 'sbi_inference' %}
+                                    <span class="badge border border-info text-info bg-transparent">SBI &amp; Field-Level</span>
+                                    {% elif topic.section == 'galaxy_statistics' or topic.section == 'galaxy_clustering_hod' %}
+                                    <span class="badge border border-success text-success bg-transparent">Clustering &amp; HOD</span>
+                                    {% elif topic.section == 'galaxy_formation' or topic.section == 'semi_analytic_models_galform' %}
+                                    <span class="badge border border-warning text-warning bg-transparent">GALFORM &amp; SAMs</span>
+                                    {% elif topic.section == 'gravity_and_lensing' or topic.section == 'modified_gravity_and_lensing' %}
+                                    <span class="badge border border-danger text-danger bg-transparent">Gravity &amp; Lensing</span>
+                                    {% elif topic.section == 'cosmological_constraints_sigma8' %}
+                                    <span class="badge border border-primary text-primary bg-transparent">Cosmology &amp; &sigma;₈</span>
+                                    {% elif topic.section == 'highz_jwst_and_strong_lensing' %}
+                                    <span class="badge border border-info text-white bg-info bg-opacity-25">JWST &amp; Lensing</span>
+                                    {% elif topic.section == 'ml_methods' %}
                                     <span class="badge border border-secondary text-secondary bg-transparent">ML Methods</span>
+                                    {% else %}
+                                    <span class="badge border border-secondary text-secondary bg-transparent">{{ topic.section | replace('_', ' ') | title }}</span>
                                     {% endif %}
                                 </div>
                             </td>
