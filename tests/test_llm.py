@@ -188,6 +188,92 @@ class TestLLM(unittest.TestCase):
         self.assertEqual(meta["datasets"], ["DESI"])
         self.assertEqual(meta["methods"], ["MCMC"])
 
+    def test_summarize_extractive(self):
+        title = "Constraining Dark Energy with DESI Year 1 BAO"
+        abstract = (
+            "We present measurements of baryon acoustic oscillations from DESI Year 1. "
+            "We measure the expansion rate across redshift ranges up to z = 2.4. "
+            "Our results place tight constraints on the dark energy equation of state w(a). "
+            "Systematic uncertainties remain dominated by tracer selection effects."
+        )
+        summary = llm._summarize_extractive(title, abstract)
+        self.assertIsNotNone(summary)
+        self.assertTrue(len(summary) > 20)
+        self.assertIn("baryon acoustic oscillations", summary.lower())
+
+    def test_get_effective_providers_order(self):
+        with patch.dict(
+            os.environ,
+            {"OPENROUTER_API_KEY": "sk-or-test", "OLLAMA_HOST": "http://127.0.0.1:11434"},
+            clear=True,
+        ):
+            with patch("aura.llm._load_providers_order", return_value=["groq", "google"]):
+                order = llm.get_effective_providers_order()
+                self.assertEqual(order[:2], ["groq", "google"])
+                self.assertIn("openrouter", order)
+                self.assertIn("ollama", order)
+                self.assertEqual(order[-1], "extractive")
+
+    @patch("aura.llm._resolve_api_key", return_value="test-key")
+    @patch("aura.llm._get_provider_setting", return_value="llama-3.1-8b-instant")
+    def test_summarize_groq_fallback_on_429(self, mock_setting, mock_key):
+        from groq import APIStatusError
+        mock_client = Mock()
+        error_resp = Mock()
+        error_resp.status_code = 429
+        mock_client.chat.completions.create.side_effect = [
+            APIStatusError("Rate limit exceeded", response=error_resp, body={"error": "rate_limit"}),
+            Mock(choices=[Mock(message=Mock(content="Fallback model summary"))]),
+        ]
+        with patch("groq.Groq", return_value=mock_client):
+            summary = llm._summarize_groq("Title", "Abstract")
+            self.assertEqual(summary, "Fallback model summary")
+
+    @patch("aura.llm._resolve_api_key", return_value="test-or-key")
+    def test_summarize_openrouter_success(self, mock_key):
+        self._http_patcher.stop()
+        mock_resp = Mock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "choices": [{"message": {"content": "OpenRouter generated summary"}}]
+        }
+        with patch("aura.llm.requests.post", return_value=mock_resp):
+            summary = llm._summarize_openrouter("Title", "Abstract")
+            self.assertEqual(summary, "OpenRouter generated summary")
+        self._http_patcher.start()
+
+    @patch("aura.llm._resolve_api_key", return_value="test-ds-key")
+    def test_summarize_deepseek_success(self, mock_key):
+        self._http_patcher.stop()
+        mock_resp = Mock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "choices": [{"message": {"content": "DeepSeek generated summary"}}]
+        }
+        with patch("aura.llm.requests.post", return_value=mock_resp):
+            summary = llm._summarize_deepseek("Title", "Abstract")
+            self.assertEqual(summary, "DeepSeek generated summary")
+        self._http_patcher.start()
+
+    def test_summarize_ollama_success(self):
+        self._http_patcher.stop()
+        mock_resp = Mock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {"response": "Ollama local model summary"}
+        with patch("aura.llm.requests.post", return_value=mock_resp):
+            with patch.dict(os.environ, {"OLLAMA_HOST": "http://127.0.0.1:11434"}):
+                summary = llm._summarize_ollama("Title", "Abstract")
+                self.assertEqual(summary, "Ollama local model summary")
+        self._http_patcher.start()
+
+    def test_generate_summary_guaranteed_extractive_fallback(self):
+        # Even when all cloud API providers fail or are unconfigured, generate_summary must succeed via extractive
+        with patch.dict(llm._PROVIDER_FUNCS, {"groq": lambda *_a, **_k: None, "google": lambda *_a, **_k: None}, clear=False):
+            with patch("aura.llm._load_providers_order", return_value=["groq", "google"]):
+                summary = llm.generate_summary("DESI Analysis", "We analyse baryon acoustic oscillations and measure Hubble parameter constraints.")
+                self.assertIsNotNone(summary)
+                self.assertTrue(len(summary) > 10)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -17,6 +17,12 @@ services:
       - QDRANT_HOST=qdrant
       - QDRANT_PORT=6333
       - AURA_TRUSTED_PROXY_HOPS=1
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - MISTRAL_API_KEY=${MISTRAL_API_KEY:-}
+      - CEREBRAS_API_KEY=${CEREBRAS_API_KEY:-}
+      - COHERE_API_KEY=${COHERE_API_KEY:-}
+      - OLLAMA_HOST=${OLLAMA_HOST:-}
     volumes:
       - ./config.yaml:/app/config.yaml
       - ./data:/app/data

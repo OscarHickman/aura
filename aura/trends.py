@@ -90,7 +90,7 @@ def save_topics(data_dir: str | Path, topics: dict[str, list[str]] | list[str]):
 def _generate_generic_text(prompt: str, max_tokens: int = 300) -> str:
     """A generic wrapper to send an arbitrary prompt to the preferred LLM."""
     providers_to_try = _load_providers_order()
-    
+
     for p in providers_to_try:
         if p == "groq":
             try:
@@ -99,15 +99,19 @@ def _generate_generic_text(prompt: str, max_tokens: int = 300) -> str:
                 if not api_key:
                     continue
                 client = Groq(api_key=api_key)
-                # use 8b instant for speed
-                message = client.chat.completions.create(
-                    messages=[{"role": "user", "content": prompt}],
-                    model="llama-3.1-8b-instant",
-                    max_tokens=max_tokens,
-                    temperature=0.5,
-                )
-                content = message.choices[0].message.content
-                return content.strip() if content else ""
+                for model_name in ["llama-3.1-8b-instant", "llama-3.3-70b-versatile"]:
+                    try:
+                        message = client.chat.completions.create(
+                            messages=[{"role": "user", "content": prompt}],
+                            model=model_name,
+                            max_tokens=max_tokens,
+                            temperature=0.5,
+                        )
+                        content = message.choices[0].message.content
+                        if content:
+                            return content.strip()
+                    except Exception:
+                        continue
             except Exception as e:
                 logger.warning(f"Groq generic text generation failed: {e}")
         elif p == "openai":
@@ -166,6 +170,66 @@ def _generate_generic_text(prompt: str, max_tokens: int = 300) -> str:
                     return text
             except Exception as e:
                 logger.warning(f"Google/Gemini generic text generation failed: {e}")
+        elif p == "openrouter":
+            try:
+                import requests as _requests
+                api_key = _resolve_api_key(None, "OPENROUTER_API_KEY", "openrouter")
+                if not api_key:
+                    continue
+                endpoint = "https://openrouter.ai/api/v1/chat/completions"
+                headers = {
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://github.com/OscarHickman/aura",
+                    "X-Title": "AURA Research Assistant",
+                }
+                resp = _requests.post(
+                    endpoint,
+                    json={
+                        "model": "deepseek/deepseek-chat",
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": max_tokens,
+                        "temperature": 0.5,
+                    },
+                    headers=headers,
+                    timeout=35,
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    if content:
+                        return content.strip()
+            except Exception as e:
+                logger.warning(f"OpenRouter generic text generation failed: {e}")
+        elif p == "deepseek":
+            try:
+                import requests as _requests
+                api_key = _resolve_api_key(None, "DEEPSEEK_API_KEY", "deepseek")
+                if not api_key:
+                    continue
+                endpoint = "https://api.deepseek.com/chat/completions"
+                headers = {
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                }
+                resp = _requests.post(
+                    endpoint,
+                    json={
+                        "model": "deepseek-chat",
+                        "messages": [{"role": "user", "content": prompt}],
+                        "max_tokens": max_tokens,
+                        "temperature": 0.5,
+                    },
+                    headers=headers,
+                    timeout=35,
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    if content:
+                        return content.strip()
+            except Exception as e:
+                logger.warning(f"DeepSeek generic text generation failed: {e}")
 
     return "No AI provider available to generate trends."
 

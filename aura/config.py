@@ -132,31 +132,42 @@ def get_validated_config(config_path: str = "config.yaml") -> dict:
             llm["providers_order"] = ["groq"]
             
     providers = llm.setdefault("providers", {})
-    legacy_providers = ["groq", "google", "openai", "anthropic"]
-    for prov in legacy_providers:
+    known_providers = [
+        "groq", "google", "openai", "anthropic",
+        "openrouter", "deepseek", "ollama", "mistral", "cerebras", "cohere"
+    ]
+    for prov in known_providers:
         prov_config = providers.setdefault(prov, {})
         
-        # Load from legacy file if key not set
+        # Load from legacy credentials file if key not set
         if "api_key" not in prov_config:
             old_prov_path = Path(f"user_credentials/{prov}_llm_config.json")
             if old_prov_path.exists():
                 try:
                     with open(old_prov_path) as f:
                         old_data = json.load(f)
-                        prov_config["api_key"] = old_data.get("api_key")
+                        if old_data.get("api_key"):
+                            prov_config["api_key"] = old_data.get("api_key")
                         if old_data.get("model"):
                             prov_config["model"] = old_data.get("model")
+                        if old_data.get("base_url"):
+                            prov_config["base_url"] = old_data.get("base_url")
                 except Exception:
                     pass
                     
         # Overlay environment variables
         env_key_name = f"{prov.upper()}_API_KEY"
-        if os.environ.get("LLM_API_KEY"):
-            prov_config["api_key"] = os.environ.get("LLM_API_KEY")
-        elif os.environ.get(env_key_name):
+        if os.environ.get(env_key_name):
             prov_config["api_key"] = os.environ.get(env_key_name)
         elif prov == "google" and os.environ.get("GEMINI_API_KEY"):
             prov_config["api_key"] = os.environ.get("GEMINI_API_KEY")
+        elif prov == "ollama":
+            if os.environ.get("OLLAMA_HOST"):
+                prov_config["base_url"] = os.environ.get("OLLAMA_HOST")
+            elif os.environ.get("OLLAMA_BASE_URL"):
+                prov_config["base_url"] = os.environ.get("OLLAMA_BASE_URL")
+        elif os.environ.get("LLM_API_KEY") and "api_key" not in prov_config:
+            prov_config["api_key"] = os.environ.get("LLM_API_KEY")
 
     # 3. Validate JSON Schema
     schema = load_schema()
