@@ -289,7 +289,17 @@ class RecommendationEngine:
                 if va_config.get("enabled", True):
                     threshold = va_config.get("threshold", 5)
                     keywords = va_config.get("keywords", self.simulation_codes)
-                    self.db.check_velocity_alerts(threshold=threshold, keywords=keywords)
+                    new_alerts = self.db.check_velocity_alerts(threshold=threshold, keywords=keywords)
+                    if new_alerts:
+                        from .notifications import notify_velocity_spike
+                        for alert in new_alerts:
+                            notify_velocity_spike(
+                                self.db,
+                                keyword=alert["keyword"],
+                                paper_count=alert["paper_count"],
+                                window_start=alert["window_start"],
+                                window_end=alert["window_end"],
+                            )
             except Exception as e:
                 logger.error(f"Failed to dispatch notifications or check velocity alerts: {e}")
 

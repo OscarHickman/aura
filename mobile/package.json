@@ -19,6 +19,8 @@
     "expo": "~57.0.25",
     "expo-asset": "~57.0.18",
     "expo-clipboard": "^57.0.2",
+    "expo-device": "~57.0.2",
+    "expo-notifications": "~57.0.23",
     "expo-splash-screen": "~57.0.9",
     "expo-status-bar": "~57.0.1",
     "lucide-react-native": "^1.48.0",

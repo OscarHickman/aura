@@ -19,11 +19,13 @@ import {
   Key,
   BookOpen,
   RefreshCw,
+  Bell,
 } from 'lucide-react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { theme } from '../constants/theme';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
+import { registerForPushNotificationsAsync } from '../services/notifications';
 
 interface SettingsScreenProps {
   navigation?: any;
@@ -44,6 +46,46 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
   // Offline queue state
   const [pendingMutations, setPendingMutations] = useState<number>(0);
   const [isSyncingOffline, setIsSyncingOffline] = useState<boolean>(false);
+
+  // Push notifications state
+  const [isTestingNotification, setIsTestingNotification] = useState<boolean>(false);
+  const [isRegisteringPush, setIsRegisteringPush] = useState<boolean>(false);
+
+  const handleRegisterPush = async () => {
+    setIsRegisteringPush(true);
+    try {
+      const res = await registerForPushNotificationsAsync();
+      if (res.status === 'granted') {
+        Alert.alert('Notifications Enabled', 'Device successfully registered for AURA alerts.');
+      } else if (res.status === 'unsupported') {
+        Alert.alert('Notice', 'Push notifications require a physical device.');
+      } else if (res.status === 'denied') {
+        Alert.alert('Permission Denied', 'Notification permissions were denied.');
+      } else {
+        Alert.alert('Registration Error', res.error || 'Failed to register for push notifications.');
+      }
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to register push token.');
+    } finally {
+      setIsRegisteringPush(false);
+    }
+  };
+
+  const handleTestNotification = async () => {
+    setIsTestingNotification(true);
+    try {
+      const res = await api.testDeviceNotification();
+      if (res.status === 'ok') {
+        Alert.alert('Test Notification Sent', 'Check your device notification shade.');
+      } else {
+        Alert.alert('Failed', 'Server failed to dispatch test notification.');
+      }
+    } catch (e: any) {
+      Alert.alert('Error', e.message || 'Failed to trigger test notification.');
+    } finally {
+      setIsTestingNotification(false);
+    }
+  };
 
   const checkPendingMutations = useCallback(async () => {
     try {
@@ -301,6 +343,42 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({ navigation }) =>
             )}
           </TouchableOpacity>
         )}
+      </View>
+
+      {/* Push Notifications */}
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <Bell size={20} color={theme.colors.primaryLight} />
+          <Text style={styles.cardTitle}>Push Notifications & Alerts</Text>
+        </View>
+        <Text style={styles.aboutText}>
+          Receive instant alerts for new daily digests, high-scoring paper matches,
+          citations to your publications, and publication spikes in monitored simulation codes.
+        </Text>
+        <View style={{ flexDirection: 'row', gap: 8, marginTop: theme.spacing.sm }}>
+          <TouchableOpacity
+            style={[styles.btn, styles.primaryBtn, { flex: 1 }]}
+            onPress={handleTestNotification}
+            disabled={isTestingNotification}
+          >
+            {isTestingNotification ? (
+              <ActivityIndicator size="small" color={theme.colors.white} />
+            ) : (
+              <Text style={styles.primaryBtnText}>Send Test Alert</Text>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.btn, styles.secondaryBtn, { flex: 1 }]}
+            onPress={handleRegisterPush}
+            disabled={isRegisteringPush}
+          >
+            {isRegisteringPush ? (
+              <ActivityIndicator size="small" color={theme.colors.text} />
+            ) : (
+              <Text style={styles.secondaryBtnText}>Register Device</Text>
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
 
       </>}

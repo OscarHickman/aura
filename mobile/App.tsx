@@ -1,9 +1,10 @@
-import React from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import React, { useEffect } from 'react';
+import { ActivityIndicator, View, Linking } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import { ErrorBoundary } from './src/components/ErrorBoundary';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { NavigationContainer, DarkTheme } from '@react-navigation/native';
+import { NavigationContainer, DarkTheme, LinkingOptions } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Layers, Sparkles, Bookmark, Settings as SettingsIcon, TrendingUp } from 'lucide-react-native';
@@ -17,9 +18,30 @@ import { SettingsScreen } from './src/screens/SettingsScreen';
 import { PaperDetailScreen } from './src/screens/PaperDetailScreen';
 import { MyPapersScreen } from './src/screens/MyPapersScreen';
 import { IntelScreen } from './src/screens/IntelScreen';
+import { registerForPushNotificationsAsync } from './src/services/notifications';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
+
+const linking: LinkingOptions<any> = {
+  prefixes: ['aura://', 'https://oscarhickman.github.io/aura'],
+  config: {
+    screens: {
+      Connect: 'connect',
+      Root: {
+        screens: {
+          TriageTab: 'triage',
+          FeedTab: 'feed',
+          IntelTab: 'intel',
+          ReadingListTab: 'reading-list',
+          SettingsTab: 'settings',
+        },
+      },
+      PaperDetail: 'papers/:arxivId',
+      MyPapers: 'my-papers',
+    },
+  },
+};
 
 const navTheme = {
   ...DarkTheme,
@@ -107,9 +129,30 @@ function BottomTabs() {
 
 function AppNavigation() {
   const { isLoading, isAuthenticated, serverUrl, token } = useAuth();
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    registerForPushNotificationsAsync().catch(err => {
+      console.warn('Push notification registration skipped or failed:', err);
+    });
+
+    const sub = Notifications.addNotificationResponseReceivedListener(response => {
+      const data = response?.notification?.request?.content?.data;
+      if (data?.url && typeof data.url === 'string') {
+        Linking.openURL(data.url).catch(err => {
+          console.warn('Failed to open deep link URL:', err);
+        });
+      }
+    });
+
+    return () => {
+      sub.remove();
+    };
+  }, [isAuthenticated]);
+
   if (isLoading) return <View style={{ flex: 1, justifyContent: 'center', backgroundColor: theme.colors.background }}><ActivityIndicator /></View>;
   return (
-        <NavigationContainer theme={navTheme} key={`${serverUrl}:${token}`}>
+        <NavigationContainer theme={navTheme} linking={linking} key={`${serverUrl}:${token}`}>
 
           <StatusBar style="light" />
           <Stack.Navigator

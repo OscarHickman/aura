@@ -115,3 +115,14 @@ export interface DeepSummaryResponse {
   mode: 'grad_student' | 'expert';
   summary: string;
 }
+
+export interface DevicePushToken {
+  id: number;
+  user_id: number;
+  device_token: string;
+  platform: string;
+  device_name?: string;
+  created_at: string;
+  last_used_at: string;
+}
+

@@ -18,7 +18,8 @@
         "backgroundColor": "#0f172a"
       },
       "permissions": [
-        "INTERNET"
+        "INTERNET",
+        "POST_NOTIFICATIONS"
       ],
       "blockedPermissions": [
         "android.permission.READ_EXTERNAL_STORAGE",
@@ -39,6 +40,13 @@
           "backgroundColor": "#0f172a",
           "image": "./assets/icon.png",
           "imageWidth": 160
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#0f172a"
         }
       ],
       "./plugins/withHomeServer"

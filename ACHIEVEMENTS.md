@@ -117,3 +117,24 @@ This document records the major architectural, algorithmic, infrastructure, and 
 - **Verification & Rigour**:
   - 250 unit and integration tests passing at 100% with >66% coverage.
   - Full mobile test suite (65 tests), contract bridge tests, Expo Android bundle export, strict ruff linting, and 66 mypy source files passing.
+
+---
+
+## 7. Native Push Notifications & Deep Linking Infrastructure (2026-10-18)
+
+- **Device Registry & Lifecycle (`device_push_tokens`)**:
+  - Provisioned SQLite `device_push_tokens` schema with user partitioning, platform tags, device names, and `last_used_at` timestamps.
+  - Added REST API endpoints (`GET /api/devices`, `POST /api/devices`, `DELETE /api/devices`, `DELETE /api/devices/<token>`, `POST /api/devices/test`).
+- **Expo Push Service Integration & Stale Token Pruning**:
+  - Multi-batch Expo push notification service client (`https://exp.host/--/api/v2/push/send`).
+  - Automatic detection and pruning of invalid or uninstalled devices via `DeviceNotRegistered` ticket introspection.
+- **Contextual Notification Triggers**:
+  - **Daily Digest Readiness**: Dispatches push notifications when top recommendations are calculated.
+  - **High-Scoring Papers**: Real-time push alerts when incoming papers exceed user preference score thresholds.
+  - **Publication Velocity Spikes**: Immediate broadcasts when monitored simulation codes experience publication surges.
+  - **Citation Alerts**: Notifies authors when new publications cite their tracked works.
+- **Deep Linking Protocol (`aura://`)**:
+  - Deep-link routing configured in React Navigation (`aura://papers/:arxivId`, `aura://my-papers`, `aura://intel`, `aura://feed`).
+  - Notification response listeners seamlessly routing taps to relevant screens.
+  - Settings UI card with device registration status and one-tap test alert verification.
+

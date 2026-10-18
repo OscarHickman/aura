@@ -8,10 +8,6 @@
 ## Strategic Horizons & Future Work
 
 ### 1. Proactive Mobile Intelligence & Audio Briefings
-- **Native Push Notifications (`expo-notifications`)**:
-  - `device_push_tokens` table and endpoints (`POST /api/devices`, `DELETE /api/devices`).
-  - Automated push notifications on new daily digest availability, publication velocity spikes on tracked simulation codes, and citation alerts on user publications.
-  - Deep-link push notification taps directly to `aura://papers/:arxivId` or `aura://my-papers`.
 - **Commute Audio Briefings ("Podcast Mode")**:
   - Spoken audio synthesis (3–5 minute MP3) synthesising the day's top cosmology recommendations and weekly research briefs using local TTS (Piper) or remote speech APIs.
   - Background audio playback controls integrated into the mobile companion app.

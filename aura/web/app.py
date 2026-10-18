@@ -2903,3 +2903,89 @@ def _register_routes(app: Flask) -> None:
             mimetype="application/x-research-info-systems",
             headers={"Content-Disposition": f"attachment; filename=\"{filename}\""}
         )
+
+    @app.route("/api/devices", methods=["GET"])
+    @login_required
+    def get_devices():
+        if not engine:
+            return jsonify({"error": "Engine not initialized"}), 500
+        uid = _get_current_user_id()
+        devices = engine.db.get_user_device_tokens(uid)
+        return jsonify({"status": "ok", "devices": devices})
+
+    @app.route("/api/devices", methods=["POST"])
+    @csrf.exempt
+    @login_required
+    def register_device():
+        if not engine:
+            return jsonify({"error": "Engine not initialized"}), 500
+        data = request.get_json(silent=True) or {}
+        token = str(data.get("device_token", "")).strip()
+        if not token:
+            return jsonify({"error": "device_token is required"}), 400
+
+        from aura.notifications import is_valid_expo_push_token
+        if not is_valid_expo_push_token(token):
+            return jsonify({"error": "Invalid Expo push token format"}), 400
+
+        platform = str(data.get("platform", "android")).strip().lower()
+        device_name = data.get("device_name")
+        if device_name:
+            device_name = str(device_name).strip()[:100]
+
+        uid = _get_current_user_id()
+        row = engine.db.register_device_token(
+            user_id=uid,
+            device_token=token,
+            platform=platform,
+            device_name=device_name,
+        )
+        if not row:
+            return jsonify({"error": "Failed to register device token"}), 500
+        return jsonify({"status": "ok", "device": row}), 201
+
+    @app.route("/api/devices", methods=["DELETE"])
+    @csrf.exempt
+    @login_required
+    def unregister_device():
+        if not engine:
+            return jsonify({"error": "Engine not initialized"}), 500
+        data = request.get_json(silent=True) or {}
+        token = data.get("device_token") or request.args.get("token")
+        if not token or not str(token).strip():
+            return jsonify({"error": "device_token is required"}), 400
+
+        uid = _get_current_user_id()
+        success = engine.db.unregister_device_token(uid, str(token).strip())
+        return jsonify({"status": "ok", "unregistered": success})
+
+    @app.route("/api/devices/<path:token>", methods=["DELETE"])
+    @csrf.exempt
+    @login_required
+    def unregister_device_by_path(token: str):
+        if not engine:
+            return jsonify({"error": "Engine not initialized"}), 500
+        uid = _get_current_user_id()
+        success = engine.db.unregister_device_token(uid, token.strip())
+        return jsonify({"status": "ok", "unregistered": success})
+
+    @app.route("/api/devices/test", methods=["POST"])
+    @csrf.exempt
+    @login_required
+    def test_device_notification():
+        if not engine:
+            return jsonify({"error": "Engine not initialized"}), 500
+        uid = _get_current_user_id()
+        data = request.get_json(silent=True) or {}
+        title = data.get("title") or "🧪 AURA Test Notification"
+        body = data.get("body") or "Native mobile push notifications are successfully configured!"
+        from aura.notifications import send_push_notification_to_user
+        result = send_push_notification_to_user(
+            engine.db,
+            user_id=uid,
+            title=title,
+            body=body,
+            data={"url": "aura://feed", "type": "test"},
+        )
+        return jsonify({"status": "ok", "result": result})
+

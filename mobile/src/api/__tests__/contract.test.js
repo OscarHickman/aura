@@ -81,6 +81,13 @@ contract('Mobile client against Flask and SQLite', () => {
     expect((await api.getReadingList('read')).papers).toHaveLength(1);
     await api.removeFromReadingList(id);
     expect((await api.getReadingList('read')).papers).toHaveLength(0);
+    const devReg = await api.registerDeviceToken('ExponentPushToken[contract-test-token-12345]', 'android', 'Contract Phone');
+    expect(devReg.status).toBe('ok');
+    expect(devReg.device.device_token).toBe('ExponentPushToken[contract-test-token-12345]');
+    const devicesList = await api.getDevices();
+    expect(devicesList.devices.length).toBeGreaterThanOrEqual(1);
+    const unreg = await api.unregisterDeviceToken('ExponentPushToken[contract-test-token-12345]');
+    expect(unreg.unregistered).toBe(true);
     await api.logout();
     expect(api.getToken()).toBeNull();
     await expect(api.getMe()).rejects.toMatchObject({ status: 401 });

@@ -301,6 +301,19 @@ class PaperDatabase:
             );
             CREATE INDEX IF NOT EXISTS idx_events_user_id ON events(user_id);
             CREATE INDEX IF NOT EXISTS idx_events_date ON events(date);
+
+            CREATE TABLE IF NOT EXISTS device_push_tokens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL DEFAULT 1,
+                device_token TEXT NOT NULL,
+                platform TEXT DEFAULT 'android',
+                device_name TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                last_used_at TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                UNIQUE(user_id, device_token)
+            );
+            CREATE INDEX IF NOT EXISTS idx_device_tokens_user ON device_push_tokens(user_id);
         """)
 
         self.conn.commit()
@@ -406,6 +419,22 @@ class PaperDatabase:
                 fetched_at TEXT NOT NULL,
                 FOREIGN KEY (arxiv_id) REFERENCES papers(arxiv_id) ON DELETE CASCADE
             );
+        """)
+        self.conn.commit()
+
+        self.conn.executescript("""
+            CREATE TABLE IF NOT EXISTS device_push_tokens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL DEFAULT 1,
+                device_token TEXT NOT NULL,
+                platform TEXT DEFAULT 'android',
+                device_name TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                last_used_at TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                UNIQUE(user_id, device_token)
+            );
+            CREATE INDEX IF NOT EXISTS idx_device_tokens_user ON device_push_tokens(user_id);
         """)
         self.conn.commit()
 
@@ -3085,6 +3114,93 @@ class PaperDatabase:
         except sqlite3.Error as e:
             logger.error(f"Failed to get repository metadata for paper {arxiv_id}: {e}")
         return None
+
+    def register_device_token(
+        self,
+        user_id: int,
+        device_token: str,
+        platform: str = "android",
+        device_name: Optional[str] = None,
+    ) -> Optional[dict]:
+        """Register or update an Expo device push token for a user."""
+        try:
+            now = utcnow().isoformat()
+            self.conn.execute(
+                """INSERT INTO device_push_tokens (user_id, device_token, platform, device_name, created_at, last_used_at)
+                   VALUES (?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(user_id, device_token) DO UPDATE SET
+                       platform = excluded.platform,
+                       device_name = COALESCE(excluded.device_name, device_push_tokens.device_name),
+                       last_used_at = excluded.last_used_at""",
+                (user_id, device_token.strip(), platform.lower(), device_name, now, now),
+            )
+            self.conn.commit()
+            row = self.conn.execute(
+                "SELECT id, user_id, device_token, platform, device_name, created_at, last_used_at "
+                "FROM device_push_tokens WHERE user_id = ? AND device_token = ?",
+                (user_id, device_token.strip()),
+            ).fetchone()
+            return dict(row) if row else None
+        except sqlite3.Error as e:
+            logger.error(f"Failed to register device token for user {user_id}: {e}")
+            return None
+
+    def unregister_device_token(self, user_id: int, device_token: str) -> bool:
+        """Unregister a device push token for a user."""
+        try:
+            cur = self.conn.execute(
+                "DELETE FROM device_push_tokens WHERE user_id = ? AND device_token = ?",
+                (user_id, device_token.strip()),
+            )
+            self.conn.commit()
+            return cur.rowcount > 0
+        except sqlite3.Error as e:
+            logger.error(f"Failed to unregister device token for user {user_id}: {e}")
+            return False
+
+    def get_user_device_tokens(self, user_id: int) -> list[dict]:
+        """Get all registered push tokens for a user."""
+        try:
+            rows = self.conn.execute(
+                "SELECT id, user_id, device_token, platform, device_name, created_at, last_used_at "
+                "FROM device_push_tokens WHERE user_id = ? ORDER BY last_used_at DESC",
+                (user_id,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+        except sqlite3.Error as e:
+            logger.error(f"Failed to get device tokens for user {user_id}: {e}")
+            return []
+
+    def get_all_device_tokens(self) -> list[dict]:
+        """Get all registered push tokens across all users."""
+        try:
+            rows = self.conn.execute(
+                "SELECT id, user_id, device_token, platform, device_name, created_at, last_used_at "
+                "FROM device_push_tokens ORDER BY last_used_at DESC"
+            ).fetchall()
+            return [dict(r) for r in rows]
+        except sqlite3.Error as e:
+            logger.error(f"Failed to get all device tokens: {e}")
+            return []
+
+    def delete_stale_device_tokens(self, tokens: list[str]) -> int:
+        """Delete stale or invalidated device push tokens."""
+        if not tokens:
+            return 0
+        try:
+            clean_tokens = [t.strip() for t in tokens if t and t.strip()]
+            if not clean_tokens:
+                return 0
+            placeholders = ",".join("?" for _ in clean_tokens)
+            cur = self.conn.execute(
+                f"DELETE FROM device_push_tokens WHERE device_token IN ({placeholders})",
+                tuple(clean_tokens),
+            )
+            self.conn.commit()
+            return cur.rowcount
+        except sqlite3.Error as e:
+            logger.error(f"Failed to delete stale device tokens: {e}")
+            return 0
 
     def close(self) -> None:
         """Close the database connection."""

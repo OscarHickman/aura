@@ -606,6 +606,13 @@ def send_top_recommendations_email(
             except Exception as e:
                 logger.warning(f"Failed to mark citation events as notified: {e}")
 
+        # Dispatch native mobile push notification if user has registered devices
+        try:
+            from .notifications import notify_push_digest_ready
+            notify_push_digest_ready(engine, user_id=user_id, top_papers=papers)
+        except Exception as e:
+            logger.warning(f"Failed to dispatch push notification for daily digest: {e}")
+
         return {
             "status": "sent",
             "sent": True,

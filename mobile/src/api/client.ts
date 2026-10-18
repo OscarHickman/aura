@@ -3,6 +3,7 @@ import {
   CitationEvent,
   Collection,
   DeepSummaryResponse,
+  DevicePushToken,
   MyPaper,
   Note,
   Paper,
@@ -532,6 +533,45 @@ class AuraApiClient {
   async refreshMyPapersCitations(): Promise<{ status: string }> {
     return await this.request<{ status: string }>('/api/my-papers/refresh-citations', {
       method: 'POST',
+    });
+  }
+
+  // Device push notification methods
+  async registerDeviceToken(
+    deviceToken: string,
+    platform: string = 'android',
+    deviceName?: string
+  ): Promise<{ status: string; device: DevicePushToken }> {
+    return await this.request<{ status: string; device: DevicePushToken }>('/api/devices', {
+      method: 'POST',
+      body: JSON.stringify({
+        device_token: deviceToken,
+        platform,
+        device_name: deviceName,
+      }),
+    });
+  }
+
+  async unregisterDeviceToken(
+    deviceToken: string
+  ): Promise<{ status: string; unregistered: boolean }> {
+    return await this.request<{ status: string; unregistered: boolean }>('/api/devices', {
+      method: 'DELETE',
+      body: JSON.stringify({ device_token: deviceToken }),
+    });
+  }
+
+  async getDevices(): Promise<{ status: string; devices: DevicePushToken[] }> {
+    return await this.request<{ status: string; devices: DevicePushToken[] }>('/api/devices');
+  }
+
+  async testDeviceNotification(
+    title?: string,
+    body?: string
+  ): Promise<{ status: string; result: any }> {
+    return await this.request<{ status: string; result: any }>('/api/devices/test', {
+      method: 'POST',
+      body: JSON.stringify({ title, body }),
     });
   }
 
