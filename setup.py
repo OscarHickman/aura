@@ -14,7 +14,7 @@ def read_requirements():
 
 setup(
     name="aura-recommender",
-    version="0.1.0",
+    version="1.6.0",
     description="AURA - Personalised arXiv Recommender",
     packages=find_packages(),
     py_modules=["run"],

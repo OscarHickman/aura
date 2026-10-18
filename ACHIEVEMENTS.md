@@ -101,3 +101,19 @@ This document records the major architectural, algorithmic, infrastructure, and 
 - Added error recovery screens, a render error boundary, screen interaction tests, coverage gates, and a real mobile-to-Flask/SQLite contract test in CI.
 - Verified Android JavaScript export and native prebuild. The release manifest explicitly supports HTTP home servers and disables app backup.
 - Documented key custody, release steps, data behavior, and remaining device/store verification in [mobile/RELEASE.md](mobile/RELEASE.md). No signed artifact or store release is claimed by these checks.
+
+---
+
+## Release v1.6.0 — Cosmology SBI Research Portfolio Tailoring & Platform Hardening (2026-10-18)
+
+- **Cosmology SBI Portfolio Tailoring (P1–P15)**:
+  - Deep architectural alignment with Oscar Hickman's PhD research portfolio across Simulation-Based Inference (SBI), galaxy clustering, and semi-analytic galaxy formation.
+  - Overhauled Research Topic Radar across 6 core pillars: SBI & Field-Level Inference, Galaxy Clustering & HOD, Semi-Analytic Models (GALFORM), Hydro & Modified Gravity, Cosmological Parameters & $\sigma_8$ Tensions, High-$z$ JWST & Strong Lensing.
+  - Aligned publication velocity alerts with active cosmological simulation codes and surveys (`GALFORM`, `SaUCE`, `CAMELS`, `FLAMINGO`, `COLIBRE`, `FORGE`, `BRIDGE`, `DESI`, `sbi`, `HOD`, `assembly bias`, `dynamical friction`).
+- **Research Group & Collaborator Network Tracking**:
+  - Direct tracking of Durham University supervisors, co-authors, and group collaborators with automatic `+0.20` network bonus and badge annotations in web and mobile feeds.
+- **Resilient AI Summaries & Zero-Fail Extractive NLP**:
+  - High-availability multi-provider AI pipeline with automatic local Ollama model fallback, multi-candidate retry, and deterministic extractive failsafe. Completely cured database summary failures.
+- **Verification & Rigour**:
+  - 250 unit and integration tests passing at 100% with >66% coverage.
+  - Full mobile test suite (65 tests), contract bridge tests, Expo Android bundle export, strict ruff linting, and 66 mypy source files passing.

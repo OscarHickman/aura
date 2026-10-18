@@ -2,7 +2,7 @@
   "expo": {
     "name": "AURA",
     "slug": "aura-mobile",
-    "version": "1.0.0",
+    "version": "1.6.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
@@ -13,7 +13,7 @@
     },
     "android": {
       "package": "com.oscarhickman.aura",
-      "versionCode": 1,
+      "versionCode": 10600,
       "adaptiveIcon": {
         "backgroundColor": "#0f172a"
       },
