@@ -137,6 +137,7 @@ jobs:
           cd ~/docker/aura
           touch .env
           [ -f config.yaml ] || touch config.yaml
+          previous_tag="$(sed -n 's/^TAG=//p' .env | tail -n 1)"
           sed -i '/^TAG=/d' .env
           echo "TAG=${RELEASE_TAG}" >> .env
           # Free disk before pulling; the server has run out of space mid-pull before.
@@ -144,6 +145,11 @@ jobs:
           docker builder prune -f
           docker compose pull
           docker compose up -d --remove-orphans
+          # Keep the current and previous release images for a fast rollback; drop older tags of this app only.
+          docker images --format '{{.Repository}}:{{.Tag}}' \
+            | grep '^ghcr.io/oscarhickman/aura:' \
+            | grep -v -e ":${RELEASE_TAG}\$" -e ':latest$' ${previous_tag:+-e ":${previous_tag}\$"} \
+            | xargs -r docker rmi 2>/dev/null || true
           docker image prune -f
           REMOTE
 
