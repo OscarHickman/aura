@@ -157,24 +157,30 @@ jobs:
         run: |
           ssh deploy-target "RELEASE_TAG='${RELEASE_TAG}' TIMEOUT='${APP_HEALTH_TIMEOUT_SECONDS}' bash -s" <<'REMOTE'
           set -euo pipefail
-          image=$(docker inspect -f '{{.Config.Image}}' aura_app)
-          echo "Running image: ${image}"
-          case "$image" in
-            *":${RELEASE_TAG}") ;;
-            *) echo "::error::aura_app is running ${image}, expected tag ${RELEASE_TAG}"; exit 1 ;;
-          esac
+          for container in aura_app aura_worker; do
+            image=$(docker inspect -f '{{.Config.Image}}' "$container")
+            echo "${container} image: ${image}"
+            case "$image" in
+              *":${RELEASE_TAG}") ;;
+              *) echo "::error::${container} is running ${image}, expected tag ${RELEASE_TAG}"; exit 1 ;;
+            esac
+          done
           deadline=$(( $(date +%s) + TIMEOUT ))
           while true; do
-            status=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' aura_app)
-            echo "health: ${status}"
-            [ "$status" = "healthy" ] && exit 0
+            app_status=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' aura_app)
+            worker_status=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' aura_worker)
+            echo "app health: ${app_status}; worker health: ${worker_status}"
+            [ "$app_status" = "healthy" ] && [ "$worker_status" = "healthy" ] && break
             if [ "$(date +%s)" -ge "$deadline" ]; then
-              echo "::error::aura_app did not become healthy within ${TIMEOUT}s"
+              echo "::error::app and worker did not become healthy within ${TIMEOUT}s"
               docker logs --tail 80 aura_app
+              docker logs --tail 80 aura_worker
               exit 1
             fi
             sleep 5
           done
+          # Exercise the same broker, consumer and result backend as queued API work.
+          docker exec aura_app python -c 'from aura import __version__; from aura.tasks import worker_smoke_task; result = worker_smoke_task.delay().get(timeout=30); assert result == {"status": "ok", "version": __version__}, result; print("Worker round trip:", result)'
           REMOTE
 
 

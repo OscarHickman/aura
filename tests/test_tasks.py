@@ -9,6 +9,20 @@ from aura.tasks import (
     retrain_full_task,
 )
 
+
+class TestRedisRuntime(unittest.TestCase):
+    def test_redis_transport_and_result_backend_load(self):
+        """Catch missing Redis extras before a production worker starts."""
+        from celery import Celery
+        from redis import Redis
+
+        with Celery("redis-runtime", broker="redis://localhost:6379/0",
+                    backend="redis://localhost:6379/0") as app:
+            with app.connection_for_read() as connection:
+                self.assertEqual(connection.transport.driver_type, "redis")
+            self.assertIsInstance(app.backend.client, Redis)
+
+
 class TestCeleryTasks(unittest.TestCase):
 
     @patch("aura.tasks.fetch_papers_page_task.delay")

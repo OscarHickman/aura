@@ -13,6 +13,16 @@ jobs:
     strategy:
       matrix:
         python-version: ["3.10", "3.11"]
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -72,9 +82,19 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm exec jest --runInBand contract.test.js
 
+      - name: Verify Redis worker task round trip
+        env:
+          CELERY_BROKER_URL: redis://127.0.0.1:6379/0
+          CELERY_RESULT_BACKEND: redis://127.0.0.1:6379/0
+        run: |
+          celery -A aura.tasks.celery_app worker --loglevel=info --concurrency=2 > celery.log 2>&1 &
+          worker_pid=$!
+          trap 'kill "$worker_pid" || true' EXIT
+          python -c 'from aura import __version__; from aura.tasks import worker_smoke_task; result = worker_smoke_task.delay().get(timeout=60); assert result == {"status": "ok", "version": __version__}, result; print(result)' || { cat celery.log; exit 1; }
+
       - name: Start Gunicorn (smoke)
         run: |
-          nohup gunicorn "deploy.wsgi:app" -w 2 -b 127.0.0.1:5000 > gunicorn.log 2>&1 & echo $! > gunicorn.pid
+          nohup gunicorn "deploy.wsgi:app" -w 1 --threads 8 --timeout 120 -b 127.0.0.1:5000 > gunicorn.log 2>&1 & echo $! > gunicorn.pid
           sleep 2
 
       - name: Smoke test /health endpoint

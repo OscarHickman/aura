@@ -10,6 +10,7 @@ from .recommender import RecommendationEngine
 from .fetcher import ArxivSource, ADSSource
 from .embedder import embed_papers_batch
 from aura.timeutil import utcnow
+from aura import __version__
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,13 @@ celery_app = Celery("aura_tasks", broker=broker_url, backend=result_backend)
 celery_app.conf.update(
     task_track_started=True,
 )
+
+
+@celery_app.task
+def worker_smoke_task():
+    """Verify broker delivery, worker execution and result retrieval without changing user data."""
+    return {"status": "ok", "version": __version__}
+
 
 @celery_app.task(bind=True)
 def fetch_papers_task(self, max_results=200, days_back=2, generate_summaries=False):

@@ -1,6 +1,6 @@
 # AURA Development Roadmap
 
-**Current Production Release:** `v1.7.1` (October 2026)  
+**Current Production Release:** `v1.7.2` (October 2026)
 *All foundational architecture, audit remediations, mobile companion parity, resilient local-first AI, cosmology portfolio tailoring (P1–P15), native Expo push notifications & deep linking, commute audio briefings, multi-interest prototype clustering, active learning boundary exploration, two-way Zotero sync, Git/Overleaf sync, comparative synthesis matrices, and responsive tablet layouts have been implemented, tested, and released. Historical achievements and release logs are documented in [`ACHIEVEMENTS.md`](ACHIEVEMENTS.md).*
 
 ---

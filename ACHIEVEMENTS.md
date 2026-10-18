@@ -162,6 +162,15 @@ This document records the major architectural, algorithmic, infrastructure, and 
 
 ## 9. Release v1.7.1 — Production Hardening (2026-10-18)
 
-- **Background tasks now execute**: added a dedicated Celery worker service to the production and development compose files. Previously `/api/fetch`, `/api/summarize` and `/api/retrain` queued tasks to Redis with no consumer. Cron is started only in the web container to avoid duplicate scheduled jobs.
+- **Background worker service added**: added a dedicated Celery worker service to the production and development compose files. Subsequent live verification found that it crashed because the image lacked Celery's Redis dependency; corrected in v1.7.2. Cron is started only in the web container to avoid duplicate scheduled jobs.
 - **Consistent model state**: Gunicorn runs a single threaded worker (`-w 1 --threads 8`). Four processes each held their own preference-model weights and rate-limit counters, so rating updates could be overwritten.
 - **Stored-XSS closure**: removed `| safe` from paper titles and abstracts (search highlighting preserved through a `<mark>`-only filter) and rendered LLM-generated briefs through an allow-list sanitiser (`aura/sanitise.py`) with tests.
+
+## 10. Release v1.7.2 — Redis Worker Recovery (2026-10-18)
+
+- Install `celery[redis]` so workers and API producers can load the Redis transport and result backend. The v1.7.1 worker was restarting despite a green web health check.
+- Add a worker health check addressed to its own Celery node. Deployment now checks both container versions and waits for both services to become healthy.
+- Verify a harmless queued task from the web container through Redis to the worker and back through the result backend. The returned version must match the web process. CI runs the same round trip against a real Redis service.
+- Align CI's Gunicorn smoke command with production's single process and eight threads, and give development workers the same fallback-provider environment variables as the web service.
+- Correct Python package metadata to match the application and mobile release versions.
+- Release and live verification results must be checked in GitHub Actions and on the server; these implementation notes alone are not deployment evidence.
