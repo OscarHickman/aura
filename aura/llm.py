@@ -500,7 +500,18 @@ def _summarize_ollama(
 
     configured_model = _get_provider_setting("ollama", "model") or os.environ.get("OLLAMA_MODEL")
     candidate_models = [
-        m for m in [configured_model, "llama3.2", "llama3.1", "qwen2.5", "mistral", "phi3"] if m
+        m
+        for m in [
+            configured_model,
+            "llama3.2:3b",
+            "llama3.2",
+            "llama3.1",
+            "qwen2.5-coder:7b",
+            "qwen2.5",
+            "mistral",
+            "phi3",
+        ]
+        if m
     ]
     prompt = _build_summary_prompt(title, abstract)
     endpoint = f"{base_url}/api/generate"
@@ -1050,7 +1061,7 @@ def generate_full_summary(
                     or "http://localhost:11434"
                 ).rstrip("/")
                 endpoint = f"{base_url}/api/generate"
-                for model in ["llama3.2", "llama3.1", "qwen2.5", "mistral"]:
+                for model in ["llama3.2:3b", "llama3.2", "llama3.1", "qwen2.5-coder:7b", "qwen2.5", "mistral"]:
                     try:
                         payload = {
                             "model": model,
@@ -1296,7 +1307,7 @@ def stream_ask_paper(
                     or "http://localhost:11434"
                 ).rstrip("/")
                 endpoint = f"{base_url}/api/generate"
-                for model in ["llama3.2", "llama3.1", "qwen2.5", "mistral"]:
+                for model in ["llama3.2:3b", "llama3.2", "llama3.1", "qwen2.5-coder:7b", "qwen2.5", "mistral"]:
                     try:
                         payload = {
                             "model": model,
@@ -1505,8 +1516,19 @@ def execute_llm(
                     or "http://localhost:11434"
                 ).rstrip("/")
                 endpoint = f"{base_url}/api/generate"
-                configured_model = _get_provider_setting("ollama", "model")
-                candidate_models = [m for m in [configured_model, "llama3.2", "llama3.1", "qwen2.5", "mistral"] if m]
+                candidate_models = [
+                    m
+                    for m in [
+                        configured_model,
+                        "llama3.2:3b",
+                        "llama3.2",
+                        "llama3.1",
+                        "qwen2.5-coder:7b",
+                        "qwen2.5",
+                        "mistral",
+                    ]
+                    if m
+                ]
                 for model_name in candidate_models:
                     try:
                         resp = requests.post(
