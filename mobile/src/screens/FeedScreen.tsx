@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import {
   View,
   Text,
@@ -8,12 +8,15 @@ import {
   TextInput,
   RefreshControl,
   ActivityIndicator,
+  useWindowDimensions,
+  ScrollView,
 } from 'react-native';
-import { Search, Sparkles, Bookmark, ThumbsUp, ThumbsDown, ChevronRight } from 'lucide-react-native';
+import { Search, Sparkles, Bookmark, ThumbsUp, ThumbsDown, ChevronRight, ExternalLink } from 'lucide-react-native';
 import { theme } from '../constants/theme';
 import { api } from '../api/client';
 import { useFocusEffect } from '@react-navigation/native';
 import { RecoveryView } from '../components/RecoveryView';
+import { AudioPlayer } from '../components/AudioPlayer';
 import { Paper } from '../types';
 
 interface FeedScreenProps {
@@ -21,7 +24,12 @@ interface FeedScreenProps {
 }
 
 export const FeedScreen: React.FC<FeedScreenProps> = ({ navigation }) => {
+  const { width } = useWindowDimensions();
+  const isTablet = width >= 768;
+
   const [papers, setPapers] = useState<Paper[]>([]);
+  const [selectedPaper, setSelectedPaper] = useState<Paper | null>(null);
+  const [audioBriefing, setAudioBriefing] = useState<any>(null);
   const [filter, setFilter] = useState<'unrated' | 'liked' | 'all'>('unrated');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -112,11 +120,18 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ navigation }) => {
 
   const renderItem = ({ item }: { item: Paper }) => {
     const scorePct = Math.round((item.score ?? 0.5) * 100);
+    const isSelected = isTablet && selectedPaper?.arxiv_id === item.arxiv_id;
     return (
       <TouchableOpacity
-        style={styles.card}
+        style={[styles.card, isSelected && styles.selectedTabletCard]}
         activeOpacity={0.7}
-        onPress={() => navigation.navigate('PaperDetail', { arxivId: item.arxiv_id })}
+        onPress={() => {
+          if (isTablet) {
+            setSelectedPaper(item);
+          } else {
+            navigation.navigate('PaperDetail', { arxivId: item.arxiv_id });
+          }
+        }}
       >
         <View style={styles.cardHeader}>
           <View style={styles.scoreBadge}>
@@ -240,11 +255,113 @@ export const FeedScreen: React.FC<FeedScreenProps> = ({ navigation }) => {
         </View>
       ) : error && papers.length === 0 ? (
         <RecoveryView onRetry={() => fetchPapers(true)} onSettings={() => navigation.navigate('SettingsTab')} />
+      ) : isTablet ? (
+        <View style={styles.tabletContainer}>
+          <View style={styles.tabletMasterColumn}>
+            <FlatList
+              testID="paper-feed"
+              onEndReached={() => { if (!error) void fetchPapers(false); }}
+              onEndReachedThreshold={0.4}
+              ListHeaderComponent={audioBriefing?.ok ? (
+                <AudioPlayer
+                  title={audioBriefing.title}
+                  audioUrl={audioBriefing.audio_url}
+                  durationSeconds={audioBriefing.duration_seconds}
+                />
+              ) : null}
+              ListFooterComponent={loadingMore ? <ActivityIndicator /> : null}
+              data={papers}
+              keyExtractor={(item) => item.arxiv_id}
+              renderItem={renderItem}
+              contentContainerStyle={styles.listContent}
+              refreshControl={
+                <RefreshControl
+                  refreshing={isRefreshing}
+                  onRefresh={onRefresh}
+                  tintColor={theme.colors.primary}
+                />
+              }
+              ListEmptyComponent={
+                <View style={styles.emptyContainer}>
+                  <Text style={styles.emptyText}>No papers found for this filter.</Text>
+                </View>
+              }
+            />
+          </View>
+
+          <View style={styles.tabletDetailColumn}>
+            {selectedPaper ? (
+              <ScrollView style={styles.tabletDetailScroll} contentContainerStyle={styles.tabletDetailContent}>
+                <View style={styles.tabletDetailHeader}>
+                  <View style={styles.scoreBadge}>
+                    <Text style={styles.scoreText}>{Math.round((selectedPaper.score ?? 0.5) * 100)}% match</Text>
+                  </View>
+                  <Text style={styles.dateText}>{selectedPaper.published ? selectedPaper.published.substring(0, 10) : ''}</Text>
+                </View>
+
+                <Text style={styles.tabletDetailTitle}>{selectedPaper.title}</Text>
+                <Text style={styles.tabletDetailAuthors}>{(selectedPaper.authors || []).join(', ')}</Text>
+
+                <View style={styles.tabletActionRow}>
+                  <TouchableOpacity
+                    style={[styles.tabletActionBtn, selectedPaper.rating === 1 && styles.tabletActionBtnActive]}
+                    onPress={() => handleRate(selectedPaper.arxiv_id, 1)}
+                  >
+                    <ThumbsUp size={16} color={selectedPaper.rating === 1 ? '#ffffff' : theme.colors.textDim} />
+                    <Text style={[styles.tabletActionText, selectedPaper.rating === 1 && { color: '#ffffff' }]}>Like</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.tabletActionBtn, selectedPaper.in_reading_list && styles.tabletActionBtnSaved]}
+                    onPress={() => handleToggleReadingList(selectedPaper.arxiv_id, selectedPaper.in_reading_list)}
+                  >
+                    <Bookmark size={16} color={selectedPaper.in_reading_list ? '#ffffff' : theme.colors.textDim} />
+                    <Text style={[styles.tabletActionText, selectedPaper.in_reading_list && { color: '#ffffff' }]}>
+                      {selectedPaper.in_reading_list ? 'Saved' : 'Save'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[styles.tabletActionBtn, styles.tabletActionBtnPrimary]}
+                    onPress={() => navigation.navigate('PaperDetail', { arxivId: selectedPaper.arxiv_id })}
+                  >
+                    <ExternalLink size={16} color="#ffffff" />
+                    <Text style={[styles.tabletActionText, { color: '#ffffff' }]}>Full Dossier</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {selectedPaper.summary && (
+                  <View style={styles.tabletSummaryBox}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                      <Sparkles size={16} color={theme.colors.primaryLight} />
+                      <Text style={styles.tabletSectionTitle}>AURA Research Summary</Text>
+                    </View>
+                    <Text style={styles.tabletSummaryText}>{selectedPaper.summary}</Text>
+                  </View>
+                )}
+
+                <Text style={styles.tabletSectionTitle}>Abstract</Text>
+                <Text style={styles.tabletAbstractText}>{selectedPaper.abstract}</Text>
+              </ScrollView>
+            ) : (
+              <View style={styles.emptyContainer}>
+                <Text style={styles.emptyText}>Select a paper from the feed to view full analysis</Text>
+              </View>
+            )}
+          </View>
+        </View>
       ) : (
         <FlatList
           testID="paper-feed"
           onEndReached={() => { if (!error) void fetchPapers(false); }}
           onEndReachedThreshold={0.4}
+          ListHeaderComponent={audioBriefing?.ok ? (
+            <AudioPlayer
+              title={audioBriefing.title}
+              audioUrl={audioBriefing.audio_url}
+              durationSeconds={audioBriefing.duration_seconds}
+            />
+          ) : null}
           ListFooterComponent={loadingMore ? <ActivityIndicator /> : null}
           data={papers}
           keyExtractor={(item) => item.arxiv_id}
@@ -423,5 +540,110 @@ const styles = StyleSheet.create({
   emptyText: {
     color: theme.colors.textMuted,
     fontSize: theme.typography.sm,
+  },
+  selectedTabletCard: {
+    borderColor: theme.colors.primary,
+    borderWidth: 1.5,
+    backgroundColor: 'rgba(99, 102, 241, 0.08)',
+  },
+  tabletContainer: {
+    flex: 1,
+    flexDirection: 'row',
+  },
+  tabletMasterColumn: {
+    width: 380,
+    borderRightWidth: 1,
+    borderRightColor: theme.colors.surfaceBorder,
+    backgroundColor: theme.colors.background,
+  },
+  tabletDetailColumn: {
+    flex: 1,
+    backgroundColor: theme.colors.surface,
+  },
+  tabletDetailScroll: {
+    flex: 1,
+  },
+  tabletDetailContent: {
+    padding: theme.spacing.xl,
+  },
+  tabletDetailHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: theme.spacing.md,
+  },
+  tabletDetailTitle: {
+    fontSize: theme.typography.xl,
+    fontWeight: '800',
+    color: theme.colors.text,
+    marginBottom: theme.spacing.xs,
+  },
+  tabletDetailAuthors: {
+    fontSize: theme.typography.sm,
+    color: theme.colors.textSecondary,
+    marginBottom: theme.spacing.md,
+  },
+  tabletActionRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: theme.spacing.lg,
+  },
+  tabletActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: theme.colors.surfaceLight,
+    borderWidth: 1,
+    borderColor: theme.colors.surfaceBorder,
+  },
+  tabletActionBtnActive: {
+    backgroundColor: theme.colors.success,
+    borderColor: theme.colors.success,
+  },
+  tabletActionBtnSaved: {
+    backgroundColor: theme.colors.warning,
+    borderColor: theme.colors.warning,
+  },
+  tabletActionBtnPrimary: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
+  },
+  tabletActionText: {
+    fontSize: theme.typography.xs,
+    fontWeight: '600',
+    color: theme.colors.textSecondary,
+  },
+  tabletSummaryBox: {
+    backgroundColor: 'rgba(99, 102, 241, 0.08)',
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.md,
+    marginBottom: theme.spacing.lg,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.25)',
+  },
+  tabletSectionTitle: {
+    fontSize: theme.typography.sm,
+    fontWeight: '700',
+    color: theme.colors.primaryLight,
+    marginBottom: 4,
+  },
+  tabletSummaryText: {
+    fontSize: theme.typography.sm,
+    color: theme.colors.text,
+    lineHeight: 22,
+  },
+  tabletAbstractText: {
+    fontSize: theme.typography.sm,
+    color: theme.colors.textSecondary,
+    lineHeight: 22,
+  },
+  tabletPlaceholder: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: theme.spacing.xl,
   },
 });

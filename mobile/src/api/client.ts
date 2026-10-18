@@ -575,6 +575,64 @@ class AuraApiClient {
     });
   }
 
+  // Research Horizons: Prototype Clusters, Audio Briefings, Zotero, & Comparative Matrix
+  async getUserClusters(): Promise<{
+    clusters: { cluster_id: number; label: string; keywords: string[]; paper_count: number }[];
+    total: number;
+  }> {
+    return await this.request<{
+      clusters: { cluster_id: number; label: string; keywords: string[]; paper_count: number }[];
+      total: number;
+    }>('/api/user/clusters');
+  }
+
+  async getDailyAudioBriefing(force: boolean = false): Promise<{
+    ok: boolean;
+    title: string;
+    audio_url: string;
+    script: string;
+    duration_seconds: number;
+    papers: any[];
+  }> {
+    const url = `/api/audio/daily${force ? '?force=true' : ''}`;
+    return await this.request<{
+      ok: boolean;
+      title: string;
+      audio_url: string;
+      script: string;
+      duration_seconds: number;
+      papers: any[];
+    }>(url);
+  }
+
+  async getZoteroStatus(): Promise<any> {
+    return await this.request<any>('/api/zotero/status');
+  }
+
+  async syncZotero(arxivId?: string): Promise<any> {
+    return await this.request<any>('/api/zotero/sync', {
+      method: 'POST',
+      body: JSON.stringify(arxivId ? { arxiv_id: arxivId } : {}),
+    });
+  }
+
+  async comparePapers(arxivIds: string[]): Promise<{
+    ok: boolean;
+    matrix: any[];
+    synthesis_markdown: string;
+    papers_count?: number;
+  }> {
+    return await this.request<{
+      ok: boolean;
+      matrix: any[];
+      synthesis_markdown: string;
+      papers_count?: number;
+    }>('/api/papers/compare', {
+      method: 'POST',
+      body: JSON.stringify({ arxiv_ids: arxivIds }),
+    });
+  }
+
   // Offline queue utilities
   async flushOfflineMutations(): Promise<FlushResult> {
     const scope = this.getScope();

@@ -141,6 +141,7 @@ class PreferenceModel:
         self,
         embeddings: list[np.ndarray],
         labels: list[float],
+        weights: list[float] | None = None,
         epochs: int = 5,
         progress_callback = None,
         use_scheduler: bool = False,
@@ -150,6 +151,7 @@ class PreferenceModel:
         Args:
             embeddings: List of paper embedding vectors.
             labels: List of labels (1.0 = thumbs up, 0.0 = thumbs down).
+            weights: Optional sample weights (e.g. 0.25 for skips, 1.0 for explicit feedback).
             epochs: Number of epochs to train on this batch.
             progress_callback: Optional callback receiving (epoch + 1, epochs).
             use_scheduler: Use CosineAnnealingLR (ideal for full retrains).
@@ -161,16 +163,22 @@ class PreferenceModel:
 
         x = torch.tensor(np.stack(embeddings), dtype=torch.float32).to(self.device)
         y = torch.tensor(labels, dtype=torch.float32).to(self.device)
+        w = torch.tensor(weights, dtype=torch.float32).to(self.device) if weights is not None else None
 
         scheduler = None
         if use_scheduler:
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=epochs)
 
+        bce_none = nn.BCELoss(reduction="none") if w is not None else None
+
         final_loss = 0.0
         for epoch in range(epochs):
             self.optimizer.zero_grad()
             predictions = self.model(x)
-            loss = self.criterion(predictions, y)
+            if w is not None and bce_none is not None:
+                loss = (bce_none(predictions, y) * w).mean()
+            else:
+                loss = self.criterion(predictions, y)
             loss.backward()
             self.optimizer.step()
             
@@ -200,15 +208,20 @@ class PreferenceModel:
         return final_loss
 
     def train_single(
-        self, embedding: np.ndarray, label: float, epochs: int = 10, arxiv_id: str | None = None
+        self,
+        embedding: np.ndarray,
+        label: float,
+        weight: float = 1.0,
+        epochs: int = 10,
+        arxiv_id: str | None = None,
     ) -> float:
-        """Train on a single paper feedback using experience replay."""
+        """Train on a single paper feedback using experience replay with sample weights."""
         # Add to replay buffer
         if arxiv_id:
             # Remove any existing entry for this paper (re-rating)
             self.replay_buffer = [item for item in self.replay_buffer if len(item) < 3 or item[2] != arxiv_id]
 
-        self.replay_buffer.append((embedding, label, arxiv_id))
+        self.replay_buffer.append((embedding, label, arxiv_id, weight))
         if len(self.replay_buffer) > self.max_replay_size:
             self.replay_buffer.pop(0)
 
@@ -218,12 +231,19 @@ class PreferenceModel:
             batch = random.sample(self.replay_buffer[:-1], batch_size - 1)
         else:
             batch = []
-        batch.append((embedding, label, arxiv_id))
+        batch.append((embedding, label, arxiv_id, weight))
 
         batch_embeddings = [b[0] for b in batch]
         batch_labels = [b[1] for b in batch]
+        batch_weights = [b[3] if len(b) > 3 else 1.0 for b in batch]
 
-        return self.train_step(batch_embeddings, batch_labels, epochs=epochs, use_scheduler=False)
+        return self.train_step(
+            batch_embeddings,
+            batch_labels,
+            weights=batch_weights,
+            epochs=epochs,
+            use_scheduler=False,
+        )
 
     def save(self):
         """Save model weights and training state to disk atomically."""

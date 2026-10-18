@@ -1,6 +1,6 @@
 {
   "name": "aura-mobile",
-  "version": "1.6.1",
+  "version": "1.7.0",
   "main": "index.js",
   "scripts": {
     "start": "expo start",
@@ -18,6 +18,7 @@
     "@react-navigation/native-stack": "^7.0.0",
     "expo": "~57.0.25",
     "expo-asset": "~57.0.18",
+    "expo-av": "^16.0.8",
     "expo-clipboard": "^57.0.2",
     "expo-device": "~57.0.2",
     "expo-notifications": "~57.0.23",

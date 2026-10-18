@@ -56,6 +56,7 @@ export const PaperDetailScreen: React.FC<PaperDetailScreenProps> = ({ route, nav
   // BibTeX state
   const [isCopyingBibtex, setIsCopyingBibtex] = useState<boolean>(false);
   const [isBibtexCopied, setIsBibtexCopied] = useState<boolean>(false);
+  const [isZoteroSyncing, setIsZoteroSyncing] = useState<boolean>(false);
 
   // Q&A state
   const [question, setQuestion] = useState<string>('');
@@ -244,6 +245,23 @@ export const PaperDetailScreen: React.FC<PaperDetailScreenProps> = ({ route, nav
     Linking.openURL(url).catch((e) => console.warn('Could not open link:', e));
   };
 
+  const handleZoteroSync = async () => {
+    if (!paper) return;
+    setIsZoteroSyncing(true);
+    try {
+      const res = await api.syncZotero(paper.arxiv_id);
+      if (res && res.ok) {
+        Alert.alert('Zotero Sync', `Successfully pushed "${paper.title}" to your Zotero library with AI notes.`);
+      } else {
+        Alert.alert('Zotero Sync', res?.error || 'Check server Zotero credentials in Settings.');
+      }
+    } catch (e: any) {
+      Alert.alert('Zotero Sync Error', e.message);
+    } finally {
+      setIsZoteroSyncing(false);
+    }
+  };
+
   if (error) return <RecoveryView onRetry={loadPaper} onSettings={() => navigation.navigate('Root', { screen: 'SettingsTab' })} />;
 
   if (isLoading || !paper) {
@@ -352,6 +370,19 @@ export const PaperDetailScreen: React.FC<PaperDetailScreenProps> = ({ route, nav
             <Copy size={16} color={theme.colors.primaryLight} />
           )}
           <Text style={styles.linkButtonText}>{isBibtexCopied ? 'Copied' : 'BibTeX'}</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.linkButton}
+          onPress={handleZoteroSync}
+          disabled={isZoteroSyncing}
+        >
+          {isZoteroSyncing ? (
+            <ActivityIndicator size="small" color={theme.colors.primaryLight} />
+          ) : (
+            <Layers size={16} color={theme.colors.primaryLight} />
+          )}
+          <Text style={styles.linkButtonText}>Zotero</Text>
         </TouchableOpacity>
       </View>
 

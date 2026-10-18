@@ -985,26 +985,46 @@ class PaperDatabase:
             results.append((paper, embedding, rating))
         return results
 
-    def get_training_data(self, user_id: int = 1) -> tuple[list[np.ndarray], list[float]]:
-        """Get all training data (embeddings and labels) for model retraining."""
+    def get_weighted_training_data(
+        self, user_id: int = 1, include_skips: bool = True, skip_weight: float = 0.25
+    ) -> tuple[list[np.ndarray], list[float], list[float]]:
+        """Get training data including sample weights for calibrated negative weighting.
+
+        Skips (rating == -1) receive label 0.0 with gentle weight (default 0.25),
+        while downvotes and upvotes receive full weight 1.0.
+        """
         rated = self.get_rated_papers(user_id=user_id)
         if not rated:
-            return [], []
+            return [], [], []
 
         embeddings = []
         labels = []
+        weights = []
         for _, emb, rating in rated:
             if rating == -1:
-                continue
-            if rating == 0:
+                if not include_skips:
+                    continue
                 label = 0.0
+                w = skip_weight
+            elif rating == 0:
+                label = 0.0
+                w = 1.0
             elif rating == 1:
                 label = 1.0
+                w = 1.0
             else:
                 label = (rating - 1) / 4.0
+                w = 1.0
+
             embeddings.append(emb)
             labels.append(label)
+            weights.append(w)
 
+        return embeddings, labels, weights
+
+    def get_training_data(self, user_id: int = 1) -> tuple[list[np.ndarray], list[float]]:
+        """Get all training data (embeddings and labels) for model retraining."""
+        embeddings, labels, _ = self.get_weighted_training_data(user_id=user_id, include_skips=False)
         return embeddings, labels
 
     def get_stats(self, user_id: int = 1) -> dict:

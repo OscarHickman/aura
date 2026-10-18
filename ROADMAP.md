@@ -1,39 +1,27 @@
 # AURA Development Roadmap
 
-**Current Production Release:** `v1.6.1` (October 2026)  
-*All foundational architecture, audit remediations, mobile feature parity, resilient local-first AI, cosmology portfolio tailoring (P1–P15), and native Expo push notifications & deep linking have been implemented and deployed. Historical achievements and release logs are documented in [`ACHIEVEMENTS.md`](ACHIEVEMENTS.md).*
+**Current Production Release:** `v1.7.0` (October 2026)  
+*All foundational architecture, audit remediations, mobile companion parity, resilient local-first AI, cosmology portfolio tailoring (P1–P15), native Expo push notifications & deep linking, commute audio briefings, multi-interest prototype clustering, active learning boundary exploration, two-way Zotero sync, Git/Overleaf sync, comparative synthesis matrices, and responsive tablet layouts have been implemented, tested, and released. Historical achievements and release logs are documented in [`ACHIEVEMENTS.md`](ACHIEVEMENTS.md).*
 
 ---
 
 ## Strategic Horizons & Future Work
 
-### 1. Proactive Mobile Intelligence & Audio Briefings
-- **Commute Audio Briefings ("Podcast Mode")**:
-  - Spoken audio synthesis (3–5 minute MP3) synthesising the day's top cosmology recommendations and weekly research briefs using local TTS (Piper) or remote speech APIs.
-  - Background audio playback controls integrated into the mobile companion app.
+### 1. On-Device Edge Inference & Multimodal Extraction
+- **On-Device Embedding Inference**:
+  - Run lightweight ONNX sentence-transformer models directly on mobile via React Native ONNX Runtime for instant client-side similarity scoring without network round-trips.
+- **Multimodal Figure & Equation Extraction**:
+  - Extract cosmological constraint contour figures and LaTeX parameter equation blocks from arXiv source tarballs or PDFs for inline comparison against Planck/DESI contours.
 
-### 2. Advanced Ranking & Active Learning
-- **Multi-Interest Prototype Embeddings**:
-  - Cluster positively rated papers into $K$ distinct research centroids (e.g. *SBI / Field-Level*, *HOD & Assembly Bias*, *Modified Gravity / Lensing*) so candidate scoring and explanations reflect multiple distinct projects rather than a single collapsed centroid.
-- **Active Learning / Uncertainty Triage Mode**:
-  - Add an "Explore Boundary" triage mode in `TriageScreen` that queries papers with highest epistemic uncertainty (`model_uncertainty` from `PaperPreferenceNet`), allowing rapid calibration of preference boundaries with minimal user feedback.
-- **Calibrated Negative Signal Weighting**:
-  - Weight explicit skips (`rating = -1`) gently (e.g. weight `0.25`) relative to explicit downvotes (`rating = 0`, weight `1.0`) to avoid over-penalising an entire cosmological sub-field when skipping off-topic papers.
+### 2. Multi-Author Lab & Group Collaboration
+- **Lab Group Shared Consensus Feed**:
+  - Compute group-level affinity rankings combining feedback from multiple research group members (e.g. Durham cosmology group) with differential weightings for supervisors and collaborators.
+- **Automated Journal Club Pack Generator**:
+  - Export weekly PDF/Markdown briefing slide decks synthesising selected papers for departmental journal clubs.
 
-### 3. Reference Manager & Lab Sync
-- **Two-Way Zotero Synchronization**:
-  - Bidirectional integration via Zotero Web API: automatically push 5-star / reading list papers with AI summaries and research notes to a designated Zotero collection.
-  - Ingest existing Zotero collections to bootstrap and refine user preference models.
-- **Overleaf & Git Export Webhook**:
-  - Automated one-click push of generated `.bib` files and LaTeX related-work skeletons (`aura/latex_export.py`) to linked Git repositories or Overleaf Git bridges.
-- **Comparative Synthesis Matrix**:
-  - Generate side-by-side comparison tables across 2–10 selected papers comparing probes, datasets (e.g. DESI DR1 vs SDSS), cosmological models, parameter constraints ($\sigma_8$, $S_8$, $H_0$), and code availability.
-
-### 4. Cross-Platform & Tablet Layout
-- **Tablet & Foldable Responsive Adaptation**:
-  - Two-pane master-detail view for Feed and PaperDetail on wider displays.
+### 3. Native iOS Distribution
 - **iOS TestFlight Packaging**:
-  - Configure automated iOS build runner in GitHub Actions for TestFlight distribution.
+  - Configure automated iOS build runner in GitHub Actions for TestFlight distribution once Apple Developer certificates are configured.
 
 ---
 

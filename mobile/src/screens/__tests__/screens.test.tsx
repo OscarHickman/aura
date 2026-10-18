@@ -12,12 +12,30 @@ jest.mock('expo-clipboard', () => ({
   getStringAsync: jest.fn().mockResolvedValue(''),
 }));
 
+jest.mock('expo-av', () => ({
+  Audio: {
+    Sound: {
+      createAsync: jest.fn().mockResolvedValue({
+        sound: {
+          playAsync: jest.fn(),
+          pauseAsync: jest.fn(),
+          stopAsync: jest.fn(),
+          unloadAsync: jest.fn(),
+          setPositionAsync: jest.fn(),
+          setRateAsync: jest.fn(),
+        },
+      }),
+    },
+    setAudioModeAsync: jest.fn().mockResolvedValue(true),
+  },
+}));
+
 jest.mock('lucide-react-native', () => {
   const icon = () => null;
   return Object.fromEntries([
     'Search', 'Sparkles', 'Bookmark', 'ThumbsUp', 'ThumbsDown', 'ChevronRight',
     'Check', 'Trash2', 'BookOpen', 'ExternalLink', 'RefreshCw', 'MessageSquare',
-    'RotateCcw', 'TrendingUp', 'Calendar', 'AlertTriangle', 'X', 'Flame', 'Clock',
+    'RotateCcw', 'RotateCw', 'Volume2', 'Compass', 'TrendingUp', 'Calendar', 'AlertTriangle', 'X', 'Flame', 'Clock',
     'Copy', 'Plus', 'Layers', 'FileText', 'StickyNote', 'FolderPlus', 'Send'
   ].map(name => [name, icon]));
 });
@@ -28,7 +46,10 @@ jest.mock('../../api/client', () => ({ api: {
   getBriefs: jest.fn(), getBrief: jest.fn(), getTrends: jest.fn(),
   getPaper: jest.fn(), getPaperNotes: jest.fn(), getDeepSummary: jest.fn(),
   getPaperBibtex: jest.fn(), getCollections: jest.fn(), createCollection: jest.fn(),
-  addPaperToCollection: jest.fn(),
+  addPaperToCollection: jest.fn(), getDailyAudioBriefing: jest.fn().mockResolvedValue({ ok: false }),
+  getUserClusters: jest.fn().mockResolvedValue({ clusters: [], total: 0 }),
+  syncZotero: jest.fn().mockResolvedValue({ ok: true }),
+  comparePapers: jest.fn().mockResolvedValue({ ok: true, matrix: [], synthesis_markdown: '' }),
 } }));
 jest.mock('@react-navigation/native', () => ({
   useFocusEffect: (effect: () => void) => require('react').useEffect(effect, [effect]),

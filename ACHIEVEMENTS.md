@@ -138,3 +138,22 @@ This document records the major architectural, algorithmic, infrastructure, and 
   - Notification response listeners seamlessly routing taps to relevant screens.
   - Settings UI card with device registration status and one-tap test alert verification.
 
+---
+
+## 8. Release v1.7.0 — Active Learning, Spoken Audio Briefings, Lab Reference Sync & Tablet Layout (2026-10-18)
+
+- **Commute Audio Briefings ("Podcast Mode")**:
+  - Conversational spoken research briefing synthesis using British neural voices (`en-GB-SoniaNeural`) via `edge-tts`.
+  - Background audio playback controls in the mobile companion app using `expo-av` with playback rate controls (1x, 1.25x, 1.5x, 2x), ±15s seeking, and docked player card.
+  - Streaming audio endpoint (`GET /api/audio/stream/<filename>`) and daily briefing generation endpoint (`GET /api/audio/daily`, `POST /api/audio/generate`).
+- **Multi-Interest Prototype Embeddings & Active Learning**:
+  - K-Means prototype clustering discovering distinct research centroids with cosmology keyword extraction (`GET /api/user/clusters`).
+  - Active learning "Explore Boundary" triage mode prioritising papers near preference decision boundaries with high epistemic uncertainty (`GET /api/papers?filter=explore`).
+  - Calibrated negative signal weighting: skips (`rating = -1`) weighted at `0.25` vs explicit downvotes at `1.0` to prevent over-penalising broader sub-disciplines.
+- **Reference Manager & Lab Synchronisation**:
+  - Two-way Zotero sync (`aura/zotero.py`): export reading list papers with AI summaries and user notes; import existing library to bootstrap preferences (`GET /api/zotero/status`, `POST /api/zotero/sync`, `POST /api/zotero/import`).
+  - Overleaf / Git export (`aura/git_sync.py`): automated export of `.bib` bibliographies and LaTeX literature review matrices to remote repositories (`POST /api/export/git-sync`).
+  - Multi-paper comparative synthesis (`aura/synthesis.py`): side-by-side matrix comparing probes, tracers, datasets, methodologies, cosmological parameter bounds ($\sigma_8, S_8, H_0$), and code links (`POST /api/papers/compare`).
+- **Responsive Tablet & Foldable Split Layout**:
+  - Responsive master-detail split layout for tablets and foldables (`width >= 768`) across Feed and Paper Detail screens.
+

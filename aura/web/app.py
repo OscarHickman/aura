@@ -772,6 +772,9 @@ def _register_routes(app: Flask) -> None:
             for p in rated_papers:
                 p["score"] = p.get("score", 0.0)
             return [p for p in rated_papers if p.get("rating") in wanted], filter_type
+        if filter_type == "explore" or request.args.get("mode") == "explore":
+            if hasattr(eng, "recommend_exploratory"):
+                return eng.recommend_exploratory(limit=API_RESULT_WINDOW, user_id=uid), "explore"
         return eng.get_recommendations(
             limit=API_RESULT_WINDOW, unrated_only=(filter_type == "unrated"), user_id=uid
         ), filter_type
@@ -839,6 +842,24 @@ def _register_routes(app: Flask) -> None:
             "has_more": start + per_page < len(paper_list),
             "filter": filter_type,
         })
+
+    @app.route("/api/user/clusters", methods=["GET"])
+    @login_required
+    def api_user_clusters():
+        if engine is None:
+            return jsonify({"clusters": [], "total": 0})
+        uid = _get_current_user_id()
+        clusters = engine.get_user_clusters(user_id=uid) if hasattr(engine, "get_user_clusters") else []
+        res = [
+            {
+                "cluster_id": c.get("cluster_id", 0),
+                "label": c.get("label", ""),
+                "keywords": c.get("keywords", []),
+                "paper_count": c.get("paper_count", 0),
+            }
+            for c in clusters
+        ]
+        return jsonify({"clusters": res, "total": len(res)})
 
     @app.route("/api/papers/<path:arxiv_id>", methods=["GET"])
     @login_required
@@ -1421,6 +1442,144 @@ def _register_routes(app: Flask) -> None:
 
         synthesis_latex = synthesize_related_work(papers, notes_by_paper, engine=engine)
         return jsonify({"status": "ok", "latex": synthesis_latex})
+
+    # --- Reference Manager, Lab Sync, & Comparative Synthesis ---
+
+    @app.route("/api/zotero/status", methods=["GET"])
+    @login_required
+    def api_zotero_status():
+        from aura.zotero import ZoteroClient
+        client = ZoteroClient()
+        return jsonify(client.test_connection())
+
+    @app.route("/api/zotero/sync", methods=["POST"])
+    @login_required
+    def api_zotero_sync():
+        from aura.zotero import ZoteroClient
+        client = ZoteroClient()
+        if not client.is_configured:
+            return jsonify({"ok": False, "error": "Zotero is not configured on this server."}), 400
+
+        data = request.get_json(silent=True) or {}
+        arxiv_id = data.get("arxiv_id")
+        uid = _get_current_user_id()
+
+        if arxiv_id:
+            paper = engine.db.get_paper(arxiv_id) if engine else None
+            if not paper:
+                return jsonify({"ok": False, "error": "Paper not found"}), 404
+            res = client.export_paper(paper)
+            return jsonify(res)
+
+        # Batch sync reading list
+        reading_list = engine.db.get_reading_list(user_id=uid) if engine else []
+        results = []
+        for p in reading_list:
+            res = client.export_paper(p)
+            results.append({"arxiv_id": p.get("arxiv_id"), "result": res})
+        return jsonify({"ok": True, "synced_count": len(results), "details": results})
+
+    @app.route("/api/zotero/import", methods=["POST"])
+    @login_required
+    def api_zotero_import():
+        from aura.zotero import ZoteroClient
+        client = ZoteroClient()
+        if not client.is_configured:
+            return jsonify({"ok": False, "error": "Zotero is not configured on this server."}), 400
+
+        uid = _get_current_user_id()
+        import_res = client.import_library(limit=50)
+        if not import_res.get("ok"):
+            return jsonify(import_res), 500
+
+        papers = import_res.get("papers", [])
+        bootstrapped = 0
+        if engine and papers:
+            for p in papers:
+                aid = p["arxiv_id"]
+                if engine.db.get_paper(aid):
+                    engine.rate_paper(aid, rating=5, user_id=uid)
+                    bootstrapped += 1
+
+        return jsonify({
+            "ok": True,
+            "imported_count": len(papers),
+            "bootstrapped_in_aura": bootstrapped,
+            "papers": papers,
+        })
+
+    @app.route("/api/export/git-sync", methods=["POST"])
+    @login_required
+    def api_git_sync():
+        from aura.git_sync import GitLiteratureSync
+        client = GitLiteratureSync()
+        if not client.is_configured:
+            return jsonify({"ok": False, "error": "GitHub literature repository is not configured."}), 400
+
+        uid = _get_current_user_id()
+        papers = engine.db.get_reading_list(user_id=uid) if engine else []
+        if not papers:
+            return jsonify({"ok": False, "error": "Reading list is empty; nothing to sync."}), 400
+
+        res = client.sync_literature(papers)
+        return jsonify(res)
+
+    @app.route("/api/papers/compare", methods=["POST"])
+    @login_required
+    def api_papers_compare():
+        from aura.synthesis import ComparativeSynthesisEngine
+        data = request.get_json(silent=True) or {}
+        arxiv_ids = data.get("arxiv_ids") or []
+        if not isinstance(arxiv_ids, list) or len(arxiv_ids) < 2:
+            return jsonify({"ok": False, "error": "Please provide an array of at least 2 arxiv_ids to compare."}), 400
+
+        papers = []
+        if engine:
+            for aid in arxiv_ids:
+                p = engine.db.get_paper(str(aid).strip())
+                if p:
+                    papers.append(p)
+
+        if len(papers) < 2:
+            return jsonify({"ok": False, "error": "Fewer than 2 of the requested papers exist in the database."}), 404
+
+        synthesis_engine = ComparativeSynthesisEngine()
+        result = synthesis_engine.generate_matrix(papers)
+        return jsonify(result)
+
+    # --- Audio Briefings ("Podcast Mode") ---
+
+    @app.route("/api/audio/daily", methods=["GET"])
+    @login_required
+    def api_audio_daily():
+        from aura.audio import AudioBriefingEngine
+        uid = _get_current_user_id()
+        audio_engine = AudioBriefingEngine()
+        papers = engine.get_recommendations(limit=5, unrated_only=False, user_id=uid) if engine else []
+        force = request.args.get("force", "").lower() in ("true", "1")
+        briefing = audio_engine.get_or_create_daily_briefing(papers, user_id=uid, force=force)
+        return jsonify(briefing)
+
+    @app.route("/api/audio/generate", methods=["POST"])
+    @login_required
+    def api_audio_generate():
+        from aura.audio import AudioBriefingEngine
+        uid = _get_current_user_id()
+        audio_engine = AudioBriefingEngine()
+        papers = engine.get_recommendations(limit=5, unrated_only=False, user_id=uid) if engine else []
+        briefing = audio_engine.get_or_create_daily_briefing(papers, user_id=uid, force=True)
+        return jsonify(briefing)
+
+    @app.route("/api/audio/stream/<path:filename>", methods=["GET"])
+    def api_audio_stream(filename):
+        from aura.audio import AudioBriefingEngine
+        from flask import send_from_directory
+        audio_engine = AudioBriefingEngine()
+        clean_name = os.path.basename(filename)
+        file_path = audio_engine.audio_dir / clean_name
+        if not file_path.exists():
+            return jsonify({"error": "Audio file not found"}), 404
+        return send_from_directory(audio_engine.audio_dir, clean_name, mimetype="audio/mpeg")
 
     @app.route("/api/tags", methods=["GET"])
     @login_required

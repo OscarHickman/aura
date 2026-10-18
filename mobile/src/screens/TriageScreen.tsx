@@ -11,7 +11,7 @@ import {
   Animated,
   PanResponder,
 } from 'react-native';
-import { ThumbsUp, ThumbsDown, Bookmark, ExternalLink, Sparkles, RefreshCw, MessageSquare, RotateCcw } from 'lucide-react-native';
+import { ThumbsUp, ThumbsDown, Bookmark, ExternalLink, Sparkles, RefreshCw, MessageSquare, RotateCcw, Compass } from 'lucide-react-native';
 import { theme } from '../constants/theme';
 import { api } from '../api/client';
 import { useFocusEffect } from '@react-navigation/native';
@@ -40,11 +40,15 @@ export const TriageScreen: React.FC<TriageScreenProps> = ({ navigation }) => {
     previousInReadingList?: boolean;
   } | null>(null);
 
-  const loadPapers = useCallback(async () => {
+  const [triageMode, setTriageMode] = useState<'recommended' | 'explore'>('recommended');
+
+  const loadPapers = useCallback(async (mode?: 'recommended' | 'explore') => {
+    const activeMode = mode || triageMode;
     setIsLoading(true);
     setError(false);
     try {
-      const res = await api.getPapers({ filter: 'unrated', per_page: 40 });
+      const filter = activeMode === 'explore' ? 'explore' : 'unrated';
+      const res = await api.getPapers({ filter, per_page: 40 });
       setPapers(res.papers || []);
       setCurrentIndex(0);
       setLastAction(null);
@@ -53,7 +57,7 @@ export const TriageScreen: React.FC<TriageScreenProps> = ({ navigation }) => {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [triageMode]);
 
   useFocusEffect(
     useCallback(() => {
@@ -245,7 +249,7 @@ export const TriageScreen: React.FC<TriageScreenProps> = ({ navigation }) => {
         <Text style={styles.emptySubtitle}>
           No more unrated recommendations right now.
         </Text>
-        <TouchableOpacity style={styles.refreshButton} onPress={loadPapers}>
+        <TouchableOpacity style={styles.refreshButton} onPress={() => loadPapers()}>
           <RefreshCw size={18} color={theme.colors.white} />
           <Text style={styles.refreshButtonText}>Refresh Deck</Text>
         </TouchableOpacity>
@@ -257,6 +261,39 @@ export const TriageScreen: React.FC<TriageScreenProps> = ({ navigation }) => {
 
   return (
     <View style={styles.container}>
+      {/* Mode Selector */}
+      <View style={styles.modeToggleContainer}>
+        <TouchableOpacity
+          style={[styles.modeToggleBtn, triageMode === 'recommended' && styles.modeToggleBtnActive]}
+          onPress={() => {
+            if (triageMode !== 'recommended') {
+              setTriageMode('recommended');
+              loadPapers('recommended');
+            }
+          }}
+        >
+          <Sparkles size={14} color={triageMode === 'recommended' ? '#ffffff' : theme.colors.textDim} />
+          <Text style={[styles.modeToggleText, triageMode === 'recommended' && styles.modeToggleTextActive]}>
+            Top Matches
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.modeToggleBtn, triageMode === 'explore' && styles.modeToggleBtnActive]}
+          onPress={() => {
+            if (triageMode !== 'explore') {
+              setTriageMode('explore');
+              loadPapers('explore');
+            }
+          }}
+        >
+          <Compass size={14} color={triageMode === 'explore' ? '#ffffff' : theme.colors.textDim} />
+          <Text style={[styles.modeToggleText, triageMode === 'explore' && styles.modeToggleTextActive]}>
+            Explore Boundary
+          </Text>
+        </TouchableOpacity>
+      </View>
+
       {/* Progress header */}
       <View style={styles.progressContainer}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -471,6 +508,38 @@ const styles = StyleSheet.create({
     color: theme.colors.textDim,
     fontSize: theme.typography.sm,
     fontWeight: '500',
+  },
+  modeToggleContainer: {
+    flexDirection: 'row',
+    marginHorizontal: theme.spacing.lg,
+    marginTop: theme.spacing.sm,
+    marginBottom: theme.spacing.xs,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.md,
+    padding: 3,
+    borderWidth: 1,
+    borderColor: theme.colors.surfaceBorder,
+    gap: 4,
+  },
+  modeToggleBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 7,
+    borderRadius: theme.borderRadius.sm,
+    gap: 6,
+  },
+  modeToggleBtnActive: {
+    backgroundColor: theme.colors.primary,
+  },
+  modeToggleText: {
+    fontSize: theme.typography.xs,
+    fontWeight: '600',
+    color: theme.colors.textDim,
+  },
+  modeToggleTextActive: {
+    color: '#ffffff',
   },
   scoreBadge: {
     backgroundColor: 'rgba(99, 102, 241, 0.15)',

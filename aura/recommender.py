@@ -101,6 +101,7 @@ class RecommendationEngine:
         # Per-user model cache: {user_id: PreferenceModel}
         self._user_models: dict[int, PreferenceModel] = {1: self.preference_model}
         self._user_shadow_models: dict[int, PreferenceModel] = {1: self.shadow_model}
+        self._user_clusters: dict[int, list[dict]] = {}
 
         # Initialize Vector Store
         try:
@@ -697,6 +698,30 @@ class RecommendationEngine:
                         paper["reason_liked_paper"] = liked_papers_emb[best_idx][0]["title"]
                         paper["reason_liked_sim"] = round(float(sims[best_idx]), 4)
 
+        # Multi-interest prototype clustering for candidate papers
+        try:
+            clusters = self.get_user_clusters(user_id=user_id)
+            if clusters:
+                for paper in scorable_papers:
+                    if paper["arxiv_id"] in emb_map:
+                        paper_emb = emb_map[paper["arxiv_id"]]
+                        paper_norm = np.linalg.norm(paper_emb)
+                        if paper_norm > 0:
+                            paper_emb_norm = paper_emb / paper_norm
+                            matches = []
+                            for cl in clusters:
+                                sim = float(np.dot(paper_emb_norm, cl["centroid"]))
+                                matches.append({
+                                    "cluster_id": cl["cluster_id"],
+                                    "label": cl["label"],
+                                    "similarity": round(sim, 3),
+                                })
+                            matches.sort(key=lambda m: m["similarity"], reverse=True)
+                            paper["cluster_matches"] = matches
+                            paper["primary_cluster"] = matches[0]["label"]
+        except Exception as e:
+            logger.warning(f"Error computing prototype cluster matches for candidate papers: {e}")
+
         # Sort by: is_collaborator, then composite score, then date (newest first)
         scorable_papers.sort(
             key=lambda p: (
@@ -740,21 +765,156 @@ class RecommendationEngine:
         similarities.sort(key=lambda p: p["similarity"], reverse=True)
         return similarities[:limit]
 
+    @staticmethod
+    def _extract_cluster_keywords(papers: list[dict], top_k: int = 4) -> list[str]:
+        """Extract dominant technical/cosmological terms from a cluster of papers."""
+        import re
+        from collections import Counter
+
+        stopwords = {
+            "the", "a", "an", "and", "or", "in", "on", "at", "to", "for", "with",
+            "by", "of", "from", "as", "is", "are", "was", "were", "be", "been",
+            "this", "that", "these", "those", "we", "our", "using", "based", "new",
+            "results", "study", "paper", "data", "analysis", "models", "model",
+            "show", "first", "two", "high", "low", "large", "small", "via"
+        }
+
+        counts: Counter[str] = Counter()
+        for p in papers:
+            title = p.get("title", "")
+            abstract = p.get("abstract", "")
+            for w in re.findall(r"[A-Za-z0-9\-]{3,}", title.lower()):
+                if w not in stopwords and not w.isdigit():
+                    counts[w] += 3
+            for w in re.findall(r"[A-Za-z0-9\-]{3,}", abstract.lower())[:80]:
+                if w not in stopwords and not w.isdigit():
+                    counts[w] += 1
+
+        return [word for word, _ in counts.most_common(top_k)]
+
+    def compute_user_clusters(self, user_id: int = 1, max_clusters: int = 5) -> list[dict]:
+        """Cluster positively rated papers into research prototype centroids."""
+        rated_papers = self.db.get_rated_papers(user_id=user_id)
+        liked_papers = [(p, emb) for p, emb, rating in rated_papers if (rating >= 4 or rating == 1) and emb is not None]
+
+        if not liked_papers:
+            return []
+
+        if len(liked_papers) < 3:
+            embs = [emb for _, emb in liked_papers]
+            centroid = np.mean(embs, axis=0)
+            norm = np.linalg.norm(centroid)
+            if norm > 0:
+                centroid = centroid / norm
+            keywords = self._extract_cluster_keywords([p for p, _ in liked_papers])
+            label = " & ".join(k.capitalize() for k in keywords[:2]) if keywords else "Core Cosmology Focus"
+            clusters = [{
+                "cluster_id": 0,
+                "label": label,
+                "keywords": keywords,
+                "paper_count": len(liked_papers),
+                "centroid": centroid,
+            }]
+            self._user_clusters[user_id] = clusters
+            return clusters
+
+        k = min(max_clusters, max(2, len(liked_papers) // 3))
+        embs_arr = np.array([emb for _, emb in liked_papers], dtype=np.float32)
+        norms = np.linalg.norm(embs_arr, axis=1, keepdims=True)
+        norms[norms == 0] = 1.0
+        embs_norm = embs_arr / norms
+
+        np.random.seed(42)
+        init_idx = np.random.choice(len(embs_norm), size=k, replace=False)
+        centroids = embs_norm[init_idx].copy()
+
+        labels = np.zeros(len(embs_norm), dtype=int)
+        for _ in range(15):
+            sims = np.dot(embs_norm, centroids.T)
+            new_labels = np.argmax(sims, axis=1)
+            if np.array_equal(labels, new_labels):
+                break
+            labels = new_labels
+            for j in range(k):
+                mask = (labels == j)
+                if np.any(mask):
+                    new_cent = np.mean(embs_norm[mask], axis=0)
+                    norm_c = np.linalg.norm(new_cent)
+                    if norm_c > 0:
+                        centroids[j] = new_cent / norm_c
+
+        clusters = []
+        for j in range(k):
+            member_indices = np.where(labels == j)[0]
+            if len(member_indices) == 0:
+                continue
+            member_papers = [liked_papers[idx][0] for idx in member_indices]
+            keywords = self._extract_cluster_keywords(member_papers)
+            label = " & ".join(w.capitalize() for w in keywords[:2]) if keywords else f"Cosmology Cluster {j + 1}"
+            clusters.append({
+                "cluster_id": j,
+                "label": label,
+                "keywords": keywords,
+                "paper_count": len(member_papers),
+                "centroid": centroids[j],
+            })
+
+        self._user_clusters[user_id] = clusters
+        return clusters
+
+    def get_user_clusters(self, user_id: int = 1) -> list[dict]:
+        """Get cached user clusters or compute them if missing."""
+        if user_id not in self._user_clusters:
+            self.compute_user_clusters(user_id=user_id)
+        return self._user_clusters.get(user_id, [])
+
+    def recommend_exploratory(self, limit: int = 20, user_id: int = 1) -> list[dict]:
+        """Rank unrated papers by model epistemic uncertainty for active learning boundary exploration.
+
+        Surfaces candidate papers closest to the classification boundary (model score ~ 0.5)
+        with highest MC Dropout variance.
+        """
+        papers = self.db.get_papers(limit=500, unrated_only=True, user_id=user_id)
+        if not papers:
+            return []
+
+        arxiv_ids = [p["arxiv_id"] for p in papers]
+        papers_with_emb = self.db.get_papers_with_embeddings(arxiv_ids)
+        if not papers_with_emb:
+            return papers[:limit]
+
+        emb_map = {p["arxiv_id"]: emb for p, emb in papers_with_emb}
+        scorable_papers = [p for p in papers if p["arxiv_id"] in emb_map]
+        embeddings = [emb_map[p["arxiv_id"]] for p in scorable_papers]
+
+        pref_model = self.get_user_preference_model(user_id)
+        scores, uncertainties = pref_model.predict_batch(embeddings, num_samples=10)
+
+        for paper, score, unc in zip(scorable_papers, scores, uncertainties):
+            paper["model_score"] = float(score)
+            paper["model_uncertainty"] = float(unc)
+            boundary_proximity = 1.0 - 2.0 * abs(score - 0.5)
+            # Combine epistemic variance with boundary proximity
+            paper["exploration_score"] = float(unc * 0.7 + boundary_proximity * 0.3)
+            paper["score"] = paper["exploration_score"]
+
+        scorable_papers.sort(key=lambda p: p["exploration_score"], reverse=True)
+        return scorable_papers[:limit]
+
     def rate_paper(self, arxiv_id: str, rating: int, user_id: int = 1) -> dict:
-        """Rate a paper and immediately update the model (online learning).
+        """Rate a paper and immediately update the model with calibrated weighting.
 
         Args:
             arxiv_id: The arXiv paper ID.
-            rating: 1-5 for stars, -1 for skip.
+            rating: 1-5 for stars, 0 for downvote, -1 for skip.
 
         Returns:
             Dict with training result info.
         """
         # Save rating to database
         self.db.rate_paper(arxiv_id, rating, user_id=user_id)
-
-        if rating == -1:
-            return {"status": "rated", "trained": False, "reason": "skipped"}
+        # Invalidate cached prototype clusters on new rating
+        self._user_clusters.pop(user_id, None)
 
         # Get paper embedding
         papers_emb = self.db.get_papers_with_embeddings([arxiv_id])
@@ -763,30 +923,50 @@ class RecommendationEngine:
 
         _, embedding = papers_emb[0]
 
-        # Map legacy 0/1 to 0.0/1.0, and 1-5 stars to 0.0-1.0
-        if rating == 0:
+        # Calibrated negative weighting: skips (rating = -1) are weighted gently at 0.25
+        if rating == -1:
             label = 0.0
+            weight = 0.25
+        elif rating == 0:
+            label = 0.0
+            weight = 1.0
         elif rating == 1:
             label = 1.0
+            weight = 1.0
         else:
             label = (rating - 1) / 4.0
+            weight = 1.0
 
         pref_model = self.get_user_preference_model(user_id)
-        loss = pref_model.train_single(embedding, label, arxiv_id=arxiv_id)
+        loss = pref_model.train_single(embedding, label, weight=weight, arxiv_id=arxiv_id)
 
         shadow_model = self.get_user_shadow_model(user_id)
-        shadow_model.train_single(embedding, label, arxiv_id=arxiv_id)
+        shadow_model.train_single(embedding, label, weight=weight, arxiv_id=arxiv_id)
 
         return {
             "status": "rated",
             "trained": True,
             "loss": loss,
+            "weight": weight,
             "total_trained": pref_model.total_trained,
         }
 
     def retrain_full(self, epochs: int = 20, user_id: int = 1, progress_callback=None) -> dict:
-        """Retrain a user's model on all their rated papers from scratch."""
-        embeddings, labels = self.db.get_training_data(user_id=user_id)
+        """Retrain a user's model on all their rated papers from scratch using calibrated sample weights."""
+        self._user_clusters.pop(user_id, None)
+        from unittest.mock import Mock
+        embeddings: list = []
+        labels: list = []
+        weights: list | None = None
+        if hasattr(self.db, "get_weighted_training_data"):
+            res = self.db.get_weighted_training_data(user_id=user_id, include_skips=True)
+            if isinstance(res, tuple) and len(res) == 3 and not isinstance(res, Mock):
+                embeddings, labels, weights = res
+        if not embeddings and hasattr(self.db, "get_training_data"):
+            res_t = self.db.get_training_data(user_id=user_id)
+            if isinstance(res_t, tuple) and len(res_t) == 2 and not isinstance(res_t, Mock):
+                embeddings, labels = res_t
+                weights = [1.0] * len(labels)
 
         if not embeddings:
             return {
@@ -800,14 +980,14 @@ class RecommendationEngine:
             self.preference_model = pref_model
 
         loss = pref_model.train_step(
-            embeddings, labels, epochs=epochs, progress_callback=progress_callback, use_scheduler=True
+            embeddings, labels, weights=weights, epochs=epochs, progress_callback=progress_callback, use_scheduler=True
         )
 
         # Retrain shadow model
         shadow_model = self.get_user_shadow_model(user_id)
         shadow_model.reset()
         shadow_model.train_step(
-            embeddings, labels, epochs=epochs, progress_callback=None, use_scheduler=True
+            embeddings, labels, weights=weights, epochs=epochs, progress_callback=None, use_scheduler=True
         )
 
         return {

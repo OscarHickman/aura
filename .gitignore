@@ -103,6 +103,7 @@ user_credentials/
 # Data and uploads
 data/.secret_key
 data/uploads/
+data/audio/
 *.db-wal
 *.db-shm
 *.db-journal
