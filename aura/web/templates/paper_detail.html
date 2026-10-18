@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ paper.title | safe }} - AI Papers{% endblock %}
+{% block title %}{{ paper.title }} - AI Papers{% endblock %}
 
 {% block head %}
     <!-- Reference Manager Export Link Relations -->
@@ -36,7 +36,7 @@
                 <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
                     <div>
                         <h1 class="h2 text-light">
-                            {{ paper.title | safe }}
+                            {{ paper.title | keep_mark }}
                             {% if paper.from_followed_author %}
                             <span class="badge bg-primary ms-2" style="font-size: 0.9rem;" title="From an author you follow">
                                 <i class="bi bi-person-check-fill"></i> From authors you follow
@@ -245,7 +245,7 @@
 
                 <div class="mb-4">
                     <h6 class="text-muted mb-2">Abstract</h6>
-                    <p class="abstract-text formatted-text leading-relaxed text-light-emphasis">{{ paper.abstract }}</p>
+                    <p class="abstract-text formatted-text leading-relaxed text-light-emphasis">{{ paper.abstract | keep_mark }}</p>
                 </div>
             </div>
         </div>
@@ -423,7 +423,7 @@
                     {% for sim in similar_papers %}
                     <a href="{{ request.script_root }}/papers/{{ sim.arxiv_id }}" class="list-group-item list-group-item-action bg-transparent text-light border-secondary py-3">
                         <div class="d-flex justify-content-between align-items-start mb-1">
-                            <h6 class="mb-0 text-truncate-2" style="max-width: 85%;">{{ sim.title | safe }}</h6>
+                            <h6 class="mb-0 text-truncate-2" style="max-width: 85%;">{{ sim.title | keep_mark }}</h6>
                             <span class="badge bg-info-subtle text-info-emphasis">{{ "%.0f" | format(sim.similarity * 100) }}%</span>
                         </div>
                         <small class="text-muted">
@@ -450,7 +450,7 @@
                 <div class="list-group list-group-flush">
                     {% for auth_p in same_author_papers %}
                     <a href="{{ request.script_root }}/papers/{{ auth_p.arxiv_id }}" class="list-group-item list-group-item-action bg-transparent text-light border-secondary py-3">
-                        <h6 class="mb-1 text-truncate-2">{{ auth_p.title | safe }}</h6>
+                        <h6 class="mb-1 text-truncate-2">{{ auth_p.title | keep_mark }}</h6>
                         <small class="text-muted">{{ auth_p.published[:10] }}</small>
                     </a>
                     {% endfor %}
@@ -473,7 +473,7 @@
                 <div class="list-group list-group-flush">
                     {% for cp in citing_papers %}
                     <a href="{{ request.script_root }}/papers/{{ cp.arxiv_id }}" class="list-group-item list-group-item-action bg-transparent text-light border-secondary py-3">
-                        <h6 class="mb-1 text-truncate-2">{{ cp.title | safe }}</h6>
+                        <h6 class="mb-1 text-truncate-2">{{ cp.title | keep_mark }}</h6>
                         <small class="text-muted">
                             {{ cp.authors[:2] | join(', ') }}{% if cp.authors | length > 2 %} + others{% endif %}
                         </small>
@@ -498,7 +498,7 @@
                 <div class="list-group list-group-flush">
                     {% for cp in cited_papers %}
                     <a href="{{ request.script_root }}/papers/{{ cp.arxiv_id }}" class="list-group-item list-group-item-action bg-transparent text-light border-secondary py-3">
-                        <h6 class="mb-1 text-truncate-2">{{ cp.title | safe }}</h6>
+                        <h6 class="mb-1 text-truncate-2">{{ cp.title | keep_mark }}</h6>
                         <small class="text-muted">
                             {{ cp.authors[:2] | join(', ') }}{% if cp.authors | length > 2 %} + others{% endif %}
                         </small>

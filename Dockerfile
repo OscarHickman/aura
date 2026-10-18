@@ -30,5 +30,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD python3 -c "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')" || exit 1
 
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["gunicorn", "deploy.wsgi:app", "-w", "4", "-b", "0.0.0.0:5000"]
+CMD ["gunicorn", "deploy.wsgi:app", "-w", "1", "--threads", "8", "--timeout", "120", "-b", "0.0.0.0:5000"]
 

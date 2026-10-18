@@ -8,7 +8,7 @@ touch /app/data/cron.log
 printenv | grep -Ev '^(HOME|PWD|OLDPWD|SHLVL|_)=' > /etc/environment
 
 # Start cron daemon
-cron
+if [ "$1" = "gunicorn" ]; then cron; fi
 
 # Run migrations if applicable
 python run.py migrate --check 2>/dev/null || true

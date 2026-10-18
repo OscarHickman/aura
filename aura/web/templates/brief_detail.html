@@ -24,7 +24,7 @@
             </div>
             
             <div class="card-body p-4 text-light content-rendered">
-                {{ brief.content | safe }}
+                {{ brief.content | safe_html }}
             </div>
             
             <div class="card-footer border-secondary bg-dark bg-opacity-30 text-center py-3">

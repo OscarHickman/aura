@@ -167,7 +167,7 @@ python run.py serve --config config.yaml
 ```bash
 # From the repository root
 pip install gunicorn
-gunicorn "deploy.wsgi:app" -w 4 -b 0.0.0.0:5000
+gunicorn "deploy.wsgi:app" -w 1 --threads 8 --timeout 120 -b 0.0.0.0:5000
 ```
 
 5. (Optional) Create a `systemd` service to run the app on boot. Example service `/etc/systemd/system/aura.service`:
@@ -181,7 +181,7 @@ After=network.target
 User=youruser
 WorkingDirectory=/path/to/REPO
 Environment="PATH=/path/to/REPO/.venv/bin"
-ExecStart=/path/to/REPO/.venv/bin/gunicorn "aura.web.app:create_app()" -w 4 -b 0.0.0.0:5000
+ExecStart=/path/to/REPO/.venv/bin/gunicorn "aura.web.app:create_app()" -w 1 --threads 8 --timeout 120 -b 0.0.0.0:5000
 Restart=on-failure
 
 [Install]

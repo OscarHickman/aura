@@ -157,3 +157,11 @@ This document records the major architectural, algorithmic, infrastructure, and 
 - **Responsive Tablet & Foldable Split Layout**:
   - Responsive master-detail split layout for tablets and foldables (`width >= 768`) across Feed and Paper Detail screens.
 
+
+---
+
+## 9. Release v1.7.1 — Production Hardening (2026-10-18)
+
+- **Background tasks now execute**: added a dedicated Celery worker service to the production and development compose files. Previously `/api/fetch`, `/api/summarize` and `/api/retrain` queued tasks to Redis with no consumer. Cron is started only in the web container to avoid duplicate scheduled jobs.
+- **Consistent model state**: Gunicorn runs a single threaded worker (`-w 1 --threads 8`). Four processes each held their own preference-model weights and rate-limit counters, so rating updates could be overwritten.
+- **Stored-XSS closure**: removed `| safe` from paper titles and abstracts (search highlighting preserved through a `<mark>`-only filter) and rendered LLM-generated briefs through an allow-list sanitiser (`aura/sanitise.py`) with tests.

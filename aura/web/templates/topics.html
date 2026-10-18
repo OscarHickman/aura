@@ -37,7 +37,7 @@
                     {% for paper in cluster.top_papers %}
                     <a href="{{ request.script_root }}/papers/{{ paper.arxiv_id }}" class="list-group-item list-group-item-action bg-transparent text-light border-secondary px-0 py-2">
                         <div class="text-truncate" style="max-width: 100%;">
-                            {{ paper.title | safe }}
+                            {{ paper.title | keep_mark }}
                         </div>
                         <small class="text-muted">{{ paper.authors[:2] | join(", ") }}</small>
                     </a>

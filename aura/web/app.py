@@ -198,6 +198,11 @@ def create_app(config_path: str | None = None) -> Flask:
 
     app = Flask(__name__)
 
+    from ..sanitise import escape_keep_mark, sanitise_html
+    from markupsafe import Markup
+    app.jinja_env.filters["safe_html"] = lambda value: Markup(sanitise_html(value))
+    app.jinja_env.filters["keep_mark"] = lambda value: Markup(escape_keep_mark(value))
+
     # Behind a reverse proxy (Caddy serving /aura/), trust its X-Forwarded-*
     # headers so url_for() includes the path prefix and rate limits see the
     # real client IP. Only enable when the app is reachable solely via the proxy.

@@ -312,7 +312,7 @@
                 <div class="d-flex justify-content-between align-items-start" style="min-width: 0; width: 100%;">
                     <div class="flex-grow-1" style="min-width: 0;">
                         <h5 class="card-title mb-1">
-                            <a href="{{ request.script_root }}/papers/{{ paper.arxiv_id }}" class="text-decoration-none text-light">{{ paper.title | safe }}</a>
+                            <a href="{{ request.script_root }}/papers/{{ paper.arxiv_id }}" class="text-decoration-none text-light">{{ paper.title | keep_mark }}</a>
                         </h5>
                         <div class="d-flex flex-wrap gap-1 mt-2">
                             {% if paper.from_followed_author %}
@@ -477,7 +477,7 @@
                     {% endif %}
 
                     {% if q %}
-                    <p class="card-text abstract-text formatted-text text-muted small">{{ paper.abstract | safe }}</p>
+                    <p class="card-text abstract-text formatted-text text-muted small">{{ paper.abstract | keep_mark }}</p>
                     {% else %}
                     <p class="card-text abstract-text formatted-text text-muted small">{{ paper.abstract[:300] }}{% if paper.abstract | length > 300 %} <a href="#" class="text-decoration-none">read more</a>{% endif %}</p>
                     {% endif %}

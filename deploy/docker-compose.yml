@@ -37,6 +37,33 @@ services:
       caddy.route.1_reverse_proxy: "{{upstreams 5000}}"
       caddy.route.1_reverse_proxy.header_up: "X-Forwarded-Prefix /aura"
 
+  worker:
+    image: ${IMAGE:-ghcr.io/oscarhickman/aura}:${TAG:-latest}
+    container_name: aura_worker
+    healthcheck:
+      disable: true
+    restart: unless-stopped
+    command: ["celery", "-A", "aura.tasks.celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+    environment:
+      - AI_PAPERS_CONFIG=/app/config.yaml
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - MISTRAL_API_KEY=${MISTRAL_API_KEY:-}
+      - CEREBRAS_API_KEY=${CEREBRAS_API_KEY:-}
+      - COHERE_API_KEY=${COHERE_API_KEY:-}
+      - OLLAMA_HOST=${OLLAMA_HOST:-}
+    volumes:
+      - ./config.yaml:/app/config.yaml
+      - ./data:/app/data
+      - ./user_credentials:/app/user_credentials
+    depends_on:
+      - redis
+      - qdrant
+
   redis:
     image: redis:7-alpine
     container_name: aura_redis
