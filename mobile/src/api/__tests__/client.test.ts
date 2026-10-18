@@ -477,5 +477,97 @@ describe('Authenticated offline lifecycle', () => {
       expect(res.alerts).toHaveLength(1);
       expect(res.alerts?.[0].spike_factor).toBe(3.2);
     });
+
+    it('fetches user clusters via GET /api/user/clusters', async () => {
+      globalThis.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          clusters: [{ id: 0, label: 'SBI & Field-Level Inference', size: 12, top_terms: ['sbi', 'posterior'] }],
+        }),
+      });
+      const res = await api.getUserClusters();
+      expect(res.clusters).toHaveLength(1);
+      expect(res.clusters[0].label).toBe('SBI & Field-Level Inference');
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        `${DEFAULT_SERVER_URL}/api/user/clusters`,
+        expect.anything()
+      );
+    });
+
+    it('handles daily audio briefing operations', async () => {
+      globalThis.fetch = jest.fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ ok: true, audio_url: '/api/audio/stream/briefing.mp3', duration_seconds: 180 }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ ok: true, audio_url: '/api/audio/stream/briefing.mp3' }),
+        });
+
+      const getRes = await api.getDailyAudioBriefing();
+      expect(getRes.ok).toBe(true);
+      expect(getRes.audio_url).toBe('/api/audio/stream/briefing.mp3');
+
+      const forceRes = await api.getDailyAudioBriefing(true);
+      expect(forceRes.ok).toBe(true);
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        `${DEFAULT_SERVER_URL}/api/audio/daily?force=true`,
+        expect.anything()
+      );
+    });
+
+    it('handles Zotero status and sync', async () => {
+      globalThis.fetch = jest.fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ configured: true, valid: true, user_id: '12345' }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({ ok: true, synced_count: 1 }),
+        });
+
+      const statusRes = await api.getZoteroStatus();
+      expect(statusRes.configured).toBe(true);
+
+      const syncRes = await api.syncZotero('2401.00001');
+      expect(syncRes.ok).toBe(true);
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        `${DEFAULT_SERVER_URL}/api/zotero/sync`,
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ arxiv_id: '2401.00001' }),
+        })
+      );
+    });
+
+    it('handles multi-paper comparative synthesis', async () => {
+      globalThis.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ok: true,
+          matrix: [],
+          synthesis_markdown: '# Synthesis',
+        }),
+      });
+
+      const res = await api.comparePapers(['2401.00001', '2401.00002']);
+      expect(res.ok).toBe(true);
+      expect(res.synthesis_markdown).toBe('# Synthesis');
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        `${DEFAULT_SERVER_URL}/api/papers/compare`,
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ arxiv_ids: ['2401.00001', '2401.00002'] }),
+        })
+      );
+    });
   });
 });
