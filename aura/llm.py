@@ -586,7 +586,7 @@ def _summarize_cerebras(
     prompt = _build_summary_prompt(title, abstract)
     for model in ["llama-3.3-70b", "llama3.1-8b"]:
         try:
-            payload = {
+            payload: dict[str, Any] = {
                 "model": model,
                 "messages": [{"role": "user", "content": prompt}],
                 "max_tokens": 150,
@@ -619,7 +619,7 @@ def _summarize_cohere(
     prompt = _build_summary_prompt(title, abstract)
     for model in ["command-r-08-2024", "command-light"]:
         try:
-            payload = {
+            payload: dict[str, Any] = {
                 "model": model,
                 "messages": [{"role": "user", "content": prompt}],
                 "max_tokens": 150,
@@ -814,7 +814,7 @@ def _summarize_extractive(
 
 
 # Dispatch table — must be defined after the functions above
-_PROVIDER_FUNCS = {
+_PROVIDER_FUNCS: dict[str, Any] = {
     "groq": _summarize_groq,
     "google": _summarize_google,
     "openrouter": _summarize_openrouter,
