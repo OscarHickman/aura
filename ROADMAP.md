@@ -1,7 +1,7 @@
 # AURA Development Roadmap
 
-**Current Production Release:** `v1.6.0` (October 2026)  
-*All foundational architecture, audit remediations, mobile feature parity, resilient local-first AI, and cosmology portfolio tailoring (P1–P15) have been implemented and deployed. Historical achievements and release logs are documented in [`ACHIEVEMENTS.md`](ACHIEVEMENTS.md).*
+**Current Production Release:** `v1.6.1` (October 2026)  
+*All foundational architecture, audit remediations, mobile feature parity, resilient local-first AI, cosmology portfolio tailoring (P1–P15), and native Expo push notifications & deep linking have been implemented and deployed. Historical achievements and release logs are documented in [`ACHIEVEMENTS.md`](ACHIEVEMENTS.md).*
 
 ---
 
