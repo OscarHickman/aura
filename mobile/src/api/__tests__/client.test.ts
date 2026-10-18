@@ -399,4 +399,83 @@ describe('Authenticated offline lifecycle', () => {
     expect(jest.getTimerCount()).toBe(0);
     jest.useRealTimers();
   });
+
+  describe('new research intelligence & parity methods', () => {
+    it('creates a collection via POST /api/collections', async () => {
+      globalThis.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ id: 42, name: 'Cosmology Top Picks' }),
+      });
+      const res = await api.createCollection('Cosmology Top Picks', 'Key papers');
+      expect(res).toEqual({ id: 42, name: 'Cosmology Top Picks' });
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        `${DEFAULT_SERVER_URL}/api/collections`,
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ name: 'Cosmology Top Picks', description: 'Key papers' }),
+        })
+      );
+    });
+
+    it('fetches deep summary via GET /api/papers/:id/deep-summary', async () => {
+      globalThis.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ arxiv_id: '2401.12345', mode: 'grad_student', summary: 'Deep dive summary.' }),
+      });
+      const res = await api.getDeepSummary('2401.12345', 'grad_student');
+      expect(res.summary).toBe('Deep dive summary.');
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        `${DEFAULT_SERVER_URL}/api/papers/2401.12345/deep-summary?mode=grad_student`,
+        expect.anything()
+      );
+    });
+
+    it('fetches BibTeX citation via GET /api/papers/:id/bibtex', async () => {
+      globalThis.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({ arxiv_id: '2401.12345', bibtex: '@article{2401.12345,\n  title={Aura}\n}' }),
+      });
+      const res = await api.getPaperBibtex('2401.12345');
+      expect(res.bibtex).toContain('@article{2401.12345');
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        `${DEFAULT_SERVER_URL}/api/papers/2401.12345/bibtex`,
+        expect.anything()
+      );
+    });
+
+    it('fetches weekly briefs list and single brief', async () => {
+      globalThis.fetch = jest.fn().mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ briefs: [{ date: '2026-10-18', content: '# Brief' }] }),
+      }).mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({ brief: { date: '2026-10-18', content: '# Brief Detail' } }),
+      });
+
+      const listRes = await api.getBriefs();
+      expect(listRes.briefs).toHaveLength(1);
+      const singleRes = await api.getBrief('2026-10-18');
+      expect(singleRes.brief.content).toBe('# Brief Detail');
+    });
+
+    it('fetches trends and velocity alerts via GET /api/trends', async () => {
+      globalThis.fetch = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          trends: { topics: [] },
+          alerts: [{ id: 1, tag: 'dark energy', spike_factor: 3.2 }],
+          upcoming_events: [],
+        }),
+      });
+      const res = await api.getTrends();
+      expect(res.alerts).toHaveLength(1);
+      expect(res.alerts?.[0].spike_factor).toBe(3.2);
+    });
+  });
 });

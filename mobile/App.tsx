@@ -6,7 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { Layers, Sparkles, Bookmark, Settings as SettingsIcon } from 'lucide-react-native';
+import { Layers, Sparkles, Bookmark, Settings as SettingsIcon, TrendingUp } from 'lucide-react-native';
 
 import { theme } from './src/constants/theme';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
@@ -16,6 +16,7 @@ import { ReadingListScreen } from './src/screens/ReadingListScreen';
 import { SettingsScreen } from './src/screens/SettingsScreen';
 import { PaperDetailScreen } from './src/screens/PaperDetailScreen';
 import { MyPapersScreen } from './src/screens/MyPapersScreen';
+import { IntelScreen } from './src/screens/IntelScreen';
 
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
@@ -71,6 +72,15 @@ function BottomTabs() {
           title: 'Paper Feed',
           tabBarLabel: 'Feed',
           tabBarIcon: ({ color, size }) => <Layers color={color} size={size} />,
+        }}
+      />
+      <Tab.Screen
+        name="IntelTab"
+        component={IntelScreen}
+        options={{
+          title: 'Research Intel',
+          tabBarLabel: 'Intel',
+          tabBarIcon: ({ color, size }) => <TrendingUp color={color} size={size} />,
         }}
       />
       <Tab.Screen

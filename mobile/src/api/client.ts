@@ -2,10 +2,13 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   CitationEvent,
   Collection,
+  DeepSummaryResponse,
   MyPaper,
   Note,
   Paper,
   PapersResponse,
+  ResearchBrief,
+  TrendsData,
   User,
 } from '../types';
 import {
@@ -453,6 +456,40 @@ class AuraApiClient {
         method: 'DELETE',
       }
     );
+  }
+
+  async createCollection(name: string, description?: string): Promise<{ id: number; name: string }> {
+    return await this.request<{ id: number; name: string }>('/api/collections', {
+      method: 'POST',
+      body: JSON.stringify({ name, description }),
+    });
+  }
+
+  async getDeepSummary(
+    arxivId: string,
+    mode: 'grad_student' | 'expert' = 'grad_student'
+  ): Promise<DeepSummaryResponse> {
+    return await this.request<DeepSummaryResponse>(
+      `/api/papers/${encodeURIComponent(arxivId)}/deep-summary?mode=${mode}`
+    );
+  }
+
+  async getPaperBibtex(arxivId: string): Promise<{ arxiv_id: string; bibtex: string }> {
+    return await this.request<{ arxiv_id: string; bibtex: string }>(
+      `/api/papers/${encodeURIComponent(arxivId)}/bibtex`
+    );
+  }
+
+  async getBriefs(): Promise<{ briefs: ResearchBrief[] }> {
+    return await this.request<{ briefs: ResearchBrief[] }>('/api/briefs');
+  }
+
+  async getBrief(date: string): Promise<{ brief: ResearchBrief }> {
+    return await this.request<{ brief: ResearchBrief }>(`/api/briefs/${encodeURIComponent(date)}`);
+  }
+
+  async getTrends(): Promise<TrendsData> {
+    return await this.request<TrendsData>('/api/trends');
   }
 
   // My Papers API

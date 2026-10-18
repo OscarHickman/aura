@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,8 @@ import {
   ScrollView,
   Dimensions,
   Alert,
+  Animated,
+  PanResponder,
 } from 'react-native';
 import { ThumbsUp, ThumbsDown, Bookmark, ExternalLink, Sparkles, RefreshCw, MessageSquare, RotateCcw } from 'lucide-react-native';
 import { theme } from '../constants/theme';
@@ -17,6 +19,8 @@ import { RecoveryView } from '../components/RecoveryView';
 import { Paper } from '../types';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const SWIPE_THRESHOLD = 0.25 * SCREEN_WIDTH;
+const isTestEnv = typeof process !== 'undefined' && process.env?.NODE_ENV === 'test';
 
 interface TriageScreenProps {
   navigation: any;
@@ -62,12 +66,21 @@ export const TriageScreen: React.FC<TriageScreenProps> = ({ navigation }) => {
 
   const currentPaper = papers[currentIndex];
 
-  const handleRate = async (rating: number) => {
-    if (!currentPaper || isActing) return;
+  const position = useRef(new Animated.ValueXY()).current;
+  const currentPaperRef = useRef<Paper | null>(null);
+  currentPaperRef.current = currentPaper;
+  const currentIndexRef = useRef(currentIndex);
+  currentIndexRef.current = currentIndex;
+  const isActingRef = useRef(isActing);
+  isActingRef.current = isActing;
+
+  const handleRate = useCallback(async (rating: number) => {
+    const targetPaper = currentPaperRef.current;
+    if (!targetPaper || isActingRef.current) return;
     setIsActing(true);
-    const paperId = currentPaper.arxiv_id;
-    const prevIdx = currentIndex;
-    const prevRating = currentPaper.rating;
+    const paperId = targetPaper.arxiv_id;
+    const prevIdx = currentIndexRef.current;
+    const prevRating = targetPaper.rating;
     try {
       await api.ratePaper(paperId, rating);
       setLastAction({
@@ -82,7 +95,7 @@ export const TriageScreen: React.FC<TriageScreenProps> = ({ navigation }) => {
     } finally {
       setIsActing(false);
     }
-  };
+  }, []);
 
   const handleUndo = async () => {
     if (!lastAction || isActing) return;
@@ -101,11 +114,13 @@ export const TriageScreen: React.FC<TriageScreenProps> = ({ navigation }) => {
     }
   };
 
-  const handleToggleReadingList = async () => {
-    if (!currentPaper || isActing) return;
+  const handleToggleReadingList = useCallback(async () => {
+    const targetPaper = currentPaperRef.current;
+    if (!targetPaper || isActingRef.current) return;
     setIsActing(true);
-    const paperId = currentPaper.arxiv_id;
-    const wasInReadingList = Boolean(currentPaper.in_reading_list);
+    const paperId = targetPaper.arxiv_id;
+    const wasInReadingList = Boolean(targetPaper.in_reading_list);
+    const curIdx = currentIndexRef.current;
     try {
       if (wasInReadingList) {
         await api.removeFromReadingList(paperId);
@@ -114,7 +129,7 @@ export const TriageScreen: React.FC<TriageScreenProps> = ({ navigation }) => {
       }
       setPapers((prev) =>
         prev.map((p, idx) =>
-          idx === currentIndex ? { ...p, in_reading_list: !wasInReadingList } : p
+          idx === curIdx ? { ...p, in_reading_list: !wasInReadingList } : p
         )
       );
     } catch (err: any) {
@@ -122,7 +137,94 @@ export const TriageScreen: React.FC<TriageScreenProps> = ({ navigation }) => {
     } finally {
       setIsActing(false);
     }
-  };
+  }, []);
+
+  const swipeCard = useCallback(
+    (direction: 'left' | 'right' | 'up', onComplete: () => void) => {
+      let toX = 0;
+      let toY = 0;
+      if (direction === 'right') toX = SCREEN_WIDTH + 80;
+      else if (direction === 'left') toX = -SCREEN_WIDTH - 80;
+      else if (direction === 'up') toY = -SCREEN_WIDTH;
+
+      if (isTestEnv) {
+        position.setValue({ x: 0, y: 0 });
+        onComplete();
+        return;
+      }
+
+      Animated.timing(position, {
+        toValue: { x: toX, y: toY },
+        duration: 180,
+        useNativeDriver: false,
+      }).start(() => {
+        position.setValue({ x: 0, y: 0 });
+        onComplete();
+      });
+    },
+    [position]
+  );
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => false,
+        onMoveShouldSetPanResponder: (_, gesture) => {
+          return Math.abs(gesture.dx) > 15 || gesture.dy < -25;
+        },
+        onPanResponderMove: (_, gesture) => {
+          position.setValue({ x: gesture.dx, y: gesture.dy });
+        },
+        onPanResponderRelease: (_, gesture) => {
+          if (isActingRef.current || !currentPaperRef.current) {
+            Animated.spring(position, {
+              toValue: { x: 0, y: 0 },
+              friction: 5,
+              useNativeDriver: false,
+            }).start();
+            return;
+          }
+
+          if (gesture.dx > SWIPE_THRESHOLD) {
+            swipeCard('right', () => handleRate(1));
+          } else if (gesture.dx < -SWIPE_THRESHOLD) {
+            swipeCard('left', () => handleRate(-1));
+          } else if (gesture.dy < -100) {
+            swipeCard('up', () => handleToggleReadingList());
+          } else {
+            Animated.spring(position, {
+              toValue: { x: 0, y: 0 },
+              friction: 5,
+              useNativeDriver: false,
+            }).start();
+          }
+        },
+      }),
+    [position, swipeCard, handleRate, handleToggleReadingList]
+  );
+
+  const rotate = position.x.interpolate({
+    inputRange: [-SCREEN_WIDTH * 1.5, 0, SCREEN_WIDTH * 1.5],
+    outputRange: ['-14deg', '0deg', '14deg'],
+  });
+
+  const likeOpacity = position.x.interpolate({
+    inputRange: [25, SCREEN_WIDTH / 4],
+    outputRange: [0, 1],
+    extrapolate: 'clamp',
+  });
+
+  const skipOpacity = position.x.interpolate({
+    inputRange: [-SCREEN_WIDTH / 4, -25],
+    outputRange: [1, 0],
+    extrapolate: 'clamp',
+  });
+
+  const saveOpacity = position.y.interpolate({
+    inputRange: [-SCREEN_WIDTH / 4, -25],
+    outputRange: [1, 0],
+    extrapolate: 'clamp',
+  });
 
   if (isLoading) {
     return (
@@ -187,8 +289,35 @@ export const TriageScreen: React.FC<TriageScreenProps> = ({ navigation }) => {
         </View>
       </View>
 
-      {/* Main card */}
-      <View style={styles.cardWrapper}>
+      {/* Main card with gesture responder */}
+      <Animated.View
+        style={[
+          styles.cardWrapper,
+          position.getLayout(),
+          { transform: [{ rotate }] },
+        ]}
+        {...panResponder.panHandlers}
+      >
+        {/* Swipe Feedback Badges */}
+        <Animated.View
+          style={[styles.swipeBadge, styles.likeBadge, { opacity: likeOpacity }]}
+          pointerEvents="none"
+        >
+          <Text style={styles.likeBadgeText}>LIKE</Text>
+        </Animated.View>
+        <Animated.View
+          style={[styles.swipeBadge, styles.skipBadge, { opacity: skipOpacity }]}
+          pointerEvents="none"
+        >
+          <Text style={styles.skipBadgeText}>SKIP</Text>
+        </Animated.View>
+        <Animated.View
+          style={[styles.swipeBadge, styles.saveBadge, { opacity: saveOpacity }]}
+          pointerEvents="none"
+        >
+          <Text style={styles.saveBadgeText}>SAVE</Text>
+        </Animated.View>
+
         <ScrollView
           style={styles.card}
           contentContainerStyle={styles.cardContent}
@@ -232,14 +361,14 @@ export const TriageScreen: React.FC<TriageScreenProps> = ({ navigation }) => {
           <Text style={styles.abstractHeader}>Abstract</Text>
           <Text style={styles.abstractText}>{currentPaper.abstract}</Text>
         </ScrollView>
-      </View>
+      </Animated.View>
 
       {/* Floating Action Controls */}
       <View style={styles.actionBar}>
         {/* Dislike / Skip */}
         <TouchableOpacity
           style={[styles.actionBtn, styles.dislikeBtn]}
-          onPress={() => handleRate(-1)}
+          onPress={() => swipeCard('left', () => handleRate(-1))}
           disabled={isActing}
         >
           <ThumbsDown size={24} color={theme.colors.danger} />
@@ -275,7 +404,7 @@ export const TriageScreen: React.FC<TriageScreenProps> = ({ navigation }) => {
         {/* Like / Thumbs up */}
         <TouchableOpacity
           style={[styles.actionBtn, styles.likeBtn]}
-          onPress={() => handleRate(1)}
+          onPress={() => swipeCard('right', () => handleRate(1))}
           disabled={isActing}
         >
           <ThumbsUp size={24} color={theme.colors.success} />
@@ -504,5 +633,50 @@ const styles = StyleSheet.create({
     paddingHorizontal: theme.spacing.md,
     borderWidth: 1,
     borderColor: theme.colors.surfaceBorder,
+  },
+  swipeBadge: {
+    position: 'absolute',
+    top: 24,
+    zIndex: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 2,
+  },
+  likeBadge: {
+    left: 24,
+    borderColor: theme.colors.success,
+    backgroundColor: 'rgba(16, 185, 129, 0.2)',
+    transform: [{ rotate: '-15deg' }],
+  },
+  likeBadgeText: {
+    color: theme.colors.success,
+    fontSize: 20,
+    fontWeight: '900',
+    letterSpacing: 1.5,
+  },
+  skipBadge: {
+    right: 24,
+    borderColor: theme.colors.danger,
+    backgroundColor: 'rgba(239, 68, 68, 0.2)',
+    transform: [{ rotate: '15deg' }],
+  },
+  skipBadgeText: {
+    color: theme.colors.danger,
+    fontSize: 20,
+    fontWeight: '900',
+    letterSpacing: 1.5,
+  },
+  saveBadge: {
+    alignSelf: 'center',
+    top: 36,
+    borderColor: theme.colors.warning,
+    backgroundColor: 'rgba(245, 158, 11, 0.2)',
+  },
+  saveBadgeText: {
+    color: theme.colors.warning,
+    fontSize: 18,
+    fontWeight: '900',
+    letterSpacing: 1.5,
   },
 });

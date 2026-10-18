@@ -88,3 +88,30 @@ export interface PapersResponse {
   total: number;
   filter: string;
 }
+
+export interface ResearchBrief {
+  date: string;
+  content: string;
+  created_at?: string;
+}
+
+export interface VelocityAlert {
+  id: number;
+  tag: string;
+  previous_weekly_rate: number;
+  current_rate: number;
+  spike_factor: number;
+  detected_at: string;
+}
+
+export interface TrendsData {
+  trends?: Record<string, any>;
+  alerts?: VelocityAlert[];
+  upcoming_events?: Array<{ id: number; name: string; date: string; type: string; notes?: string }>;
+}
+
+export interface DeepSummaryResponse {
+  arxiv_id: string;
+  mode: 'grad_student' | 'expert';
+  summary: string;
+}

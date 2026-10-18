@@ -13,6 +13,7 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 import {
   Sparkles,
   ExternalLink,
@@ -27,6 +28,9 @@ import {
   Trash2,
   X,
   Check,
+  Copy,
+  Plus,
+  Layers,
 } from 'lucide-react-native';
 import { theme } from '../constants/theme';
 import { api } from '../api/client';
@@ -44,6 +48,15 @@ export const PaperDetailScreen: React.FC<PaperDetailScreenProps> = ({ route, nav
   const [paper, setPaper] = useState<Paper | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
+  // Deep summary / reading mode state
+  const [summaryTab, setSummaryTab] = useState<'abstract' | 'grad_student' | 'expert'>('abstract');
+  const [deepSummaries, setDeepSummaries] = useState<{ grad_student?: string; expert?: string }>({});
+  const [isLoadingDeepSummary, setIsLoadingDeepSummary] = useState<boolean>(false);
+
+  // BibTeX state
+  const [isCopyingBibtex, setIsCopyingBibtex] = useState<boolean>(false);
+  const [isBibtexCopied, setIsBibtexCopied] = useState<boolean>(false);
+
   // Q&A state
   const [question, setQuestion] = useState<string>('');
   const [qaHistory, setQaHistory] = useState<{ q: string; a: string }[]>([]);
@@ -58,6 +71,8 @@ export const PaperDetailScreen: React.FC<PaperDetailScreenProps> = ({ route, nav
   // Collections state
   const [collections, setCollections] = useState<Collection[]>([]);
   const [isCollectionModalVisible, setIsCollectionModalVisible] = useState<boolean>(false);
+  const [newCollectionName, setNewCollectionName] = useState<string>('');
+  const [isCreatingCollection, setIsCreatingCollection] = useState<boolean>(false);
 
   const loadNotes = useCallback(async () => {
     try {
@@ -159,6 +174,54 @@ export const PaperDetailScreen: React.FC<PaperDetailScreenProps> = ({ route, nav
       loadPaper();
     } catch (e: any) {
       Alert.alert('Collection Error', e.message || 'Failed to add to collection');
+    }
+  };
+
+  const handleSelectSummaryMode = async (mode: 'grad_student' | 'expert') => {
+    setSummaryTab(mode);
+    if (deepSummaries[mode]) return;
+    setIsLoadingDeepSummary(true);
+    try {
+      const res = await api.getDeepSummary(arxivId, mode);
+      setDeepSummaries((prev) => ({ ...prev, [mode]: res.summary }));
+    } catch (err: any) {
+      Alert.alert('Summary Error', err.message || 'Could not generate deep summary');
+    } finally {
+      setIsLoadingDeepSummary(false);
+    }
+  };
+
+  const handleCopyBibtex = async () => {
+    if (isCopyingBibtex) return;
+    setIsCopyingBibtex(true);
+    try {
+      const res = await api.getPaperBibtex(arxivId);
+      await Clipboard.setStringAsync(res.bibtex);
+      setIsBibtexCopied(true);
+      setTimeout(() => setIsBibtexCopied(false), 2500);
+      Alert.alert('BibTeX Copied', 'Citation entry copied to your clipboard.');
+    } catch (err: any) {
+      Alert.alert('BibTeX Error', err.message || 'Failed to generate BibTeX citation');
+    } finally {
+      setIsCopyingBibtex(false);
+    }
+  };
+
+  const handleCreateCollection = async () => {
+    const name = newCollectionName.trim();
+    if (!name || isCreatingCollection) return;
+    setIsCreatingCollection(true);
+    try {
+      const created = await api.createCollection(name);
+      await api.addPaperToCollection(created.id, arxivId);
+      setNewCollectionName('');
+      setIsCollectionModalVisible(false);
+      Alert.alert('Collection Created', `Created "${name}" and added this paper.`);
+      loadPaper();
+    } catch (err: any) {
+      Alert.alert('Create Error', err.message || 'Failed to create collection');
+    } finally {
+      setIsCreatingCollection(false);
     }
   };
 
@@ -277,6 +340,19 @@ export const PaperDetailScreen: React.FC<PaperDetailScreenProps> = ({ route, nav
           <FolderPlus size={16} color={theme.colors.warning} />
           <Text style={styles.linkButtonText}>Collection</Text>
         </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.linkButton}
+          onPress={handleCopyBibtex}
+          disabled={isCopyingBibtex}
+        >
+          {isBibtexCopied ? (
+            <Check size={16} color={theme.colors.success} />
+          ) : (
+            <Copy size={16} color={theme.colors.primaryLight} />
+          )}
+          <Text style={styles.linkButtonText}>{isBibtexCopied ? 'Copied' : 'BibTeX'}</Text>
+        </TouchableOpacity>
       </View>
 
       {/* AI Summary */}
@@ -290,10 +366,81 @@ export const PaperDetailScreen: React.FC<PaperDetailScreenProps> = ({ route, nav
         </View>
       )}
 
-      {/* Abstract */}
-      <View style={styles.abstractSection}>
-        <Text style={styles.sectionTitlePlain}>Abstract</Text>
-        <Text style={styles.abstractText}>{paper.abstract}</Text>
+      {/* Reading Modes: Abstract / Grad Student / Expert */}
+      <View style={styles.readingModeContainer}>
+        <View style={styles.readingModeTabs}>
+          <TouchableOpacity
+            style={[styles.readingModeTab, summaryTab === 'abstract' && styles.readingModeTabActive]}
+            onPress={() => setSummaryTab('abstract')}
+          >
+            <Text
+              style={[
+                styles.readingModeTabText,
+                summaryTab === 'abstract' && styles.readingModeTabTextActive,
+              ]}
+            >
+              Abstract
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[
+              styles.readingModeTab,
+              summaryTab === 'grad_student' && styles.readingModeTabActive,
+            ]}
+            onPress={() => handleSelectSummaryMode('grad_student')}
+          >
+            <Sparkles
+              size={12}
+              color={
+                summaryTab === 'grad_student' ? theme.colors.primaryLight : theme.colors.textMuted
+              }
+            />
+            <Text
+              style={[
+                styles.readingModeTabText,
+                summaryTab === 'grad_student' && styles.readingModeTabTextActive,
+              ]}
+            >
+              Grad Student
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.readingModeTab, summaryTab === 'expert' && styles.readingModeTabActive]}
+            onPress={() => handleSelectSummaryMode('expert')}
+          >
+            <Sparkles
+              size={12}
+              color={summaryTab === 'expert' ? theme.colors.primaryLight : theme.colors.textMuted}
+            />
+            <Text
+              style={[
+                styles.readingModeTabText,
+                summaryTab === 'expert' && styles.readingModeTabTextActive,
+              ]}
+            >
+              Expert
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {summaryTab === 'abstract' ? (
+          <View style={styles.abstractSection}>
+            <Text style={styles.abstractText}>{paper.abstract}</Text>
+          </View>
+        ) : isLoadingDeepSummary ? (
+          <View style={styles.deepSummaryLoading}>
+            <ActivityIndicator size="small" color={theme.colors.primary} />
+            <Text style={styles.deepSummaryLoadingText}>
+              Generating {summaryTab === 'grad_student' ? 'Grad Student' : 'Expert'} deep dive with AI...
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.deepSummarySection}>
+            <Text style={styles.deepSummaryText}>
+              {deepSummaries[summaryTab] || 'No summary generated yet.'}
+            </Text>
+          </View>
+        )}
       </View>
 
       {/* Interactive Paper Q&A */}
@@ -435,6 +582,44 @@ export const PaperDetailScreen: React.FC<PaperDetailScreenProps> = ({ route, nav
         </View>
       </View>
 
+      {/* Similar Papers */}
+      {paper.similar_papers && paper.similar_papers.length > 0 && (
+        <View style={styles.similarSection}>
+          <View style={styles.sectionHeader}>
+            <Layers size={16} color={theme.colors.primaryLight} />
+            <Text style={styles.sectionTitle}>Similar Papers ({paper.similar_papers.length})</Text>
+          </View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.similarScroll}
+          >
+            {paper.similar_papers.map((sim) => (
+              <TouchableOpacity
+                key={sim.arxiv_id}
+                style={styles.similarCard}
+                onPress={() => navigation.push('PaperDetail', { arxivId: sim.arxiv_id })}
+              >
+                <Text style={styles.similarTitle} numberOfLines={2}>
+                  {sim.title}
+                </Text>
+                <Text style={styles.similarAuthors} numberOfLines={1}>
+                  {(sim.authors || []).slice(0, 2).join(', ')}
+                  {(sim.authors || []).length > 2 ? ' et al.' : ''}
+                </Text>
+                {sim.score !== undefined && (
+                  <View style={styles.similarScoreBadge}>
+                    <Text style={styles.similarScoreText}>
+                      {Math.round(sim.score * 100)}% Match
+                    </Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      )}
+
       {/* Add to Collection Modal */}
       <Modal
         visible={isCollectionModalVisible}
@@ -451,9 +636,34 @@ export const PaperDetailScreen: React.FC<PaperDetailScreenProps> = ({ route, nav
               </TouchableOpacity>
             </View>
 
+            {/* Create New Collection Inline */}
+            <View style={styles.newColContainer}>
+              <TextInput
+                style={styles.newColInput}
+                placeholder="New collection name..."
+                placeholderTextColor={theme.colors.textDim}
+                value={newCollectionName}
+                onChangeText={setNewCollectionName}
+              />
+              <TouchableOpacity
+                style={[
+                  styles.newColBtn,
+                  (!newCollectionName.trim() || isCreatingCollection) && styles.newColBtnDisabled,
+                ]}
+                onPress={handleCreateCollection}
+                disabled={!newCollectionName.trim() || isCreatingCollection}
+              >
+                {isCreatingCollection ? (
+                  <ActivityIndicator size="small" color={theme.colors.white} />
+                ) : (
+                  <Plus size={16} color={theme.colors.white} />
+                )}
+              </TouchableOpacity>
+            </View>
+
             {collections.length === 0 ? (
               <Text style={styles.modalEmptyText}>
-                No collections available. Create one in the web application.
+                No collections available yet. Create your first one above!
               </Text>
             ) : (
               <ScrollView style={styles.modalScroll}>
@@ -886,5 +1096,138 @@ const styles = StyleSheet.create({
     color: theme.colors.textMuted,
     fontSize: theme.typography.xs,
     marginTop: 2,
+  },
+  readingModeContainer: {
+    marginBottom: theme.spacing.lg,
+  },
+  readingModeTabs: {
+    flexDirection: 'row',
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.md,
+    padding: 4,
+    marginBottom: theme.spacing.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.surfaceBorder,
+    gap: 4,
+  },
+  readingModeTab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    borderRadius: theme.borderRadius.sm,
+    gap: 4,
+  },
+  readingModeTabActive: {
+    backgroundColor: theme.colors.surfaceLight,
+  },
+  readingModeTabText: {
+    color: theme.colors.textMuted,
+    fontSize: theme.typography.xs,
+    fontWeight: '600',
+  },
+  readingModeTabTextActive: {
+    color: theme.colors.primaryLight,
+    fontWeight: '700',
+  },
+  deepSummaryLoading: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.xl,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: theme.colors.surfaceBorder,
+    gap: 12,
+  },
+  deepSummaryLoadingText: {
+    color: theme.colors.textMuted,
+    fontSize: theme.typography.sm,
+    textAlign: 'center',
+  },
+  deepSummarySection: {
+    backgroundColor: 'rgba(99, 102, 241, 0.08)',
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.md,
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.25)',
+  },
+  deepSummaryText: {
+    color: theme.colors.text,
+    fontSize: theme.typography.sm,
+    lineHeight: 22,
+  },
+  similarSection: {
+    marginTop: theme.spacing.lg,
+    marginBottom: theme.spacing.md,
+  },
+  similarScroll: {
+    paddingVertical: 8,
+    gap: theme.spacing.sm,
+  },
+  similarCard: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.borderRadius.md,
+    padding: theme.spacing.md,
+    width: 240,
+    borderWidth: 1,
+    borderColor: theme.colors.surfaceBorder,
+    justifyContent: 'space-between',
+  },
+  similarTitle: {
+    color: theme.colors.text,
+    fontSize: theme.typography.sm,
+    fontWeight: '700',
+    lineHeight: 18,
+    marginBottom: 6,
+  },
+  similarAuthors: {
+    color: theme.colors.textMuted,
+    fontSize: theme.typography.xs,
+    marginBottom: 8,
+  },
+  similarScoreBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  similarScoreText: {
+    color: theme.colors.success,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  newColContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: theme.spacing.md,
+    paddingBottom: theme.spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.surfaceBorder,
+  },
+  newColInput: {
+    flex: 1,
+    backgroundColor: theme.colors.background,
+    color: theme.colors.text,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: theme.borderRadius.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.surfaceBorder,
+    fontSize: theme.typography.sm,
+  },
+  newColBtn: {
+    backgroundColor: theme.colors.primary,
+    padding: 10,
+    borderRadius: theme.borderRadius.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  newColBtnDisabled: {
+    opacity: 0.4,
   },
 });

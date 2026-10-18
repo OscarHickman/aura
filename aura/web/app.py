@@ -1948,6 +1948,30 @@ def _register_routes(app: Flask) -> None:
             }
         return render_template("brief_detail.html", brief=brief)
 
+    @app.route("/api/briefs", methods=["GET"])
+    @login_required
+    def api_briefs() -> Any:
+        briefs = engine.db.get_all_briefs() if engine else []
+        return jsonify({"briefs": briefs})
+
+    @app.route("/api/briefs/<date>", methods=["GET"])
+    @login_required
+    def api_view_brief(date: str) -> Any:
+        if not re.match(r"^\d{4}-\d{2}-\d{2}$", date):
+            return jsonify({"error": "Invalid date format. Use YYYY-MM-DD."}), 400
+        brief = engine.db.get_brief(date) if engine else None
+        if not brief:
+            from aura.briefs import generate_weekly_brief_content
+            content = generate_weekly_brief_content(engine, date) if engine else ""
+            if engine:
+                engine.db.add_brief(date, content)
+            brief = {
+                "date": date,
+                "content": content,
+                "created_at": utcnow().isoformat()
+            }
+        return jsonify({"brief": brief})
+
     @app.route("/api/briefs/generate", methods=["POST"])
     @login_required
     def generate_brief():
@@ -2396,6 +2420,36 @@ def _register_routes(app: Flask) -> None:
             alerts=alerts,
             upcoming_events=upcoming_events,
         )
+
+    @app.route("/api/trends", methods=["GET"])
+    @login_required
+    def api_trends() -> Any:
+        if not engine:
+            return jsonify({"error": "Engine not initialized"}), 500
+        from aura.trends import get_trends_data
+        uid = _get_current_user_id()
+        trends_data = get_trends_data(engine.data_dir, engine.embedding_model)
+        alerts = engine.db.get_active_velocity_alerts(hours_back=48)
+        from unittest.mock import Mock
+        if isinstance(alerts, Mock):
+            alerts = []
+        upcoming_events = engine.db.get_events(user_id=uid, upcoming_days=90)
+        return jsonify({
+            "trends": trends_data,
+            "alerts": alerts,
+            "upcoming_events": upcoming_events,
+        })
+
+    @app.route("/api/papers/<path:arxiv_id>/bibtex", methods=["GET"])
+    @login_required
+    def api_paper_bibtex(arxiv_id: str) -> Any:
+        if not engine:
+            return jsonify({"error": "Engine not initialized"}), 500
+        paper = engine.db.get_paper(arxiv_id)
+        if not paper:
+            return jsonify({"error": "Paper not found"}), 404
+        bibtex = _paper_to_bibtex(paper)
+        return jsonify({"arxiv_id": arxiv_id, "bibtex": bibtex})
 
     @app.route("/settings/calendar", methods=["GET", "POST"])
     @login_required
